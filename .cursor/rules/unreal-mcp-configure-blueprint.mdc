@@ -1,0 +1,88 @@
+---
+description: "Unreal MCP consolidated Blueprint configuration: when and how to use configure_blueprint vs granular tools."
+---
+
+## Unreal MCP – configure_blueprint usage guide
+
+This rule explains the consolidated `configure_blueprint` tool added to the MCP Python server and clarifies when to use it instead of multiple granular calls.
+
+Source: [Python/unreal_mcp_server_advanced.py](mdc:Python/unreal_mcp_server_advanced.py)
+
+### What configure_blueprint does
+
+Given a `blueprint_name` and a list of component configs, it will, for each component:
+- Add the component to the Blueprint
+- Optionally assign a `static_mesh`
+- Apply initial `location`, `rotation`, and `scale` (at the Blueprint component level)
+- Apply material color (tries `BaseColor`, then falls back to `Color`) using `BasicShapeMaterial` by default
+- Optionally compile the Blueprint at the end (`compile_at_end=True` by default)
+
+It reduces round-trips and ensures the Blueprint is compiled after changes.
+
+### When to prefer configure_blueprint
+
+- You are setting up a Blueprint with one or more components in a single step
+- You want meshes, transforms, and colors applied consistently, then compile once
+- You are generating many primitives/structures programmatically (e.g., houses, stacked cubes) and want faster, atomic configuration
+
+### When to use granular tools instead
+
+- Per-instance transforms after spawning → use `set_actor_transform`
+- Incremental tweaks to an existing Blueprint component (small change without re-sending full config)
+- Physics setup not covered by `configure_blueprint` → use `set_physics_properties`
+- Spawning an instance from an already-configured Blueprint → use `spawn_blueprint_actor`
+
+### API shape
+
+```json
+{
+  "blueprint_name": "My_BP",
+  "components": [
+    {
+      "component_type": "StaticMeshComponent",         // required
+      "component_name": "Mesh",                         // required
+      "location": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "component_properties": { },
+      "static_mesh": "/Engine/BasicShapes/Cube.Cube",  // optional
+      "color": [0.9, 0.9, 0.9, 1],                      // optional (RGBA 0..1)
+      "material_path": "/Engine/BasicShapes/BasicShapeMaterial", // optional
+      "parameter_name": "BaseColor"                     // optional, default BaseColor
+    }
+  ],
+  "compile_at_end": true
+}
+```
+
+### Examples
+
+- Configure a colored cube Blueprint:
+
+```python
+configure_blueprint(
+  blueprint_name="StackCube_Red_BP",
+  components=[{
+    "component_type": "StaticMeshComponent",
+    "component_name": "Mesh",
+    "static_mesh": "/Engine/BasicShapes/Cube.Cube",
+    "scale": [2, 2, 2],
+    "color": [1, 0.2, 0.2, 1]
+  }],
+  compile_at_end=True
+)
+```
+
+- After configuration, spawn instances and adjust per-instance transforms as needed:
+
+```python
+spawn_blueprint_actor("StackCube_Red_BP", "StackCube_Red", location=[2400, 0, 100])
+set_actor_transform("StackCube_Red", location=[2400, 100, 100])
+```
+
+### Notes
+
+- Ensure scales are non-zero; a zero scale makes actors invisible in the level.
+- Color values are clamped to [0, 1]. If `BaseColor` is unavailable, a fallback to `Color` is attempted automatically.
+- Use this tool inside higher-level builders (e.g., house/town generators) to keep configuration atomic and to compile only once at the end.
+

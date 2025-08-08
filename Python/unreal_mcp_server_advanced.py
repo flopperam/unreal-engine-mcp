@@ -12,6 +12,26 @@ import json
 import math
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict, Any, Optional, List
+import os, sys
+# Ensure local helpers are importable regardless of CWD
+sys.path.insert(0, os.path.dirname(__file__))
+
+from helpers.town_helpers import (
+    create_street_grid as helper_create_street_grid,
+    create_street_lights as helper_create_street_lights,
+    create_traffic_lights as helper_create_traffic_lights,
+    create_street_signage as helper_create_street_signage,
+    create_town_vehicles as helper_create_town_vehicles,
+    create_town_decorations as helper_create_town_decorations,
+    create_urban_furniture as helper_create_urban_furniture,
+    create_sidewalks_crosswalks as helper_create_sidewalks_crosswalks,
+    create_street_utilities as helper_create_street_utilities,
+    create_central_plaza as helper_create_central_plaza,
+
+)
+from helpers.town_buildings import (
+    create_town_building as helper_create_town_building,
+)
 from mcp.server.fastmcp import FastMCP, Context
 
 # Configure logging with more detailed format
@@ -264,6 +284,205 @@ def find_actors_by_name(pattern: str) -> Dict[str, Any]:
         logger.error(f"find_actors_by_name error: {e}")
         return {"success": False, "message": str(e)}
 
+# Spatial Awareness System
+class SpatialManager:
+    """Manages spatial awareness to prevent overlapping structures."""
+    
+    def __init__(self):
+        self.occupied_regions = []  # List of (min_x, min_y, min_z, max_x, max_y, max_z, name)
+    
+    def add_region(self, location: List[float], size: List[float], name: str):
+        """Add an occupied region to track."""
+        min_x = location[0] - size[0]/2
+        max_x = location[0] + size[0]/2
+        min_y = location[1] - size[1]/2
+        max_y = location[1] + size[1]/2
+        min_z = location[2] - size[2]/2
+        max_z = location[2] + size[2]/2
+        self.occupied_regions.append((min_x, min_y, min_z, max_x, max_y, max_z, name))
+    
+    def check_collision(self, location: List[float], size: List[float], buffer: float = 100.0) -> bool:
+        """Check if a proposed structure would collide with existing ones."""
+        min_x = location[0] - size[0]/2 - buffer
+        max_x = location[0] + size[0]/2 + buffer
+        min_y = location[1] - size[1]/2 - buffer
+        max_y = location[1] + size[1]/2 + buffer
+        min_z = location[2] - size[2]/2 - buffer
+        max_z = location[2] + size[2]/2 + buffer
+        
+        for region in self.occupied_regions:
+            r_min_x, r_min_y, r_min_z, r_max_x, r_max_y, r_max_z, r_name = region
+            
+            # Check for overlap in all three dimensions
+            if (min_x < r_max_x and max_x > r_min_x and
+                min_y < r_max_y and max_y > r_min_y and
+                min_z < r_max_z and max_z > r_min_z):
+                return True
+        return False
+    
+    def find_clear_location(self, preferred_location: List[float], size: List[float], 
+                          search_radius: float = 3000.0, buffer: float = 200.0) -> List[float]:
+        """Find a clear location near the preferred location - ONLY searches horizontally."""
+        # Try the preferred location first
+        if not self.check_collision(preferred_location, size, buffer):
+            return preferred_location
+        
+        # Search in expanding circles - ONLY X,Y movement, keep same Z
+        for radius in range(int(buffer * 2), int(search_radius), 300):
+            for angle in range(0, 360, 20):  # Check every 20 degrees for more options
+                rad = math.radians(angle)
+                test_location = [
+                    preferred_location[0] + radius * math.cos(rad),
+                    preferred_location[1] + radius * math.sin(rad),
+                    preferred_location[2]  # KEEP SAME Z - DON'T ELEVATE
+                ]
+                
+                if not self.check_collision(test_location, size, buffer):
+                    return test_location
+        
+        # If still no clear location, try a few more distant spots
+        for i in range(5):
+            distant_location = [
+                preferred_location[0] + (i + 1) * search_radius * (1 if i % 2 == 0 else -1),
+                preferred_location[1] + (i + 1) * search_radius * (1 if i % 3 == 0 else -1),
+                preferred_location[2]  # KEEP SAME Z
+            ]
+            if not self.check_collision(distant_location, size, buffer):
+                return distant_location
+        
+        # Last resort: return original location (let it overlap rather than float)
+        logger.warning(f"Could not find clear location, using original: {preferred_location}")
+        return preferred_location
+
+# Global spatial manager instance
+spatial_manager = SpatialManager()
+
+def refresh_spatial_awareness():
+    """Refresh spatial awareness by querying existing actors."""
+    try:
+        unreal = get_unreal_connection()
+        if not unreal:
+            return
+        
+        # Clear existing regions
+        spatial_manager.occupied_regions.clear()
+        
+        # Get all actors in level
+        response = unreal.send_command("get_actors_in_level", {})
+        if not response or not response.get("success"):
+            return
+        
+        actors = response.get("actors", [])
+        for actor in actors:
+            if "location" in actor and "name" in actor:
+                # Estimate size based on actor type and scale
+                scale = actor.get("scale", [1, 1, 1])
+                base_size = [200, 200, 200]  # Default size
+                
+                # Adjust size based on actor type and name patterns
+                actor_name = actor["name"].lower()
+                if "tower" in actor_name:
+                    base_size = [800, 800, 1000]
+                elif "wall" in actor_name or "terrace" in actor_name:
+                    base_size = [300, 300, 300]
+                elif "maze" in actor_name:
+                    base_size = [1500, 1500, 200]
+                elif "arch" in actor_name:
+                    base_size = [500, 200, 500]
+                elif "stair" in actor_name:
+                    base_size = [200, 200, 100]
+                elif "house" in actor_name:
+                    base_size = [1200, 1000, 600]
+                elif "pyramid" in actor_name:
+                    base_size = [600, 600, 400]
+                
+                # Apply scale - be more conservative with scaling
+                actual_size = [base_size[i] * max(scale[i], 1.0) for i in range(3)]
+                spatial_manager.add_region(actor["location"], actual_size, actor["name"])
+                
+        logger.info(f"Refreshed spatial awareness with {len(spatial_manager.occupied_regions)} regions")
+        
+    except Exception as e:
+        logger.error(f"Failed to refresh spatial awareness: {e}")
+
+def get_safe_location(preferred_location: List[float], structure_size: List[float], 
+                     structure_name: str = "structure") -> List[float]:
+    """Get a safe location for building, avoiding collisions."""
+    # Refresh spatial awareness
+    refresh_spatial_awareness()
+    
+    # Find clear location
+    safe_location = spatial_manager.find_clear_location(preferred_location, structure_size)
+    
+    # Add this structure to spatial manager
+    spatial_manager.add_region(safe_location, structure_size, structure_name)
+    
+    logger.info(f"Safe location for {structure_name}: {safe_location} (preferred: {preferred_location})")
+    return safe_location
+
+@mcp.tool()
+def clear_spatial_awareness() -> Dict[str, Any]:
+    """Clear the spatial awareness cache. Useful when manually deleting actors."""
+    try:
+        spatial_manager.occupied_regions.clear()
+        logger.info("Spatial awareness cache cleared")
+        return {"success": True, "message": "Spatial awareness cache cleared"}
+    except Exception as e:
+        logger.error(f"clear_spatial_awareness error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool() 
+def test_spatial_system(base_location: List[float] = [0, 0, 0]) -> Dict[str, Any]:
+    """Test the spatial awareness system by building several structures that should not overlap."""
+    try:
+        results = []
+        
+        # Test 1: Create a tower
+        tower_result = create_tower(
+            height=5, 
+            base_size=3, 
+            location=base_location, 
+            name_prefix="TestTower"
+        )
+        results.append({"structure": "tower", "result": tower_result})
+        
+        # Test 2: Try to create another tower nearby (should be repositioned)
+        tower2_result = create_tower(
+            height=4, 
+            base_size=2, 
+            location=[base_location[0] + 100, base_location[1], base_location[2]], 
+            name_prefix="TestTower2"
+        )
+        results.append({"structure": "tower2", "result": tower2_result})
+        
+        # Test 3: Create a maze nearby (should be repositioned)
+        maze_result = create_maze(
+            rows=4, 
+            cols=4, 
+            location=[base_location[0], base_location[1] + 200, base_location[2]], 
+            cell_size=200
+        )
+        results.append({"structure": "maze", "result": maze_result})
+        
+        # Test 4: Create a staircase (should be repositioned)
+        stair_result = create_staircase(
+            steps=6, 
+            location=[base_location[0] - 200, base_location[1], base_location[2]], 
+            name_prefix="TestStair"
+        )
+        results.append({"structure": "staircase", "result": stair_result})
+        
+        return {
+            "success": True, 
+            "message": "Spatial awareness test completed",
+            "results": results,
+            "occupied_regions": len(spatial_manager.occupied_regions)
+        }
+        
+    except Exception as e:
+        logger.error(f"test_spatial_system error: {e}")
+        return {"success": False, "message": str(e)}
+
 @mcp.tool()
 def spawn_actor(
     name: str,
@@ -474,6 +693,139 @@ def spawn_blueprint_actor(
         logger.error(f"spawn_blueprint_actor error: {e}")
         return {"success": False, "message": str(e)}
 
+@mcp.tool()
+def configure_blueprint(
+    blueprint_name: str,
+    components: List[Dict[str, Any]],
+    compile_at_end: bool = True
+) -> Dict[str, Any]:
+    """Configure a Blueprint in one call and optionally compile at the end.
+
+    This function attaches components, applies transforms, sets meshes and colors,
+    then compiles the Blueprint when finished. It eliminates the need to call
+    multiple functions for common setup flows.
+
+    Each item in the `components` list can include:
+    - component_type: e.g. "StaticMeshComponent" (required)
+    - component_name: unique name for the component (required)
+    - location: [x, y, z]
+    - rotation: [pitch, yaw, roll]
+    - scale: [sx, sy, sz]
+    - component_properties: dict of additional properties for `add_component_to_blueprint`
+    - static_mesh: asset path to assign to the component's mesh
+    - color: [r, g, b, a] where values are 0..1, applied to BaseColor/Color
+    - material_path: optional material to apply when setting color
+    - parameter_name: optional material parameter name to prioritize (default BaseColor)
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    overall_success = True
+    component_results: List[Dict[str, Any]] = []
+
+    for component in components or []:
+        result: Dict[str, Any] = {
+            "component_name": component.get("component_name"),
+            "component_type": component.get("component_type"),
+            "steps": {}
+        }
+        try:
+            # 1) Attach/add the component
+            add_params = {
+                "blueprint_name": blueprint_name,
+                "component_type": component.get("component_type"),
+                "component_name": component.get("component_name"),
+                "location": component.get("location", []),
+                "rotation": component.get("rotation", []),
+                "scale": component.get("scale", []),
+                "component_properties": component.get("component_properties", {})
+            }
+            add_resp = unreal.send_command("add_component_to_blueprint", add_params)
+            result["steps"]["add_component_to_blueprint"] = add_resp
+            if not (add_resp and add_resp.get("success")):
+                overall_success = False
+
+            # 2) Assign static mesh if provided
+            if component.get("static_mesh"):
+                mesh_resp = unreal.send_command(
+                    "set_static_mesh_properties",
+                    {
+                        "blueprint_name": blueprint_name,
+                        "component_name": component.get("component_name"),
+                        "static_mesh": component.get("static_mesh")
+                    }
+                )
+                result["steps"]["set_static_mesh_properties"] = mesh_resp
+                if not (mesh_resp and mesh_resp.get("success")):
+                    overall_success = False
+
+            # 3) Apply color if provided
+            if component.get("color") is not None:
+                color_list = component.get("color")
+                try:
+                    # Clamp color values to [0,1]
+                    color_list = [float(min(1.0, max(0.0, v))) for v in color_list]
+                except Exception:
+                    pass
+
+                material_path = component.get(
+                    "material_path",
+                    "/Engine/BasicShapes/BasicShapeMaterial"
+                )
+                preferred_param = component.get("parameter_name", "BaseColor")
+
+                # Try preferred parameter first, then a fallback to "Color"
+                base_resp = unreal.send_command(
+                    "set_mesh_material_color",
+                    {
+                        "blueprint_name": blueprint_name,
+                        "component_name": component.get("component_name"),
+                        "color": color_list,
+                        "material_path": material_path,
+                        "parameter_name": preferred_param
+                    }
+                )
+                color_resp = unreal.send_command(
+                    "set_mesh_material_color",
+                    {
+                        "blueprint_name": blueprint_name,
+                        "component_name": component.get("component_name"),
+                        "color": color_list,
+                        "material_path": material_path,
+                        "parameter_name": "Color"
+                    }
+                )
+                result["steps"]["set_mesh_material_color"] = {
+                    "preferred": base_resp,
+                    "fallback": color_resp
+                }
+                if not ((base_resp and base_resp.get("success")) or (color_resp and color_resp.get("success"))):
+                    overall_success = False
+
+        except Exception as inner_e:
+            result["error"] = str(inner_e)
+            overall_success = False
+
+        component_results.append(result)
+
+    compile_result: Dict[str, Any] = {}
+    if compile_at_end:
+        try:
+            compile_result = unreal.send_command("compile_blueprint", {"blueprint_name": blueprint_name}) or {}
+            if not compile_result.get("success"):
+                overall_success = False
+        except Exception as e:
+            compile_result = {"success": False, "message": str(e)}
+            overall_success = False
+
+    return {
+        "success": overall_success,
+        "blueprint_name": blueprint_name,
+        "components": component_results,
+        "compile_result": compile_result
+    }
+
 # Advanced Composition Tools
 @mcp.tool()
 def create_pyramid(
@@ -488,6 +840,14 @@ def create_pyramid(
         unreal = get_unreal_connection()
         if not unreal:
             return {"success": False, "message": "Failed to connect to Unreal Engine"}
+        
+        # Calculate pyramid dimensions for spatial awareness
+        pyramid_width = base_size * block_size
+        pyramid_height = base_size * block_size  # Pyramid height
+        pyramid_size = [pyramid_width, pyramid_width, pyramid_height]
+        
+        # Get safe location
+        safe_location = get_safe_location(location, pyramid_size, f"{name_prefix}_Pyramid")
         spawned = []
         scale = block_size / 100.0
         for level in range(base_size):
@@ -496,9 +856,9 @@ def create_pyramid(
                 for y in range(count):
                     actor_name = f"{name_prefix}_{level}_{x}_{y}"
                     loc = [
-                        location[0] + (x - (count - 1)/2) * block_size,
-                        location[1] + (y - (count - 1)/2) * block_size,
-                        location[2] + level * block_size
+                        safe_location[0] + (x - (count - 1)/2) * block_size,
+                        safe_location[1] + (y - (count - 1)/2) * block_size,
+                        safe_location[2] + level * block_size
                     ]
                     params = {
                         "name": actor_name,
@@ -530,15 +890,25 @@ def create_wall(
         unreal = get_unreal_connection()
         if not unreal:
             return {"success": False, "message": "Failed to connect to Unreal Engine"}
+        
+        # Calculate wall dimensions for spatial awareness
+        if orientation == "x":
+            wall_size = [length * block_size, block_size, height * block_size]
+        else:
+            wall_size = [block_size, length * block_size, height * block_size]
+        
+        # Get safe location
+        safe_location = get_safe_location(location, wall_size, f"{name_prefix}_Wall")
+        
         spawned = []
         scale = block_size / 100.0
         for h in range(height):
             for i in range(length):
                 actor_name = f"{name_prefix}_{h}_{i}"
                 if orientation == "x":
-                    loc = [location[0] + i * block_size, location[1], location[2] + h * block_size]
+                    loc = [safe_location[0] + i * block_size, safe_location[1], safe_location[2] + h * block_size]
                 else:
-                    loc = [location[0], location[1] + i * block_size, location[2] + h * block_size]
+                    loc = [safe_location[0], safe_location[1] + i * block_size, safe_location[2] + h * block_size]
                 params = {
                     "name": actor_name,
                     "type": "StaticMeshActor",
@@ -569,11 +939,19 @@ def create_tower(
         unreal = get_unreal_connection()
         if not unreal:
             return {"success": False, "message": "Failed to connect to Unreal Engine"}
+        
+        # Calculate tower dimensions for spatial awareness
+        tower_width = base_size * block_size * 1.2  # Add some buffer
+        tower_height = height * block_size
+        tower_size = [tower_width, tower_width, tower_height]
+        
+        # Get safe location
+        safe_location = get_safe_location(location, tower_size, f"{name_prefix}_Tower")
         spawned = []
         scale = block_size / 100.0
 
         for level in range(height):
-            level_height = location[2] + level * block_size
+            level_height = safe_location[2] + level * block_size
             
             if tower_style == "cylindrical":
                 # Create circular tower
@@ -583,8 +961,8 @@ def create_tower(
                 
                 for i in range(num_blocks):
                     angle = (2 * math.pi * i) / num_blocks
-                    x = location[0] + radius * math.cos(angle)
-                    y = location[1] + radius * math.sin(angle)
+                    x = safe_location[0] + radius * math.cos(angle)
+                    y = safe_location[1] + radius * math.sin(angle)
                     
                     actor_name = f"{name_prefix}_{level}_{i}"
                     params = {
@@ -607,20 +985,20 @@ def create_tower(
                 for side in range(4):
                     for i in range(current_size):
                         if side == 0:  # Front wall
-                            x = location[0] + (i - half_size + 0.5) * block_size
-                            y = location[1] - half_size * block_size
+                            x = safe_location[0] + (i - half_size + 0.5) * block_size
+                            y = safe_location[1] - half_size * block_size
                             actor_name = f"{name_prefix}_{level}_front_{i}"
                         elif side == 1:  # Right wall
-                            x = location[0] + half_size * block_size
-                            y = location[1] + (i - half_size + 0.5) * block_size
+                            x = safe_location[0] + half_size * block_size
+                            y = safe_location[1] + (i - half_size + 0.5) * block_size
                             actor_name = f"{name_prefix}_{level}_right_{i}"
                         elif side == 2:  # Back wall
-                            x = location[0] + (half_size - i - 0.5) * block_size
-                            y = location[1] + half_size * block_size
+                            x = safe_location[0] + (half_size - i - 0.5) * block_size
+                            y = safe_location[1] + half_size * block_size
                             actor_name = f"{name_prefix}_{level}_back_{i}"
                         else:  # Left wall
-                            x = location[0] - half_size * block_size
-                            y = location[1] + (half_size - i - 0.5) * block_size
+                            x = safe_location[0] - half_size * block_size
+                            y = safe_location[1] + (half_size - i - 0.5) * block_size
                             actor_name = f"{name_prefix}_{level}_left_{i}"
                             
                         params = {
@@ -642,20 +1020,20 @@ def create_tower(
                 for side in range(4):
                     for i in range(base_size):
                         if side == 0:  # Front wall
-                            x = location[0] + (i - half_size + 0.5) * block_size
-                            y = location[1] - half_size * block_size
+                            x = safe_location[0] + (i - half_size + 0.5) * block_size
+                            y = safe_location[1] - half_size * block_size
                             actor_name = f"{name_prefix}_{level}_front_{i}"
                         elif side == 1:  # Right wall
-                            x = location[0] + half_size * block_size
-                            y = location[1] + (i - half_size + 0.5) * block_size
+                            x = safe_location[0] + half_size * block_size
+                            y = safe_location[1] + (i - half_size + 0.5) * block_size
                             actor_name = f"{name_prefix}_{level}_right_{i}"
                         elif side == 2:  # Back wall
-                            x = location[0] + (half_size - i - 0.5) * block_size
-                            y = location[1] + half_size * block_size
+                            x = safe_location[0] + (half_size - i - 0.5) * block_size
+                            y = safe_location[1] + half_size * block_size
                             actor_name = f"{name_prefix}_{level}_back_{i}"
                         else:  # Left wall
-                            x = location[0] - half_size * block_size
-                            y = location[1] + (half_size - i - 0.5) * block_size
+                            x = safe_location[0] - half_size * block_size
+                            y = safe_location[1] + (half_size - i - 0.5) * block_size
                             actor_name = f"{name_prefix}_{level}_left_{i}"
                             
                         params = {
@@ -674,8 +1052,8 @@ def create_tower(
                 # Add corner details
                 for corner in range(4):
                     angle = corner * math.pi / 2
-                    detail_x = location[0] + (base_size/2 + 0.5) * block_size * math.cos(angle)
-                    detail_y = location[1] + (base_size/2 + 0.5) * block_size * math.sin(angle)
+                    detail_x = safe_location[0] + (base_size/2 + 0.5) * block_size * math.cos(angle)
+                    detail_y = safe_location[1] + (base_size/2 + 0.5) * block_size * math.sin(angle)
                     
                     actor_name = f"{name_prefix}_{level}_detail_{corner}"
                     params = {
@@ -707,11 +1085,21 @@ def create_staircase(
         unreal = get_unreal_connection()
         if not unreal:
             return {"success": False, "message": "Failed to connect to Unreal Engine"}
-        spawned = []
+        
+        # Calculate staircase dimensions for spatial awareness
         sx, sy, sz = step_size
+        staircase_width = steps * sx
+        staircase_depth = sy
+        staircase_height = steps * sz
+        staircase_size = [staircase_width, staircase_depth, staircase_height]
+        
+        # Get safe location
+        safe_location = get_safe_location(location, staircase_size, f"{name_prefix}_Staircase")
+        
+        spawned = []
         for i in range(steps):
             actor_name = f"{name_prefix}_{i}"
-            loc = [location[0] + i * sx, location[1], location[2] + i * sz]
+            loc = [safe_location[0] + i * sx, safe_location[1], safe_location[2] + i * sz]
             scale = [sx/100.0, sy/100.0, sz/100.0]
             params = {
                 "name": actor_name,
@@ -743,10 +1131,6 @@ def construct_house(
         unreal = get_unreal_connection()
         if not unreal:
             return {"success": False, "message": "Failed to connect to Unreal Engine"}
-            
-        results = []
-        wall_thickness = 20.0  # Thinner walls for realism
-        floor_thickness = 30.0
         
         # Adjust dimensions based on style
         if house_style == "mansion":
@@ -758,11 +1142,21 @@ def construct_house(
             depth = int(depth * 0.8)
             height = int(height * 0.9)
         
+        # Calculate house dimensions for spatial awareness
+        house_size = [width + 200, depth + 200, height]  # Add buffer for foundation
+        
+        # Get safe location
+        safe_location = get_safe_location(location, house_size, f"{name_prefix}_House")
+            
+        results = []
+        wall_thickness = 20.0  # Thinner walls for realism
+        floor_thickness = 30.0
+        
         # Create foundation as single large block
         foundation_params = {
             "name": f"{name_prefix}_Foundation",
             "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] - floor_thickness/2],
+            "location": [safe_location[0], safe_location[1], safe_location[2] - floor_thickness/2],
             "scale": [(width + 200)/100.0, (depth + 200)/100.0, floor_thickness/100.0],
             "static_mesh": mesh
         }
@@ -774,7 +1168,7 @@ def construct_house(
         floor_params = {
             "name": f"{name_prefix}_Floor",
             "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + floor_thickness/2],
+            "location": [safe_location[0], safe_location[1], safe_location[2] + floor_thickness/2],
             "scale": [width/100.0, depth/100.0, floor_thickness/100.0],
             "static_mesh": mesh
         }
@@ -782,7 +1176,7 @@ def construct_house(
         if floor_resp:
             results.append(floor_resp)
         
-        base_z = location[2] + floor_thickness
+        base_z = safe_location[2] + floor_thickness
         
         # Create walls as large segments
         # Front wall (with door opening)
@@ -794,7 +1188,7 @@ def construct_house(
         front_left_params = {
             "name": f"{name_prefix}_FrontWall_Left",
             "type": "StaticMeshActor",
-            "location": [location[0] - width/4 - door_width/4, location[1] - depth/2, base_z + height/2],
+            "location": [safe_location[0] - width/4 - door_width/4, safe_location[1] - depth/2, base_z + height/2],
             "scale": [front_left_width/100.0, wall_thickness/100.0, height/100.0],
             "static_mesh": mesh
         }
@@ -806,7 +1200,7 @@ def construct_house(
         front_right_params = {
             "name": f"{name_prefix}_FrontWall_Right",
             "type": "StaticMeshActor",
-            "location": [location[0] + width/4 + door_width/4, location[1] - depth/2, base_z + height/2],
+            "location": [safe_location[0] + width/4 + door_width/4, safe_location[1] - depth/2, base_z + height/2],
             "scale": [front_left_width/100.0, wall_thickness/100.0, height/100.0],
             "static_mesh": mesh
         }
@@ -818,7 +1212,7 @@ def construct_house(
         front_top_params = {
             "name": f"{name_prefix}_FrontWall_Top",
             "type": "StaticMeshActor",
-            "location": [location[0], location[1] - depth/2, base_z + door_height + (height - door_height)/2],
+            "location": [safe_location[0], safe_location[1] - depth/2, base_z + door_height + (height - door_height)/2],
             "scale": [door_width/100.0, wall_thickness/100.0, (height - door_height)/100.0],
             "static_mesh": mesh
         }
@@ -835,7 +1229,7 @@ def construct_house(
         back_left_params = {
             "name": f"{name_prefix}_BackWall_Left",
             "type": "StaticMeshActor",
-            "location": [location[0] - width/3, location[1] + depth/2, base_z + height/2],
+            "location": [safe_location[0] - width/3, safe_location[1] + depth/2, base_z + height/2],
             "scale": [width/3/100.0, wall_thickness/100.0, height/100.0],
             "static_mesh": mesh
         }
@@ -847,7 +1241,7 @@ def construct_house(
         back_center_bottom_params = {
             "name": f"{name_prefix}_BackWall_Center_Bottom",
             "type": "StaticMeshActor",
-            "location": [location[0], location[1] + depth/2, base_z + (window_y - window_height/2 - base_z)/2],
+            "location": [safe_location[0], safe_location[1] + depth/2, base_z + (window_y - window_height/2 - base_z)/2],
             "scale": [width/3/100.0, wall_thickness/100.0, (window_y - window_height/2 - base_z)/100.0],
             "static_mesh": mesh
         }
@@ -858,7 +1252,7 @@ def construct_house(
         back_center_top_params = {
             "name": f"{name_prefix}_BackWall_Center_Top",
             "type": "StaticMeshActor",
-            "location": [location[0], location[1] + depth/2, window_y + window_height/2 + (base_z + height - window_y - window_height/2)/2],
+            "location": [safe_location[0], safe_location[1] + depth/2, window_y + window_height/2 + (base_z + height - window_y - window_height/2)/2],
             "scale": [width/3/100.0, wall_thickness/100.0, (base_z + height - window_y - window_height/2)/100.0],
             "static_mesh": mesh
         }
@@ -870,7 +1264,7 @@ def construct_house(
         back_right_params = {
             "name": f"{name_prefix}_BackWall_Right",
             "type": "StaticMeshActor",
-            "location": [location[0] + width/3, location[1] + depth/2, base_z + height/2],
+            "location": [safe_location[0] + width/3, safe_location[1] + depth/2, base_z + height/2],
             "scale": [width/3/100.0, wall_thickness/100.0, height/100.0],
             "static_mesh": mesh
         }
@@ -882,7 +1276,7 @@ def construct_house(
         left_wall_params = {
             "name": f"{name_prefix}_LeftWall",
             "type": "StaticMeshActor",
-            "location": [location[0] - width/2, location[1], base_z + height/2],
+            "location": [safe_location[0] - width/2, safe_location[1], base_z + height/2],
             "scale": [wall_thickness/100.0, depth/100.0, height/100.0],
             "static_mesh": mesh
         }
@@ -894,7 +1288,7 @@ def construct_house(
         right_wall_params = {
             "name": f"{name_prefix}_RightWall",
             "type": "StaticMeshActor",
-            "location": [location[0] + width/2, location[1], base_z + height/2],
+            "location": [safe_location[0] + width/2, safe_location[1], base_z + height/2],
             "scale": [wall_thickness/100.0, depth/100.0, height/100.0],
             "static_mesh": mesh
         }
@@ -911,8 +1305,8 @@ def construct_house(
                 "name": f"{name_prefix}_Roof",
                 "type": "StaticMeshActor",
                 "location": [
-                    location[0],
-                    location[1],
+                    safe_location[0],
+                    safe_location[1],
                     base_z + height + roof_thickness/2
                 ],
                 "rotation": [0, 0, 0],  # No rotation - flat roof
@@ -929,8 +1323,8 @@ def construct_house(
                     "name": f"{name_prefix}_Chimney",
                     "type": "StaticMeshActor",
                     "location": [
-                        location[0] + width/3,
-                        location[1] + depth/3,
+                        safe_location[0] + width/3,
+                        safe_location[1] + depth/3,
                         base_z + height + roof_thickness + 150  # Position above flat roof
                     ],
                     "scale": [1.0, 1.0, 2.5],
@@ -946,7 +1340,7 @@ def construct_house(
             porch_floor_params = {
                 "name": f"{name_prefix}_Porch_Floor",
                 "type": "StaticMeshActor",
-                "location": [location[0], location[1] - depth/2 - 150, location[2]],
+                "location": [safe_location[0], safe_location[1] - depth/2 - 150, location[2]],
                 "scale": [width/100.0, 3.0, 0.3],
                 "static_mesh": mesh
             }
@@ -960,8 +1354,8 @@ def construct_house(
                     "name": f"{name_prefix}_Porch_Column_{i}",
                     "type": "StaticMeshActor",
                     "location": [
-                        location[0] + x_offset,
-                        location[1] - depth/2 - 250,
+                        safe_location[0] + x_offset,
+                        safe_location[1] - depth/2 - 250,
                         base_z + height/2
                     ],
                     "scale": [0.5, 0.5, height/100.0],
@@ -975,7 +1369,7 @@ def construct_house(
                 porch_roof_params = {
                     "name": f"{name_prefix}_Porch_Roof",
                     "type": "StaticMeshActor",
-                    "location": [location[0], location[1] - depth/2 - 150, base_z + height - 50],
+                    "location": [safe_location[0], safe_location[1] - depth/2 - 150, base_z + height - 50],
                     "scale": [(width + 100)/100.0, 4.0, 0.3],  # Consistent thickness with main roof
                     "static_mesh": mesh
                 }
@@ -989,7 +1383,7 @@ def construct_house(
             garage_params = {
                 "name": f"{name_prefix}_Garage_Door",
                 "type": "StaticMeshActor",
-                "location": [location[0] - width/3, location[1] - depth/2 + wall_thickness/2, base_z + 150],
+                "location": [safe_location[0] - width/3, safe_location[1] - depth/2 + wall_thickness/2, base_z + 150],
                 "scale": [2.5, 0.1, 2.5],
                 "static_mesh": mesh
             }
@@ -1026,6 +1420,15 @@ def create_arch(
         unreal = get_unreal_connection()
         if not unreal:
             return {"success": False, "message": "Failed to connect to Unreal Engine"}
+        
+        # Calculate arch dimensions for spatial awareness
+        arch_width = radius * 2
+        arch_depth = 200  # Arch depth
+        arch_height = radius
+        arch_size = [arch_width, arch_depth, arch_height]
+        
+        # Get safe location
+        safe_location = get_safe_location(location, arch_size, f"{name_prefix}_Arch")
         spawned = []
         angle_step = math.pi / segments
         scale = radius / 300.0 / 2
@@ -1037,7 +1440,7 @@ def create_arch(
             params = {
                 "name": actor_name,
                 "type": "StaticMeshActor",
-                "location": [location[0] + x, location[1], location[2] + z],
+                "location": [safe_location[0] + x, safe_location[1], safe_location[2] + z],
                 "scale": [scale, scale, scale],
                 "static_mesh": mesh
             }
@@ -1178,6 +1581,15 @@ def create_maze(
         unreal = get_unreal_connection()
         if not unreal:
             return {"success": False, "message": "Failed to connect to Unreal Engine"}
+        
+        # Calculate maze dimensions for spatial awareness
+        maze_width = cols * cell_size
+        maze_height = rows * cell_size
+        maze_z_height = wall_height * 100  # Assuming 100 units per wall height
+        maze_size = [maze_width, maze_height, maze_z_height]
+        
+        # Get safe location
+        safe_location = get_safe_location(location, maze_size, "Maze")
             
         import random
         spawned = []
@@ -1221,9 +1633,9 @@ def create_maze(
                 if maze[r][c]:  # If this is a wall
                     # Stack blocks to create wall height
                     for h in range(wall_height):
-                        x_pos = location[0] + (c - maze_width/2) * cell_size
-                        y_pos = location[1] + (r - maze_height/2) * cell_size
-                        z_pos = location[2] + h * cell_size
+                        x_pos = safe_location[0] + (c - maze_width/2) * cell_size
+                        y_pos = safe_location[1] + (r - maze_height/2) * cell_size
+                        z_pos = safe_location[2] + h * cell_size
                         
                         actor_name = f"Maze_Wall_{r}_{c}_{h}"
                         params = {
@@ -1241,9 +1653,9 @@ def create_maze(
         entrance_marker = unreal.send_command("spawn_actor", {
             "name": "Maze_Entrance",
             "type": "StaticMeshActor",
-            "location": [location[0] - maze_width/2 * cell_size - cell_size, 
-                       location[1] + (-maze_height/2 + 1) * cell_size, 
-                       location[2] + cell_size],
+            "location": [safe_location[0] - maze_width/2 * cell_size - cell_size, 
+                       safe_location[1] + (-maze_height/2 + 1) * cell_size, 
+                       safe_location[2] + cell_size],
             "scale": [0.5, 0.5, 0.5],
             "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
         })
@@ -1253,9 +1665,9 @@ def create_maze(
         exit_marker = unreal.send_command("spawn_actor", {
             "name": "Maze_Exit",
             "type": "StaticMeshActor", 
-            "location": [location[0] + maze_width/2 * cell_size + cell_size,
-                       location[1] + (-maze_height/2 + rows * 2 - 1) * cell_size,
-                       location[2] + cell_size],
+            "location": [safe_location[0] + maze_width/2 * cell_size + cell_size,
+                       safe_location[1] + (-maze_height/2 + rows * 2 - 1) * cell_size,
+                       safe_location[2] + cell_size],
             "scale": [0.5, 0.5, 0.5],
             "static_mesh": "/Engine/BasicShapes/Sphere.Sphere"
         })
@@ -1285,10 +1697,18 @@ def create_obstacle_course(
         unreal = get_unreal_connection()
         if not unreal:
             return {"success": False, "message": "Failed to connect to Unreal Engine"}
+        
+        # Calculate obstacle course dimensions for spatial awareness
+        course_length = checkpoints * spacing
+        course_size = [course_length, 200, 400]  # Length, width, height
+        
+        # Get safe location
+        safe_location = get_safe_location(location, course_size, "ObstacleCourse")
+        
         spawned = []
         for i in range(checkpoints):
             actor_name = f"Obstacle_{i}"
-            loc = [location[0] + i * spacing, location[1], location[2]]
+            loc = [safe_location[0] + i * spacing, safe_location[1], safe_location[2]]
             params = {
                 "name": actor_name,
                 "type": "StaticMeshActor",
@@ -1303,281 +1723,8 @@ def create_obstacle_course(
         logger.error(f"create_obstacle_course error: {e}")
         return {"success": False, "message": str(e)}
 
-@mcp.prompt()
-def info():
-    """Information about available Unreal MCP Advanced tools and best practices."""
-    return """
-    # Unreal MCP Advanced Server Tools
-    
-    This streamlined server focuses on advanced composition and building tools for Unreal Engine.
-    Total tools: ~25 (enhanced with architectural features + town generation)
-    
-    ## Essential Actor Management
-    - `get_actors_in_level()` - List all actors in current level
-    - `find_actors_by_name(pattern)` - Find actors by name pattern
-    - `spawn_actor(name, type, location, rotation)` - Create basic actors
-    - `delete_actor(name)` - Remove actors
-    - `set_actor_transform(name, location, rotation, scale)` - Modify transforms
-    
-    ## Essential Blueprint Tools (for physics actors)
-    - `create_blueprint(name, parent_class)` - Create Blueprint classes
-    - `add_component_to_blueprint(blueprint_name, component_type, component_name)` - Add components
-    - `set_static_mesh_properties(blueprint_name, component_name, static_mesh)` - Set meshes
-    - `set_physics_properties(blueprint_name, component_name, ...)` - Configure physics
-    - `compile_blueprint(blueprint_name)` - Compile changes
-    - `spawn_blueprint_actor(blueprint_name, actor_name, location)` - Spawn from Blueprint
-    - `set_mesh_material_color(blueprint_name, component_name, color, material_path, parameter_name)` - **NEW** Set colors on mesh components
-    
-    ## Advanced Composition Tools (Enhanced)
-    - `create_pyramid(base_size, block_size, location, name_prefix, mesh)` - Build pyramids
-    - `create_wall(length, height, block_size, location, orientation, name_prefix, mesh)` - Generate walls
-    - `create_tower(height, base_size, block_size, location, name_prefix, mesh, tower_style)` - **ENHANCED** Architectural towers with styles: cylindrical, square, tapered + decorative elements
-    - `create_staircase(steps, step_size, location, name_prefix, mesh)` - Build staircases
-    - `construct_house(width, depth, height, location, name_prefix, mesh, house_style)` - **ENHANCED** Realistic houses with foundations, rooms, windows, doors, pitched roofs, chimneys (styles: modern, cottage, mansion)
-    - `create_arch(radius, segments, location, name_prefix, mesh)` - Arch structures
-    - `spawn_physics_actor(name, mesh_path, location, mass, simulate_physics, gravity_enabled)` - Physics objects
-    - `create_bouncy_ball(name, location)` - Convenience bouncing sphere
-    - `create_maze(rows, cols, cell_size, wall_height, location)` - **ENHANCED** Solvable mazes with recursive backtracking algorithm, entrance/exit markers
-    - `create_obstacle_course(checkpoints, spacing, location)` - Obstacle courses
-    - `spawn_mannequin(name, location, rotation, mannequin_type)` - **NEW** Spawn Unreal mannequins (types: default, manny, quinn) with fallbacks
-    
-    ## Ultimate Town Generation System (NEW!)
-    - `create_town(town_size, building_density, location, name_prefix, include_infrastructure, architectural_style)` - **REVOLUTIONARY** Create complete dynamic towns with full infrastructure
-    
-    ## Enhanced Features
-    
-    ### Town Generation System (`create_town`) - The Crown Jewel
-    This is the most advanced tool in the system, intelligently orchestrating all other tools to create living, breathing towns:
-    
-    **Town Sizes:**
-    - **Small**: 3x3 blocks, ~15 buildings, residential focus
-    - **Medium**: 5x5 blocks, ~35 buildings, mixed residential/commercial
-    - **Large**: 7x7 blocks, ~60 buildings, urban environment
-    - **Metropolis**: 10x10 blocks, ~100 buildings, dense cityscape
-    
-    **Dynamic Features:**
-    - **Smart street grid**: Automatically creates intersecting streets with proper asphalt coloring
-    - **Varied buildings**: Randomly places houses, mansions, towers, and commercial buildings
-    - **Colorful infrastructure**: Street lights with warm lighting, colorful vehicles (red, blue, green, yellow, etc.)
-    - **Living population**: Spawns mannequins throughout the town for realism
-    - **Parks & nature**: Creates green spaces with brown tree trunks and green foliage
-    - **Full randomization**: Every town generation creates unique layouts and building combinations
-    
-    **Building Variety:**
-    - **Houses**: Randomly sized cottages and modern homes in browns/beiges
-    - **Mansions**: Large luxury homes with porches and columns in whites/grays  
-    - **Towers**: Cylindrical, square, or tapered towers in dark grays
-    - **Commercial**: Office/store buildings in light grays
-    
-    **Infrastructure Elements:**
-    - **Gray asphalt streets** in perfect grid pattern
-    - **Street lights** with dark gray poles and warm white lights
-    - **Colorful vehicles** randomly distributed on streets
-    - **Green parks** with brown tree trunks and green spherical foliage
-    - **Population** of varied mannequin types walking around
-    
-    ### Architectural Towers (`create_tower`)
-    - **Cylindrical towers**: Circular arrangement of blocks
-    - **Square towers**: Hollow square towers with proper walls
-    - **Tapered towers**: Towers that narrow toward the top
-    - **Decorative elements**: Corner details added every 3 levels
-    
-    ### Realistic Houses (`construct_house`)
-    - **Foundations**: Proper foundation blocks beneath the house
-    - **Multiple rooms**: Interior walls creating separate spaces
-    - **Windows and doors**: Realistic openings with proper placement
-    - **Flat roofs**: Clean flat roofing with proper overhang
-    - **Chimneys**: Added for cottage and mansion styles
-    - **Style variations**: Modern, cottage, and mansion with different proportions
-    
-    ### Solvable Mazes (`create_maze`)
-    - **Guaranteed solution**: Uses recursive backtracking algorithm
-    - **Entrance marker**: Cylinder marker at maze entrance
-    - **Exit marker**: Sphere marker at maze exit
-    - **Proper pathways**: No closed-off areas, always has solution path
-    
-    ### Mannequin Spawning (`spawn_mannequin`)
-    - **Multiple attempts**: Tries various Unreal Engine mannequin asset paths
-    - **Fallback options**: Falls back to static mesh if skeletal mesh fails
-    - **Primitive fallback**: Creates basic humanoid using primitive shapes if no assets found
-    - **Character types**: Supports manny, quinn, and default variations
-    
-    ### Color System (`set_mesh_material_color`)
-    - **Full RGBA support**: [R, G, B, A] values from 0.0 to 1.0
-    - **Common colors**: Red [1,0,0,1], Blue [0,0,1,1], Green [0,1,0,1], Yellow [1,1,0,1], etc.
-    - **Material compatibility**: Works with Engine/BasicShapes/BasicShapeMaterial
-    - **Parameter flexibility**: Supports BaseColor and Color parameters
-    
-    ## Best Practices
-    
-    ### Town Generation
-    - **Start with create_town()** - This is the ultimate tool that showcases everything
-    - **Experiment with sizes**: Try "small", "medium", "large", "metropolis"
-    - **Adjust density**: Use 0.4-0.8 for realistic spacing, 1.0 for maximum density
-    - **Try architectural styles**: "mixed" for variety, or "modern"/"cottage"/"mansion" for themed towns
-    - **Enable infrastructure**: Always use include_infrastructure=True for complete towns
-    - **Plan space**: Towns can be 3km+ wide (metropolis), ensure adequate space
-    
-    ### Advanced Composition
-    - Use meaningful name_prefix values to organize generated objects
-    - Plan locations to avoid overlapping structures
-    - Consider performance implications of large compositions (metropolis = 500+ actors)
-    - Use appropriate mesh paths for visual variety
-    - Clean up test structures regularly
-    - Take advantage of architectural styles for variety
-    
-    ### Color Usage
-    - Apply colors before spawning for best results
-    - Use realistic color palettes (browns for houses, grays for streets/towers)
-    - Experiment with vibrant colors for vehicles and decorations
-    - Always include alpha channel (1.0 for full opacity)
-    
-    ### Enhanced Features Usage
-    - Try different tower_style values: "cylindrical", "square", "tapered"
-    - Experiment with house_style options: "modern", "cottage", "mansion"
-    - Use larger maze dimensions (8x8 or bigger) for interesting challenges
-    - Place mannequins to populate your scenes with characters
-    
-    ### Physics Objects
-    - Place physics actors above ground level to observe falling
-    - Adjust mass values for realistic behavior
-    - Use create_bouncy_ball for quick physics testing
-    - Compile Blueprints after physics property changes
-    
-    ### Error Handling
-    - Check command responses for success status
-    - Use unique names to avoid conflicts
-    - Validate parameters before complex operations
-    - Handle Unreal Engine connection issues gracefully
-    
-    ### Performance Tips
-    - Group related operations together
-    - Use batched creation for large structures
-    - Consider LOD implications for many objects (metropolis towns create 500+ actors)
-    - Clean up temporary Blueprints when done
-    - Be mindful of complex structures like detailed houses and large towns
-    - Test with smaller towns first, then scale up to metropolis
-    
-    ## Quick Start Examples
-    
-    ### Create Your First Town
-    ```
-    create_town(town_size="medium", building_density=0.7, location=[0, 0, 0])
-    ```
-    
-    ### Create a Large Mixed-Style Town
-    ```
-    create_town(town_size="large", building_density=0.8, architectural_style="mixed", include_infrastructure=True)
-    ```
-    
-    ### Create a Mansion District
-    ```
-    create_town(town_size="small", building_density=0.5, architectural_style="mansion")
-    ```
-    """
 
-@mcp.tool()
-def spawn_mannequin(
-    name: str = "Mannequin",
-    location: List[float] = [0.0, 0.0, 0.0],
-    rotation: List[float] = [0.0, 0.0, 0.0],
-    mannequin_type: str = "default"  # "default", "manny", "quinn"
-) -> Dict[str, Any]:
-    """Spawn an Unreal Engine mannequin character at the specified location."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "message": "Failed to connect to Unreal Engine"}
-        
-        # Determine which mannequin mesh to use
-        mesh_path = "/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple"
-        if mannequin_type.lower() == "manny":
-            mesh_path = "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple"
-        elif mannequin_type.lower() == "quinn":
-            mesh_path = "/Game/Characters/Mannequins/Meshes/SKM_Quinn_Simple"
-        
-        # Try common Unreal Engine mannequin paths
-        possible_paths = [
-            mesh_path,
-            "/Game/Characters/Mannequins/Meshes/SKM_Quinn",
-            "/Game/Characters/Mannequins/Meshes/SKM_Manny", 
-            "/Engine/Characters/Mannequins/Meshes/SKM_Quinn",
-            "/Engine/Characters/Mannequins/Meshes/SKM_Manny",
-            "/Game/ThirdPerson/Characters/Mannequins/Meshes/SKM_Quinn_Simple",
-            "/Game/ThirdPerson/Characters/Mannequins/Meshes/SKM_Manny_Simple"
-        ]
-        
-        # Skip trying SkeletalMeshActor since it's not supported, go directly to StaticMeshActor
-        logger.info("Trying to spawn mannequin as static mesh actor...")
-        
-        for mesh_path in possible_paths:
-            params = {
-                "name": f"{name}_{mannequin_type}_Static",
-                "type": "StaticMeshActor", 
-                "location": location,
-                "rotation": rotation,
-                "static_mesh": mesh_path
-            }
-            
-            resp = unreal.send_command("spawn_actor", params)
-            # Check for proper response format from Unreal
-            if resp and resp.get("success") == True:
-                return {
-                    "success": True,
-                    "actor": resp,
-                    "mannequin_type": mannequin_type,
-                    "mesh_used": mesh_path,
-                    "message": f"Spawned {mannequin_type} mannequin as static mesh at {location}"
-                }
-            # If we get "Actor already exists" error, return early - don't try to create primitive humanoid
-            elif resp and resp.get("success") == False and "already exists" in resp.get("message", ""):
-                logger.warning(f"Actor {name}_{mannequin_type}_Static already exists, skipping...")
-                return {
-                    "success": True,  # This should be success since the actor already exists
-                    "message": f"Mannequin {name}_{mannequin_type}_Static already exists"
-                }
-        
-        # Final fallback: spawn a basic humanoid shape
-        logger.info("Mannequin meshes not found, creating basic humanoid figure...")
-        
-        # Create basic humanoid using primitive shapes
-        body_parts = []
-        
-        # Try to create each body part, but don't fail if some already exist
-        parts_to_create = [
-            (f"{name}_Body", [location[0], location[1], location[2] + 150], [0.8, 0.4, 1.5], "/Engine/BasicShapes/Cube.Cube"),
-            (f"{name}_Head", [location[0], location[1], location[2] + 275], [0.5, 0.5, 0.5], "/Engine/BasicShapes/Sphere.Sphere"),
-            (f"{name}_Arm_Left", [location[0], location[1] - 60, location[2] + 150], [0.3, 0.3, 1.2], "/Engine/BasicShapes/Cylinder.Cylinder"),
-            (f"{name}_Arm_Right", [location[0], location[1] + 60, location[2] + 150], [0.3, 0.3, 1.2], "/Engine/BasicShapes/Cylinder.Cylinder"),
-            (f"{name}_Leg_Left", [location[0], location[1] - 30, location[2] + 25], [0.3, 0.3, 1.0], "/Engine/BasicShapes/Cylinder.Cylinder"),
-            (f"{name}_Leg_Right", [location[0], location[1] + 30, location[2] + 25], [0.3, 0.3, 1.0], "/Engine/BasicShapes/Cylinder.Cylinder")
-        ]
-        
-        for part_name, part_location, part_scale, mesh_path in parts_to_create:
-            part_resp = unreal.send_command("spawn_actor", {
-                "name": part_name,
-                "type": "StaticMeshActor",
-                "location": part_location,
-                "scale": part_scale,
-                "static_mesh": mesh_path
-            })
-            if part_resp and part_resp.get("success") == True:
-                body_parts.append(part_resp)
-            elif part_resp and part_resp.get("success") == False and "already exists" in part_resp.get("message", ""):
-                logger.info(f"Body part {part_name} already exists, skipping...")
-        
-        return {
-            "success": True,
-            "actors": body_parts,
-            "mannequin_type": "primitive_humanoid",
-            "message": f"Created basic humanoid figure at {location} using primitive shapes"
-        }
-        
-    except Exception as e:
-        logger.error(f"spawn_mannequin error: {e}")
-        return {"success": False, "message": str(e)}
-
-# Missing Material Color Function
+# Material Color Function
 @mcp.tool()
 def set_mesh_material_color(
     blueprint_name: str,
@@ -1656,6 +1803,18 @@ def create_town(
         if not unreal:
             return {"success": False, "message": "Failed to connect to Unreal Engine"}
         
+        # Calculate town dimensions based on size
+        town_sizes = {
+            "small": 8, "medium": 12, "large": 16, "metropolis": 24
+        }
+        blocks = town_sizes.get(town_size, 12)
+        block_size = 1000
+        town_width = blocks * block_size
+        town_size_array = [town_width, town_width, 800]  # Width, depth, height
+        
+        # Get safe location
+        safe_location = get_safe_location(location, town_size_array, f"{name_prefix}_Town")
+        
         logger.info(f"Creating {town_size} town with {building_density} density at {location}")
         
         # Define town parameters based on size
@@ -1679,7 +1838,7 @@ def create_town(
         
         # Create street grid first
         logger.info("Creating street grid...")
-        street_results = _create_street_grid(blocks, block_size, street_width, location, name_prefix)
+        street_results = helper_create_street_grid(unreal, set_actor_transform, blocks, block_size, street_width, safe_location, name_prefix)
         all_spawned.extend(street_results.get("actors", []))
         
         # Create buildings in each block
@@ -1694,8 +1853,9 @@ def create_town(
                 if random.random() > building_density:
                     continue
                 
-                block_center_x = location[0] + (block_x - blocks/2) * block_size
-                block_center_y = location[1] + (block_y - blocks/2) * block_size
+                # Place buildings at block positions (aligned with grid)
+                block_center_x = safe_location[0] + (block_x - blocks/2) * block_size
+                block_center_y = safe_location[1] + (block_y - blocks/2) * block_size
                 
                 # Randomly choose building type based on style and location
                 if architectural_style == "downtown" or architectural_style == "futuristic":
@@ -1713,13 +1873,17 @@ def create_town(
                 building_type = random.choice(building_types)
                 
                 # Create building with variety
-                building_result = _create_town_building(
-                    building_type, 
+                building_result = helper_create_town_building(
+                    unreal,
+                    set_actor_transform,
+                    construct_house,
+                    create_tower,
                     [block_center_x, block_center_y, location[2]],
                     building_area,
                     max_height,
                     f"{name_prefix}_Building_{block_x}_{block_y}",
-                    building_count
+                    building_count,
+                    building_type,
                 )
                 
                 if building_result.get("success"):
@@ -1732,56 +1896,53 @@ def create_town(
             logger.info("Adding infrastructure...")
             
             # Street lights
-            light_results = _create_street_lights(blocks, block_size, location, name_prefix)
+            light_results = helper_create_street_lights(unreal, set_actor_transform, blocks, block_size, location, name_prefix)
             all_spawned.extend(light_results.get("actors", []))
             infrastructure_count += len(light_results.get("actors", []))
             
             # Vehicles
-            vehicle_results = _create_town_vehicles(blocks, block_size, street_width, location, name_prefix, target_population // 3)
+            vehicle_results = helper_create_town_vehicles(unreal, set_actor_transform, blocks, block_size, location, name_prefix, target_population // 3)
             all_spawned.extend(vehicle_results.get("actors", []))
             infrastructure_count += len(vehicle_results.get("actors", []))
             
             # Parks and decorations
-            decoration_results = _create_town_decorations(blocks, block_size, location, name_prefix)
+            decoration_results = helper_create_town_decorations(unreal, set_actor_transform, blocks, block_size, location, name_prefix)
             all_spawned.extend(decoration_results.get("actors", []))
             infrastructure_count += len(decoration_results.get("actors", []))
             
-            # Mannequins for population
-            population_results = _create_town_population(blocks, block_size, location, name_prefix, target_population // 4)
-            all_spawned.extend(population_results.get("actors", []))
-            infrastructure_count += len(population_results.get("actors", []))
+
             
             # Add advanced infrastructure
             logger.info("Adding advanced infrastructure...")
             
             # Traffic lights at intersections
-            traffic_results = _create_traffic_lights(blocks, block_size, location, name_prefix)
+            traffic_results = helper_create_traffic_lights(unreal, blocks, block_size, location, name_prefix)
             all_spawned.extend(traffic_results.get("actors", []))
             infrastructure_count += len(traffic_results.get("actors", []))
             
             # Street signs and billboards
-            signage_results = _create_street_signage(blocks, block_size, location, name_prefix, town_size)
+            signage_results = helper_create_street_signage(unreal, blocks, block_size, location, name_prefix, town_size)
             all_spawned.extend(signage_results.get("actors", []))
             infrastructure_count += len(signage_results.get("actors", []))
             
             # Sidewalks and crosswalks
-            sidewalk_results = _create_sidewalks_crosswalks(blocks, block_size, street_width, location, name_prefix)
+            sidewalk_results = helper_create_sidewalks_crosswalks(unreal, blocks, block_size, street_width, location, name_prefix)
             all_spawned.extend(sidewalk_results.get("actors", []))
             infrastructure_count += len(sidewalk_results.get("actors", []))
             
             # Urban furniture (benches, trash cans, bus stops)
-            furniture_results = _create_urban_furniture(blocks, block_size, location, name_prefix)
+            furniture_results = helper_create_urban_furniture(unreal, blocks, block_size, location, name_prefix)
             all_spawned.extend(furniture_results.get("actors", []))
             infrastructure_count += len(furniture_results.get("actors", []))
             
             # Parking meters and hydrants
-            utility_results = _create_street_utilities(blocks, block_size, location, name_prefix)
+            utility_results = helper_create_street_utilities(unreal, blocks, block_size, location, name_prefix)
             all_spawned.extend(utility_results.get("actors", []))
             infrastructure_count += len(utility_results.get("actors", []))
             
             # Add plaza/square in center for large towns
             if town_size in ["large", "metropolis"]:
-                plaza_results = _create_central_plaza(blocks, block_size, location, name_prefix)
+                plaza_results = helper_create_central_plaza(unreal, location, block_size, name_prefix)
                 all_spawned.extend(plaza_results.get("actors", []))
                 infrastructure_count += len(plaza_results.get("actors", []))
         
@@ -1804,1632 +1965,6 @@ def create_town(
         logger.error(f"create_town error: {e}")
         return {"success": False, "message": str(e)}
 
-def _create_street_grid(blocks: int, block_size: float, street_width: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create a grid of streets for the town."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        streets = []
-        
-        # Create horizontal streets
-        for i in range(blocks + 1):
-            street_y = location[1] + (i - blocks/2) * block_size
-            for j in range(blocks):
-                street_x = location[0] + (j - blocks/2 + 0.5) * block_size
-                
-                actor_name = f"{name_prefix}_Street_H_{i}_{j}"
-                
-                # Simple street spawn
-                result = unreal.send_command("spawn_actor", {
-                    "name": actor_name,
-                    "type": "StaticMeshActor",
-                    "location": [street_x, street_y, location[2] - 5]
-                })
-                
-                # Scale the street segment
-                if result and result.get("status") == "success":
-                    set_actor_transform(
-                        actor_name,
-                        scale=[block_size/100.0 * 0.7, street_width/100.0, 0.1]
-                    )
-                    streets.append(result.get("result"))
-        
-        # Create vertical streets
-        for i in range(blocks + 1):
-            street_x = location[0] + (i - blocks/2) * block_size
-            for j in range(blocks):
-                street_y = location[1] + (j - blocks/2 + 0.5) * block_size
-                
-                actor_name = f"{name_prefix}_Street_V_{i}_{j}"
-                
-                # Simple street spawn
-                result = unreal.send_command("spawn_actor", {
-                    "name": actor_name,
-                    "type": "StaticMeshActor",
-                    "location": [street_x, street_y, location[2] - 5]
-                })
-                
-                # Scale the street segment
-                if result and result.get("status") == "success":
-                    set_actor_transform(
-                        actor_name,
-                        scale=[street_width/100.0, block_size/100.0 * 0.7, 0.1]
-                    )
-                    streets.append(result.get("result"))
-        
-        return {"success": True, "actors": streets}
-        
-    except Exception as e:
-        logger.error(f"_create_street_grid error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_town_building(building_type: str, location: List[float], max_size: float, max_height: int, name_prefix: str, building_id: int) -> Dict[str, Any]:
-    """Create a single building with variety."""
-    try:
-        import random
-        
-        # Add random offset within the building area
-        offset_x = random.uniform(-max_size/4, max_size/4)
-        offset_y = random.uniform(-max_size/4, max_size/4)
-        building_loc = [location[0] + offset_x, location[1] + offset_y, location[2]]
-        
-        if building_type == "house":
-            # Random house size and style
-            styles = ["modern", "cottage"]
-            width = random.randint(800, 1200)
-            depth = random.randint(600, 1000)
-            height = random.randint(300, 500)
-            
-            result = construct_house(
-                width=width,
-                depth=depth, 
-                height=height,
-                location=building_loc,
-                name_prefix=f"{name_prefix}_{building_id}",
-                house_style=random.choice(styles)
-            )
-            
-        elif building_type == "mansion":
-            result = construct_house(
-                width=random.randint(1500, 2000),
-                depth=random.randint(1200, 1600),
-                height=random.randint(500, 700),
-                location=building_loc,
-                name_prefix=f"{name_prefix}_Mansion_{building_id}",
-                house_style="mansion"
-            )
-            
-        elif building_type == "tower":
-            tower_height = random.randint(max_height//2, max_height)
-            base_size = random.randint(3, 6)
-            styles = ["cylindrical", "square", "tapered"]
-            
-            result = create_tower(
-                height=tower_height,
-                base_size=base_size,
-                location=building_loc,
-                name_prefix=f"{name_prefix}_Tower_{building_id}",
-                tower_style=random.choice(styles)
-            )
-            
-        elif building_type == "skyscraper":
-            # Create impressive skyscrapers
-            result = _create_skyscraper(
-                height=random.randint(max(20, max_height//2), max_height),
-                base_width=random.randint(600, 1000),
-                base_depth=random.randint(600, 1000),
-                location=building_loc,
-                name_prefix=f"{name_prefix}_Skyscraper_{building_id}"
-            )
-            
-        elif building_type == "office_tower":
-            # Modern office building with glass facade
-            result = _create_office_tower(
-                floors=random.randint(10, max(15, max_height//2)),
-                width=random.randint(800, 1200),
-                depth=random.randint(800, 1200),
-                location=building_loc,
-                name_prefix=f"{name_prefix}_Office_{building_id}"
-            )
-            
-        elif building_type == "apartment_complex":
-            # Multi-unit residential building
-            result = _create_apartment_complex(
-                floors=random.randint(5, max(10, max_height//3)),
-                units_per_floor=random.randint(4, 8),
-                location=building_loc,
-                name_prefix=f"{name_prefix}_Apartments_{building_id}"
-            )
-            
-        elif building_type == "shopping_mall":
-            # Large retail complex
-            result = _create_shopping_mall(
-                width=random.randint(1500, 2500),
-                depth=random.randint(1500, 2500),
-                floors=random.randint(2, 4),
-                location=building_loc,
-                name_prefix=f"{name_prefix}_Mall_{building_id}"
-            )
-            
-        elif building_type == "parking_garage":
-            # Multi-level parking structure
-            result = _create_parking_garage(
-                levels=random.randint(3, 6),
-                width=random.randint(1000, 1500),
-                depth=random.randint(800, 1200),
-                location=building_loc,
-                name_prefix=f"{name_prefix}_Parking_{building_id}"
-            )
-            
-        elif building_type == "hotel":
-            # Luxury hotel building
-            result = _create_hotel(
-                floors=random.randint(10, max(20, max_height//2)),
-                width=random.randint(1000, 1500),
-                depth=random.randint(800, 1200),
-                location=building_loc,
-                name_prefix=f"{name_prefix}_Hotel_{building_id}"
-            )
-            
-        elif building_type == "restaurant":
-            # Small restaurant/cafe
-            result = _create_restaurant(
-                width=random.randint(600, 1000),
-                depth=random.randint(500, 800),
-                location=building_loc,
-                name_prefix=f"{name_prefix}_Restaurant_{building_id}"
-            )
-            
-        elif building_type == "store":
-            # Small retail store
-            result = _create_store(
-                width=random.randint(500, 800),
-                depth=random.randint(400, 600),
-                location=building_loc,
-                name_prefix=f"{name_prefix}_Store_{building_id}"
-            )
-            
-        elif building_type == "apartment_building":
-            # Smaller apartment building
-            result = _create_apartment_building(
-                floors=random.randint(3, 5),
-                width=random.randint(800, 1200),
-                depth=random.randint(600, 1000),
-                location=building_loc,
-                name_prefix=f"{name_prefix}_AptBuilding_{building_id}"
-            )
-            
-        else:  # commercial fallback
-            # Create a simple commercial building (large rectangular)
-            result = construct_house(
-                width=random.randint(1000, 1500),
-                depth=random.randint(800, 1200),
-                height=random.randint(400, 600),
-                location=building_loc,
-                name_prefix=f"{name_prefix}_Commercial_{building_id}",
-                house_style="modern"
-            )
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"_create_town_building error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_street_lights(blocks: int, block_size: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create street lights throughout the town."""
-    try:
-        import random
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        lights = []
-        
-        # Place lights at street intersections and along streets
-        for i in range(blocks + 1):
-            for j in range(blocks + 1):
-                # Skip some randomly for variety
-                if random.random() > 0.7:
-                    continue
-                    
-                light_x = location[0] + (i - blocks/2) * block_size
-                light_y = location[1] + (j - blocks/2) * block_size
-                
-                # Create pole (simple cylinder)
-                pole_name = f"{name_prefix}_LightPole_{i}_{j}"
-                pole_result = unreal.send_command("spawn_actor", {
-                    "name": pole_name,
-                    "type": "StaticMeshActor", 
-                    "location": [light_x, light_y, location[2] + 200]
-                })
-                if pole_result and pole_result.get("status") == "success":
-                    set_actor_transform(pole_name, scale=[0.2, 0.2, 4.0])
-                    lights.append(pole_result.get("result"))
-                
-                # Create light (simple sphere)
-                light_name = f"{name_prefix}_Light_{i}_{j}"
-                light_result = unreal.send_command("spawn_actor", {
-                    "name": light_name,
-                    "type": "StaticMeshActor",
-                    "location": [light_x, light_y, location[2] + 380]
-                })
-                if light_result and light_result.get("status") == "success":
-                    set_actor_transform(light_name, scale=[0.3, 0.3, 0.3])
-                    lights.append(light_result.get("result"))
-        
-        return {"success": True, "actors": lights}
-        
-    except Exception as e:
-        logger.error(f"_create_street_lights error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_town_vehicles(blocks: int, block_size: float, street_width: float, location: List[float], name_prefix: str, vehicle_count: int) -> Dict[str, Any]:
-    """Create vehicles throughout the town."""
-    try:
-        import random
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        vehicles = []
-        
-        for i in range(vehicle_count):
-            # Random position on streets
-            street_x = location[0] + random.uniform(-blocks*block_size/2, blocks*block_size/2)
-            street_y = location[1] + random.uniform(-blocks*block_size/2, blocks*block_size/2)
-            
-            # Create simple car (basic cube)
-            car_name = f"{name_prefix}_Car_{i}"
-            car_result = unreal.send_command("spawn_actor", {
-                "name": car_name,
-                "type": "StaticMeshActor",
-                "location": [street_x, street_y, location[2] + 50]
-            })
-            
-            if car_result and car_result.get("status") == "success":
-                # Scale to car proportions
-                set_actor_transform(car_name, scale=[4.0, 2.0, 1.5])
-                vehicles.append(car_result.get("result"))
-        
-        return {"success": True, "actors": vehicles}
-        
-    except Exception as e:
-        logger.error(f"_create_town_vehicles error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_town_decorations(blocks: int, block_size: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create parks, trees, and other decorative elements."""
-    try:
-        import random
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        decorations = []
-        
-        # Create a few parks with trees
-        num_parks = max(1, blocks // 3)
-        for park_id in range(num_parks):
-            park_x = location[0] + random.uniform(-blocks*block_size/3, blocks*block_size/3)
-            park_y = location[1] + random.uniform(-blocks*block_size/3, blocks*block_size/3)
-            
-            # Create several trees in each park
-            trees_per_park = random.randint(3, 8)
-            for tree_id in range(trees_per_park):
-                tree_x = park_x + random.uniform(-200, 200)
-                tree_y = park_y + random.uniform(-200, 200)
-                
-                # Tree trunk (simple cylinder)
-                trunk_name = f"{name_prefix}_TreeTrunk_{park_id}_{tree_id}"
-                trunk_result = unreal.send_command("spawn_actor", {
-                    "name": trunk_name,
-                    "type": "StaticMeshActor",
-                    "location": [tree_x, tree_y, location[2] + 150]
-                })
-                if trunk_result and trunk_result.get("status") == "success":
-                    set_actor_transform(trunk_name, scale=[0.5, 0.5, 3.0])
-                    decorations.append(trunk_result.get("result"))
-                
-                # Tree leaves (simple sphere)
-                leaves_name = f"{name_prefix}_TreeLeaves_{park_id}_{tree_id}"
-                leaves_result = unreal.send_command("spawn_actor", {
-                    "name": leaves_name,
-                    "type": "StaticMeshActor",
-                    "location": [tree_x, tree_y, location[2] + 350]
-                })
-                if leaves_result and leaves_result.get("status") == "success":
-                    set_actor_transform(leaves_name, scale=[2.0, 2.0, 2.0])
-                    decorations.append(leaves_result.get("result"))
-        
-        return {"success": True, "actors": decorations}
-        
-    except Exception as e:
-        logger.error(f"_create_town_decorations error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_town_population(blocks: int, block_size: float, location: List[float], name_prefix: str, population_count: int) -> Dict[str, Any]:
-    """Create mannequins to populate the town."""
-    try:
-        import random
-        population = []
-        
-        mannequin_types = ["default", "manny", "quinn"]
-        
-        for i in range(population_count):
-            # Random position throughout town
-            person_x = location[0] + random.uniform(-blocks*block_size/2, blocks*block_size/2) 
-            person_y = location[1] + random.uniform(-blocks*block_size/2, blocks*block_size/2)
-            person_rotation = [0, 0, random.uniform(0, 360)]
-            
-            mannequin_type = random.choice(mannequin_types)
-            
-            result = spawn_mannequin(
-                name=f"{name_prefix}_Person_{i}",
-                location=[person_x, person_y, location[2] + 5],
-                rotation=person_rotation,
-                mannequin_type=mannequin_type
-            )
-            
-            # Only add to population if successful, but continue loop either way
-            if result.get("success", False):
-                if "actors" in result:
-                    population.extend(result["actors"])
-                elif "actor" in result:
-                    population.append(result["actor"])
-            else:
-                logger.info(f"Skipping person {i}: {result.get('message', 'Unknown error')}")
-        
-        return {"success": True, "actors": population}
-        
-    except Exception as e:
-        logger.error(f"_create_town_population error: {e}")
-        return {"success": False, "actors": []}
-
-# New building creation functions for impressive structures
-def _create_skyscraper(height: int, base_width: float, base_depth: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create an impressive skyscraper with multiple sections and details."""
-    try:
-        import random
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        actors = []
-        floor_height = 150.0  # Standard floor height
-        
-        # Create foundation
-        foundation_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Foundation",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] - 30],
-            "scale": [(base_width + 200)/100.0, (base_depth + 200)/100.0, 0.6],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if foundation_result and foundation_result.get("status") == "success":
-            actors.append(foundation_result.get("result"))
-        
-        # Create main tower in sections for tapering effect
-        sections = min(5, height // 5)
-        current_width = base_width
-        current_depth = base_depth
-        current_height = location[2]
-        
-        for section in range(sections):
-            section_floors = height // sections
-            if section == sections - 1:
-                section_floors += height % sections  # Add remainder to last section
-            
-            # Taper the building
-            taper_factor = 1 - (section * 0.1)
-            current_width = base_width * max(0.6, taper_factor)
-            current_depth = base_depth * max(0.6, taper_factor)
-            
-            # Create main structure for this section
-            section_height = section_floors * floor_height
-            section_result = unreal.send_command("spawn_actor", {
-                "name": f"{name_prefix}_Section_{section}",
-                "type": "StaticMeshActor",
-                "location": [location[0], location[1], current_height + section_height/2],
-                "scale": [current_width/100.0, current_depth/100.0, section_height/100.0],
-                "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-            })
-            if section_result and section_result.get("status") == "success":
-                actors.append(section_result.get("result"))
-            
-            # Add setback/balcony every few floors
-            if section < sections - 1:
-                balcony_result = unreal.send_command("spawn_actor", {
-                    "name": f"{name_prefix}_Balcony_{section}",
-                    "type": "StaticMeshActor",
-                    "location": [location[0], location[1], current_height + section_height - 25],
-                    "scale": [(current_width + 100)/100.0, (current_depth + 100)/100.0, 0.5],
-                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                })
-                if balcony_result and balcony_result.get("status") == "success":
-                    actors.append(balcony_result.get("result"))
-            
-            current_height += section_height
-        
-        # Add rooftop features
-        # Antenna/spire
-        spire_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Spire",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], current_height + 300],
-            "scale": [0.2, 0.2, 6.0],
-            "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-        })
-        if spire_result and spire_result.get("status") == "success":
-            actors.append(spire_result.get("result"))
-        
-        # Rooftop equipment
-        for i in range(3):
-            equipment_x = location[0] + random.uniform(-current_width/4, current_width/4)
-            equipment_y = location[1] + random.uniform(-current_depth/4, current_depth/4)
-            equipment_result = unreal.send_command("spawn_actor", {
-                "name": f"{name_prefix}_RoofEquipment_{i}",
-                "type": "StaticMeshActor",
-                "location": [equipment_x, equipment_y, current_height + 50],
-                "scale": [1.0, 1.0, 1.0],
-                "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-            })
-            if equipment_result and equipment_result.get("status") == "success":
-                actors.append(equipment_result.get("result"))
-        
-        return {"success": True, "actors": actors}
-        
-    except Exception as e:
-        logger.error(f"_create_skyscraper error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_office_tower(floors: int, width: float, depth: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create a modern office tower with glass facade appearance."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        actors = []
-        floor_height = 140.0
-        
-        # Foundation
-        foundation_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Foundation",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] - 15],
-            "scale": [(width + 100)/100.0, (depth + 100)/100.0, 0.3],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if foundation_result and foundation_result.get("status") == "success":
-            actors.append(foundation_result.get("result"))
-        
-        # Lobby (taller first floor)
-        lobby_height = floor_height * 1.5
-        lobby_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Lobby",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + lobby_height/2],
-            "scale": [width/100.0, depth/100.0, lobby_height/100.0],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if lobby_result and lobby_result.get("status") == "success":
-            actors.append(lobby_result.get("result"))
-        
-        # Main tower
-        tower_height = (floors - 1) * floor_height
-        tower_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Tower",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + lobby_height + tower_height/2],
-            "scale": [width/100.0, depth/100.0, tower_height/100.0],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if tower_result and tower_result.get("status") == "success":
-            actors.append(tower_result.get("result"))
-        
-        # Add window bands every few floors for glass facade effect
-        for floor in range(2, floors, 3):
-            band_height = location[2] + lobby_height + (floor - 1) * floor_height
-            band_result = unreal.send_command("spawn_actor", {
-                "name": f"{name_prefix}_WindowBand_{floor}",
-                "type": "StaticMeshActor",
-                "location": [location[0], location[1], band_height],
-                "scale": [(width + 20)/100.0, (depth + 20)/100.0, 0.2],
-                "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-            })
-            if band_result and band_result.get("status") == "success":
-                actors.append(band_result.get("result"))
-        
-        # Rooftop
-        rooftop_height = location[2] + lobby_height + tower_height
-        rooftop_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Rooftop",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], rooftop_height + 30],
-            "scale": [(width - 100)/100.0, (depth - 100)/100.0, 0.6],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if rooftop_result and rooftop_result.get("status") == "success":
-            actors.append(rooftop_result.get("result"))
-        
-        return {"success": True, "actors": actors}
-        
-    except Exception as e:
-        logger.error(f"_create_office_tower error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_apartment_complex(floors: int, units_per_floor: int, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create a multi-unit residential complex with balconies."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        actors = []
-        floor_height = 120.0
-        width = 200 * units_per_floor // 2
-        depth = 800
-        
-        # Foundation
-        foundation_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Foundation",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] - 15],
-            "scale": [(width + 100)/100.0, (depth + 100)/100.0, 0.3],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if foundation_result and foundation_result.get("status") == "success":
-            actors.append(foundation_result.get("result"))
-        
-        # Main building
-        building_height = floors * floor_height
-        building_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Building",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + building_height/2],
-            "scale": [width/100.0, depth/100.0, building_height/100.0],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if building_result and building_result.get("status") == "success":
-            actors.append(building_result.get("result"))
-        
-        # Add balconies on front and back
-        for floor in range(1, floors):
-            balcony_height = location[2] + floor * floor_height - 20
-            
-            # Front balconies
-            front_balcony_result = unreal.send_command("spawn_actor", {
-                "name": f"{name_prefix}_FrontBalcony_{floor}",
-                "type": "StaticMeshActor",
-                "location": [location[0], location[1] - depth/2 - 50, balcony_height],
-                "scale": [width/100.0, 1.0, 0.2],
-                "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-            })
-            if front_balcony_result and front_balcony_result.get("status") == "success":
-                actors.append(front_balcony_result.get("result"))
-            
-            # Back balconies
-            back_balcony_result = unreal.send_command("spawn_actor", {
-                "name": f"{name_prefix}_BackBalcony_{floor}",
-                "type": "StaticMeshActor",
-                "location": [location[0], location[1] + depth/2 + 50, balcony_height],
-                "scale": [width/100.0, 1.0, 0.2],
-                "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-            })
-            if back_balcony_result and back_balcony_result.get("status") == "success":
-                actors.append(back_balcony_result.get("result"))
-        
-        # Rooftop
-        rooftop_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Rooftop",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + building_height + 15],
-            "scale": [(width + 50)/100.0, (depth + 50)/100.0, 0.3],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if rooftop_result and rooftop_result.get("status") == "success":
-            actors.append(rooftop_result.get("result"))
-        
-        return {"success": True, "actors": actors}
-        
-    except Exception as e:
-        logger.error(f"_create_apartment_complex error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_shopping_mall(width: float, depth: float, floors: int, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create a large shopping mall with entrance canopy."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        actors = []
-        floor_height = 200.0  # Tall ceilings for retail
-        
-        # Foundation
-        foundation_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Foundation",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] - 20],
-            "scale": [(width + 200)/100.0, (depth + 200)/100.0, 0.4],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if foundation_result and foundation_result.get("status") == "success":
-            actors.append(foundation_result.get("result"))
-        
-        # Main structure
-        mall_height = floors * floor_height
-        main_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Main",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + mall_height/2],
-            "scale": [width/100.0, depth/100.0, mall_height/100.0],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if main_result and main_result.get("status") == "success":
-            actors.append(main_result.get("result"))
-        
-        # Entrance canopy
-        canopy_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Canopy",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1] - depth/2 - 150, location[2] + floor_height],
-            "scale": [width/100.0 * 0.8, 3.0, 0.3],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if canopy_result and canopy_result.get("status") == "success":
-            actors.append(canopy_result.get("result"))
-        
-        # Entrance pillars
-        for i, x_offset in enumerate([-width/3, 0, width/3]):
-            pillar_result = unreal.send_command("spawn_actor", {
-                "name": f"{name_prefix}_Pillar_{i}",
-                "type": "StaticMeshActor",
-                "location": [location[0] + x_offset, location[1] - depth/2 - 100, location[2] + floor_height/2],
-                "scale": [0.5, 0.5, floor_height/100.0],
-                "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-            })
-            if pillar_result and pillar_result.get("status") == "success":
-                actors.append(pillar_result.get("result"))
-        
-        # Rooftop parking deck indicator
-        parking_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_RoofParking",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + mall_height + 15],
-            "scale": [width/100.0 * 0.9, depth/100.0 * 0.9, 0.2],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if parking_result and parking_result.get("status") == "success":
-            actors.append(parking_result.get("result"))
-        
-        return {"success": True, "actors": actors}
-        
-    except Exception as e:
-        logger.error(f"_create_shopping_mall error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_parking_garage(levels: int, width: float, depth: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create a multi-level parking structure."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        actors = []
-        level_height = 120.0  # Low ceiling height for parking
-        
-        # Foundation
-        foundation_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Foundation",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] - 15],
-            "scale": [(width + 50)/100.0, (depth + 50)/100.0, 0.3],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if foundation_result and foundation_result.get("status") == "success":
-            actors.append(foundation_result.get("result"))
-        
-        # Create each level with open sides
-        for level in range(levels):
-            level_z = location[2] + level * level_height
-            
-            # Floor slab
-            floor_result = unreal.send_command("spawn_actor", {
-                "name": f"{name_prefix}_Floor_{level}",
-                "type": "StaticMeshActor",
-                "location": [location[0], location[1], level_z],
-                "scale": [width/100.0, depth/100.0, 0.2],
-                "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-            })
-            if floor_result and floor_result.get("status") == "success":
-                actors.append(floor_result.get("result"))
-            
-            # Support pillars
-            for x in [-width/3, 0, width/3]:
-                for y in [-depth/3, 0, depth/3]:
-                    pillar_result = unreal.send_command("spawn_actor", {
-                        "name": f"{name_prefix}_Pillar_{level}_{x}_{y}",
-                        "type": "StaticMeshActor",
-                        "location": [location[0] + x, location[1] + y, level_z + level_height/2],
-                        "scale": [0.4, 0.4, level_height/100.0],
-                        "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                    })
-                    if pillar_result and pillar_result.get("status") == "success":
-                        actors.append(pillar_result.get("result"))
-            
-            # Side barriers (partial walls)
-            if level > 0:  # Not on ground level
-                for side in ["left", "right", "front", "back"]:
-                    if side == "left":
-                        barrier_loc = [location[0] - width/2, location[1], level_z + 40]
-                        barrier_scale = [0.1, depth/100.0, 0.8]
-                    elif side == "right":
-                        barrier_loc = [location[0] + width/2, location[1], level_z + 40]
-                        barrier_scale = [0.1, depth/100.0, 0.8]
-                    elif side == "front":
-                        barrier_loc = [location[0], location[1] - depth/2, level_z + 40]
-                        barrier_scale = [width/100.0, 0.1, 0.8]
-                    else:  # back
-                        barrier_loc = [location[0], location[1] + depth/2, level_z + 40]
-                        barrier_scale = [width/100.0, 0.1, 0.8]
-                    
-                    barrier_result = unreal.send_command("spawn_actor", {
-                        "name": f"{name_prefix}_Barrier_{level}_{side}",
-                        "type": "StaticMeshActor",
-                        "location": barrier_loc,
-                        "scale": barrier_scale,
-                        "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                    })
-                    if barrier_result and barrier_result.get("status") == "success":
-                        actors.append(barrier_result.get("result"))
-        
-        # Ramp structure (simplified)
-        ramp_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Ramp",
-            "type": "StaticMeshActor",
-            "location": [location[0] + width/2 + 100, location[1], location[2] + (levels * level_height)/2],
-            "scale": [1.5, 2.0, levels * level_height/100.0],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if ramp_result and ramp_result.get("status") == "success":
-            actors.append(ramp_result.get("result"))
-        
-        return {"success": True, "actors": actors}
-        
-    except Exception as e:
-        logger.error(f"_create_parking_garage error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_hotel(floors: int, width: float, depth: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create a luxury hotel with distinctive features."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        actors = []
-        floor_height = 130.0
-        
-        # Grand foundation
-        foundation_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Foundation",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] - 20],
-            "scale": [(width + 150)/100.0, (depth + 150)/100.0, 0.4],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if foundation_result and foundation_result.get("status") == "success":
-            actors.append(foundation_result.get("result"))
-        
-        # Lobby (extra tall)
-        lobby_height = floor_height * 2
-        lobby_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Lobby",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + lobby_height/2],
-            "scale": [width/100.0, depth/100.0, lobby_height/100.0],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if lobby_result and lobby_result.get("status") == "success":
-            actors.append(lobby_result.get("result"))
-        
-        # Main tower
-        tower_height = (floors - 2) * floor_height
-        tower_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Tower",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + lobby_height + tower_height/2],
-            "scale": [width/100.0 * 0.9, depth/100.0 * 0.9, tower_height/100.0],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if tower_result and tower_result.get("status") == "success":
-            actors.append(tower_result.get("result"))
-        
-        # Penthouse (top floor wider)
-        penthouse_height = location[2] + lobby_height + tower_height
-        penthouse_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Penthouse",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], penthouse_height + floor_height/2],
-            "scale": [width/100.0, depth/100.0, floor_height/100.0],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if penthouse_result and penthouse_result.get("status") == "success":
-            actors.append(penthouse_result.get("result"))
-        
-        # Rooftop pool area
-        pool_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Pool",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], penthouse_height + floor_height + 20],
-            "scale": [width/100.0 * 0.5, depth/100.0 * 0.3, 0.2],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if pool_result and pool_result.get("status") == "success":
-            actors.append(pool_result.get("result"))
-        
-        # Entrance canopy
-        canopy_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Canopy",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1] - depth/2 - 100, location[2] + 150],
-            "scale": [width/100.0 * 0.6, 2.0, 0.2],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if canopy_result and canopy_result.get("status") == "success":
-            actors.append(canopy_result.get("result"))
-        
-        return {"success": True, "actors": actors}
-        
-    except Exception as e:
-        logger.error(f"_create_hotel error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_restaurant(width: float, depth: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create a small restaurant/cafe building."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        actors = []
-        height = 150.0
-        
-        # Foundation
-        foundation_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Foundation",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] - 10],
-            "scale": [(width + 50)/100.0, (depth + 50)/100.0, 0.2],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if foundation_result and foundation_result.get("status") == "success":
-            actors.append(foundation_result.get("result"))
-        
-        # Main building
-        main_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Main",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + height/2],
-            "scale": [width/100.0, depth/100.0, height/100.0],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if main_result and main_result.get("status") == "success":
-            actors.append(main_result.get("result"))
-        
-        # Outdoor seating area (patio)
-        patio_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Patio",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1] - depth/2 - 75, location[2]],
-            "scale": [width/100.0, 1.5, 0.1],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if patio_result and patio_result.get("status") == "success":
-            actors.append(patio_result.get("result"))
-        
-        # Awning
-        awning_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Awning",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1] - depth/2 - 50, location[2] + height - 20],
-            "scale": [width/100.0 * 1.2, 1.0, 0.1],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if awning_result and awning_result.get("status") == "success":
-            actors.append(awning_result.get("result"))
-        
-        return {"success": True, "actors": actors}
-        
-    except Exception as e:
-        logger.error(f"_create_restaurant error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_store(width: float, depth: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create a small retail store."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        actors = []
-        height = 140.0
-        
-        # Foundation
-        foundation_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Foundation",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] - 10],
-            "scale": [(width + 30)/100.0, (depth + 30)/100.0, 0.2],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if foundation_result and foundation_result.get("status") == "success":
-            actors.append(foundation_result.get("result"))
-        
-        # Main building
-        main_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Main",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + height/2],
-            "scale": [width/100.0, depth/100.0, height/100.0],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if main_result and main_result.get("status") == "success":
-            actors.append(main_result.get("result"))
-        
-        # Storefront sign
-        sign_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Sign",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1] - depth/2 - 10, location[2] + height + 20],
-            "scale": [width/100.0 * 0.8, 0.1, 0.4],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if sign_result and sign_result.get("status") == "success":
-            actors.append(sign_result.get("result"))
-        
-        return {"success": True, "actors": actors}
-        
-    except Exception as e:
-        logger.error(f"_create_store error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_apartment_building(floors: int, width: float, depth: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create a smaller residential apartment building."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        actors = []
-        floor_height = 110.0
-        
-        # Foundation
-        foundation_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Foundation",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] - 15],
-            "scale": [(width + 50)/100.0, (depth + 50)/100.0, 0.3],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if foundation_result and foundation_result.get("status") == "success":
-            actors.append(foundation_result.get("result"))
-        
-        # Main building
-        building_height = floors * floor_height
-        building_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Building",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + building_height/2],
-            "scale": [width/100.0, depth/100.0, building_height/100.0],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if building_result and building_result.get("status") == "success":
-            actors.append(building_result.get("result"))
-        
-        # Entry steps
-        steps_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Steps",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1] - depth/2 - 30, location[2] + 10],
-            "scale": [width/100.0 * 0.3, 0.6, 0.2],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if steps_result and steps_result.get("status") == "success":
-            actors.append(steps_result.get("result"))
-        
-        # Simple roof
-        roof_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Roof",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + building_height + 15],
-            "scale": [(width + 20)/100.0, (depth + 20)/100.0, 0.3],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if roof_result and roof_result.get("status") == "success":
-            actors.append(roof_result.get("result"))
-        
-        return {"success": True, "actors": actors}
-        
-    except Exception as e:
-        logger.error(f"_create_apartment_building error: {e}")
-        return {"success": False, "actors": []}
-
-# Infrastructure creation functions
-def _create_traffic_lights(blocks: int, block_size: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create traffic lights at major intersections."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        import random
-        traffic_lights = []
-        
-        # Place traffic lights at major intersections
-        for i in range(1, blocks, 2):  # Every other intersection
-            for j in range(1, blocks, 2):
-                intersection_x = location[0] + (i - blocks/2) * block_size
-                intersection_y = location[1] + (j - blocks/2) * block_size
-                
-                # Create traffic light poles at four corners
-                for corner in range(4):
-                    angle = corner * math.pi / 2
-                    offset = 150  # Distance from intersection center
-                    
-                    pole_x = intersection_x + offset * math.cos(angle)
-                    pole_y = intersection_y + offset * math.sin(angle)
-                    
-                    # Pole
-                    pole_name = f"{name_prefix}_TrafficPole_{i}_{j}_{corner}"
-                    pole_result = unreal.send_command("spawn_actor", {
-                        "name": pole_name,
-                        "type": "StaticMeshActor",
-                        "location": [pole_x, pole_y, location[2] + 150],
-                        "scale": [0.15, 0.15, 3.0],
-                        "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-                    })
-                    if pole_result and pole_result.get("status") == "success":
-                        traffic_lights.append(pole_result.get("result"))
-                    
-                    # Traffic light box
-                    light_name = f"{name_prefix}_TrafficLight_{i}_{j}_{corner}"
-                    light_result = unreal.send_command("spawn_actor", {
-                        "name": light_name,
-                        "type": "StaticMeshActor",
-                        "location": [pole_x, pole_y, location[2] + 280],
-                        "scale": [0.3, 0.2, 0.8],
-                        "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                    })
-                    if light_result and light_result.get("status") == "success":
-                        traffic_lights.append(light_result.get("result"))
-        
-        return {"success": True, "actors": traffic_lights}
-        
-    except Exception as e:
-        logger.error(f"_create_traffic_lights error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_street_signage(blocks: int, block_size: float, location: List[float], name_prefix: str, town_size: str) -> Dict[str, Any]:
-    """Create street signs and billboards."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        import random
-        signage = []
-        
-        # Street name signs at corners
-        street_names = ["Main St", "1st Ave", "2nd Ave", "Park Blvd", "Commerce Dr", "Tech Way"]
-        
-        for i in range(0, blocks + 1, 2):
-            for j in range(0, blocks + 1, 2):
-                if random.random() > 0.5:
-                    continue
-                    
-                sign_x = location[0] + (i - blocks/2) * block_size + 100
-                sign_y = location[1] + (j - blocks/2) * block_size + 100
-                
-                # Sign pole
-                pole_name = f"{name_prefix}_SignPole_{i}_{j}"
-                pole_result = unreal.send_command("spawn_actor", {
-                    "name": pole_name,
-                    "type": "StaticMeshActor",
-                    "location": [sign_x, sign_y, location[2] + 100],
-                    "scale": [0.1, 0.1, 2.0],
-                    "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-                })
-                if pole_result and pole_result.get("status") == "success":
-                    signage.append(pole_result.get("result"))
-                
-                # Sign
-                sign_name = f"{name_prefix}_StreetSign_{i}_{j}"
-                sign_result = unreal.send_command("spawn_actor", {
-                    "name": sign_name,
-                    "type": "StaticMeshActor",
-                    "location": [sign_x, sign_y, location[2] + 180],
-                    "scale": [1.5, 0.05, 0.3],
-                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                })
-                if sign_result and sign_result.get("status") == "success":
-                    signage.append(sign_result.get("result"))
-        
-        # Billboards for larger towns
-        if town_size in ["large", "metropolis"]:
-            num_billboards = random.randint(3, 8)
-            for b in range(num_billboards):
-                billboard_x = location[0] + random.uniform(-blocks*block_size/3, blocks*block_size/3)
-                billboard_y = location[1] + random.uniform(-blocks*block_size/3, blocks*block_size/3)
-                
-                # Billboard structure
-                billboard_name = f"{name_prefix}_Billboard_{b}"
-                billboard_result = unreal.send_command("spawn_actor", {
-                    "name": billboard_name,
-                    "type": "StaticMeshActor",
-                    "location": [billboard_x, billboard_y, location[2] + 400],
-                    "scale": [3.0, 0.1, 2.0],
-                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                })
-                if billboard_result and billboard_result.get("status") == "success":
-                    signage.append(billboard_result.get("result"))
-                
-                # Billboard supports
-                for support_offset in [-100, 100]:
-                    support_name = f"{name_prefix}_BillboardSupport_{b}_{support_offset}"
-                    support_result = unreal.send_command("spawn_actor", {
-                        "name": support_name,
-                        "type": "StaticMeshActor",
-                        "location": [billboard_x + support_offset, billboard_y, location[2] + 200],
-                        "scale": [0.2, 0.2, 4.0],
-                        "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-                    })
-                    if support_result and support_result.get("status") == "success":
-                        signage.append(support_result.get("result"))
-        
-        return {"success": True, "actors": signage}
-        
-    except Exception as e:
-        logger.error(f"_create_street_signage error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_sidewalks_crosswalks(blocks: int, block_size: float, street_width: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create sidewalks and crosswalks."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        sidewalks = []
-        sidewalk_width = 150.0
-        
-        # Create sidewalks along streets
-        for i in range(blocks):
-            for j in range(blocks + 1):
-                # Horizontal sidewalks
-                sidewalk_y = location[1] + (j - blocks/2) * block_size
-                sidewalk_x = location[0] + (i - blocks/2 + 0.5) * block_size
-                
-                # North sidewalk
-                north_sidewalk_result = unreal.send_command("spawn_actor", {
-                    "name": f"{name_prefix}_SidewalkH_North_{i}_{j}",
-                    "type": "StaticMeshActor",
-                    "location": [sidewalk_x, sidewalk_y - street_width/2 + sidewalk_width/2, location[2]],
-                    "scale": [block_size/100.0 * 0.7, sidewalk_width/100.0, 0.05],
-                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                })
-                if north_sidewalk_result and north_sidewalk_result.get("status") == "success":
-                    sidewalks.append(north_sidewalk_result.get("result"))
-                
-                # South sidewalk
-                south_sidewalk_result = unreal.send_command("spawn_actor", {
-                    "name": f"{name_prefix}_SidewalkH_South_{i}_{j}",
-                    "type": "StaticMeshActor",
-                    "location": [sidewalk_x, sidewalk_y + street_width/2 - sidewalk_width/2, location[2]],
-                    "scale": [block_size/100.0 * 0.7, sidewalk_width/100.0, 0.05],
-                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                })
-                if south_sidewalk_result and south_sidewalk_result.get("status") == "success":
-                    sidewalks.append(south_sidewalk_result.get("result"))
-        
-        # Vertical sidewalks
-        for i in range(blocks + 1):
-            for j in range(blocks):
-                sidewalk_x = location[0] + (i - blocks/2) * block_size
-                sidewalk_y = location[1] + (j - blocks/2 + 0.5) * block_size
-                
-                # East sidewalk
-                east_sidewalk_result = unreal.send_command("spawn_actor", {
-                    "name": f"{name_prefix}_SidewalkV_East_{i}_{j}",
-                    "type": "StaticMeshActor",
-                    "location": [sidewalk_x - street_width/2 + sidewalk_width/2, sidewalk_y, location[2]],
-                    "scale": [sidewalk_width/100.0, block_size/100.0 * 0.7, 0.05],
-                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                })
-                if east_sidewalk_result and east_sidewalk_result.get("status") == "success":
-                    sidewalks.append(east_sidewalk_result.get("result"))
-                
-                # West sidewalk
-                west_sidewalk_result = unreal.send_command("spawn_actor", {
-                    "name": f"{name_prefix}_SidewalkV_West_{i}_{j}",
-                    "type": "StaticMeshActor",
-                    "location": [sidewalk_x + street_width/2 - sidewalk_width/2, sidewalk_y, location[2]],
-                    "scale": [sidewalk_width/100.0, block_size/100.0 * 0.7, 0.05],
-                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                })
-                if west_sidewalk_result and west_sidewalk_result.get("status") == "success":
-                    sidewalks.append(west_sidewalk_result.get("result"))
-        
-        # Create crosswalks at intersections
-        crosswalk_width = 200.0
-        for i in range(blocks + 1):
-            for j in range(blocks + 1):
-                intersection_x = location[0] + (i - blocks/2) * block_size
-                intersection_y = location[1] + (j - blocks/2) * block_size
-                
-                # Create crosswalk stripes
-                for stripe in range(5):
-                    stripe_offset = (stripe - 2) * 40
-                    
-                    # North-South crosswalk
-                    ns_crosswalk_result = unreal.send_command("spawn_actor", {
-                        "name": f"{name_prefix}_CrosswalkNS_{i}_{j}_{stripe}",
-                        "type": "StaticMeshActor",
-                        "location": [intersection_x + stripe_offset, intersection_y, location[2] + 1],
-                        "scale": [0.3, crosswalk_width/100.0, 0.02],
-                        "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                    })
-                    if ns_crosswalk_result and ns_crosswalk_result.get("status") == "success":
-                        sidewalks.append(ns_crosswalk_result.get("result"))
-                    
-                    # East-West crosswalk
-                    ew_crosswalk_result = unreal.send_command("spawn_actor", {
-                        "name": f"{name_prefix}_CrosswalkEW_{i}_{j}_{stripe}",
-                        "type": "StaticMeshActor",
-                        "location": [intersection_x, intersection_y + stripe_offset, location[2] + 1],
-                        "scale": [crosswalk_width/100.0, 0.3, 0.02],
-                        "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                    })
-                    if ew_crosswalk_result and ew_crosswalk_result.get("status") == "success":
-                        sidewalks.append(ew_crosswalk_result.get("result"))
-        
-        return {"success": True, "actors": sidewalks}
-        
-    except Exception as e:
-        logger.error(f"_create_sidewalks_crosswalks error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_urban_furniture(blocks: int, block_size: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create benches, trash cans, and bus stops."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        import random
-        furniture = []
-        
-        # Place furniture along sidewalks
-        num_furniture_items = blocks * blocks // 2
-        
-        for f in range(num_furniture_items):
-            # Random position along a street
-            street_x = location[0] + random.uniform(-blocks*block_size/2, blocks*block_size/2)
-            street_y = location[1] + random.uniform(-blocks*block_size/2, blocks*block_size/2)
-            
-            # Offset to sidewalk
-            sidewalk_offset = random.choice([-200, 200])
-            if random.random() > 0.5:
-                furniture_x = street_x + sidewalk_offset
-                furniture_y = street_y
-            else:
-                furniture_x = street_x
-                furniture_y = street_y + sidewalk_offset
-            
-            furniture_type = random.choice(["bench", "trash", "bus_stop"])
-            
-            if furniture_type == "bench":
-                # Create bench
-                bench_name = f"{name_prefix}_Bench_{f}"
-                bench_result = unreal.send_command("spawn_actor", {
-                    "name": bench_name,
-                    "type": "StaticMeshActor",
-                    "location": [furniture_x, furniture_y, location[2] + 30],
-                    "scale": [1.5, 0.5, 0.6],
-                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                })
-                if bench_result and bench_result.get("status") == "success":
-                    furniture.append(bench_result.get("result"))
-                
-                # Bench supports
-                for support_offset in [-50, 50]:
-                    support_name = f"{name_prefix}_BenchSupport_{f}_{support_offset}"
-                    support_result = unreal.send_command("spawn_actor", {
-                        "name": support_name,
-                        "type": "StaticMeshActor",
-                        "location": [furniture_x + support_offset, furniture_y, location[2] + 15],
-                        "scale": [0.1, 0.5, 0.3],
-                        "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                    })
-                    if support_result and support_result.get("status") == "success":
-                        furniture.append(support_result.get("result"))
-            
-            elif furniture_type == "trash":
-                # Create trash can
-                trash_name = f"{name_prefix}_TrashCan_{f}"
-                trash_result = unreal.send_command("spawn_actor", {
-                    "name": trash_name,
-                    "type": "StaticMeshActor",
-                    "location": [furniture_x, furniture_y, location[2] + 40],
-                    "scale": [0.4, 0.4, 0.8],
-                    "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-                })
-                if trash_result and trash_result.get("status") == "success":
-                    furniture.append(trash_result.get("result"))
-            
-            else:  # bus_stop
-                # Create bus stop shelter
-                shelter_name = f"{name_prefix}_BusStop_{f}"
-                shelter_result = unreal.send_command("spawn_actor", {
-                    "name": shelter_name,
-                    "type": "StaticMeshActor",
-                    "location": [furniture_x, furniture_y, location[2] + 120],
-                    "scale": [2.0, 1.0, 0.1],
-                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                })
-                if shelter_result and shelter_result.get("status") == "success":
-                    furniture.append(shelter_result.get("result"))
-                
-                # Bus stop posts
-                for post_x in [-80, 80]:
-                    post_name = f"{name_prefix}_BusStopPost_{f}_{post_x}"
-                    post_result = unreal.send_command("spawn_actor", {
-                        "name": post_name,
-                        "type": "StaticMeshActor",
-                        "location": [furniture_x + post_x, furniture_y, location[2] + 60],
-                        "scale": [0.1, 0.1, 1.2],
-                        "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-                    })
-                    if post_result and post_result.get("status") == "success":
-                        furniture.append(post_result.get("result"))
-                
-                # Bus stop bench
-                bench_name = f"{name_prefix}_BusStopBench_{f}"
-                bench_result = unreal.send_command("spawn_actor", {
-                    "name": bench_name,
-                    "type": "StaticMeshActor",
-                    "location": [furniture_x, furniture_y + 30, location[2] + 25],
-                    "scale": [1.8, 0.4, 0.5],
-                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-                })
-                if bench_result and bench_result.get("status") == "success":
-                    furniture.append(bench_result.get("result"))
-        
-        return {"success": True, "actors": furniture}
-        
-    except Exception as e:
-        logger.error(f"_create_urban_furniture error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_street_utilities(blocks: int, block_size: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create parking meters and fire hydrants."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        import random
-        utilities = []
-        
-        # Parking meters along commercial streets
-        num_meters = blocks * 4
-        for m in range(num_meters):
-            meter_x = location[0] + random.uniform(-blocks*block_size/3, blocks*block_size/3)
-            meter_y = location[1] + random.uniform(-blocks*block_size/3, blocks*block_size/3)
-            
-            # Place on sidewalk edge
-            sidewalk_offset = random.choice([-180, 180])
-            if random.random() > 0.5:
-                meter_x += sidewalk_offset
-            else:
-                meter_y += sidewalk_offset
-            
-            # Parking meter
-            meter_name = f"{name_prefix}_ParkingMeter_{m}"
-            meter_result = unreal.send_command("spawn_actor", {
-                "name": meter_name,
-                "type": "StaticMeshActor",
-                "location": [meter_x, meter_y, location[2] + 50],
-                "scale": [0.15, 0.15, 1.0],
-                "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-            })
-            if meter_result and meter_result.get("status") == "success":
-                utilities.append(meter_result.get("result"))
-            
-            # Meter head
-            head_name = f"{name_prefix}_MeterHead_{m}"
-            head_result = unreal.send_command("spawn_actor", {
-                "name": head_name,
-                "type": "StaticMeshActor",
-                "location": [meter_x, meter_y, location[2] + 100],
-                "scale": [0.25, 0.15, 0.3],
-                "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-            })
-            if head_result and head_result.get("status") == "success":
-                utilities.append(head_result.get("result"))
-        
-        # Fire hydrants at corners
-        num_hydrants = blocks + 2
-        for h in range(num_hydrants):
-            hydrant_x = location[0] + random.uniform(-blocks*block_size/2, blocks*block_size/2)
-            hydrant_y = location[1] + random.uniform(-blocks*block_size/2, blocks*block_size/2)
-            
-            # Fire hydrant
-            hydrant_name = f"{name_prefix}_Hydrant_{h}"
-            hydrant_result = unreal.send_command("spawn_actor", {
-                "name": hydrant_name,
-                "type": "StaticMeshActor",
-                "location": [hydrant_x, hydrant_y, location[2] + 40],
-                "scale": [0.3, 0.3, 0.8],
-                "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-            })
-            if hydrant_result and hydrant_result.get("status") == "success":
-                utilities.append(hydrant_result.get("result"))
-            
-            # Hydrant cap
-            cap_name = f"{name_prefix}_HydrantCap_{h}"
-            cap_result = unreal.send_command("spawn_actor", {
-                "name": cap_name,
-                "type": "StaticMeshActor",
-                "location": [hydrant_x, hydrant_y, location[2] + 75],
-                "scale": [0.35, 0.35, 0.1],
-                "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-            })
-            if cap_result and cap_result.get("status") == "success":
-                utilities.append(cap_result.get("result"))
-        
-        return {"success": True, "actors": utilities}
-        
-    except Exception as e:
-        logger.error(f"_create_street_utilities error: {e}")
-        return {"success": False, "actors": []}
-
-def _create_central_plaza(blocks: int, block_size: float, location: List[float], name_prefix: str) -> Dict[str, Any]:
-    """Create a central plaza with fountain and monuments."""
-    try:
-        unreal = get_unreal_connection()
-        if not unreal:
-            return {"success": False, "actors": []}
-            
-        plaza = []
-        plaza_size = block_size * 0.8
-        
-        # Plaza floor
-        plaza_floor_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_PlazaFloor",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + 2],
-            "scale": [plaza_size/100.0, plaza_size/100.0, 0.05],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if plaza_floor_result and plaza_floor_result.get("status") == "success":
-            plaza.append(plaza_floor_result.get("result"))
-        
-        # Central fountain base
-        fountain_base_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_FountainBase",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + 10],
-            "scale": [3.0, 3.0, 0.2],
-            "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-        })
-        if fountain_base_result and fountain_base_result.get("status") == "success":
-            plaza.append(fountain_base_result.get("result"))
-        
-        # Fountain center
-        fountain_center_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_FountainCenter",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + 50],
-            "scale": [0.5, 0.5, 0.8],
-            "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-        })
-        if fountain_center_result and fountain_center_result.get("status") == "success":
-            plaza.append(fountain_center_result.get("result"))
-        
-        # Fountain top
-        fountain_top_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_FountainTop",
-            "type": "StaticMeshActor",
-            "location": [location[0], location[1], location[2] + 80],
-            "scale": [1.5, 1.5, 0.1],
-            "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-        })
-        if fountain_top_result and fountain_top_result.get("status") == "success":
-            plaza.append(fountain_top_result.get("result"))
-        
-        # Monument/statue
-        monument_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_Monument",
-            "type": "StaticMeshActor",
-            "location": [location[0] + plaza_size/3, location[1], location[2] + 100],
-            "scale": [1.0, 1.0, 2.0],
-            "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-        })
-        if monument_result and monument_result.get("status") == "success":
-            plaza.append(monument_result.get("result"))
-        
-        # Monument base
-        monument_base_result = unreal.send_command("spawn_actor", {
-            "name": f"{name_prefix}_MonumentBase",
-            "type": "StaticMeshActor",
-            "location": [location[0] + plaza_size/3, location[1], location[2] + 30],
-            "scale": [2.0, 2.0, 0.6],
-            "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-        })
-        if monument_base_result and monument_base_result.get("status") == "success":
-            plaza.append(monument_base_result.get("result"))
-        
-        # Plaza benches in circle
-        num_benches = 8
-        for i in range(num_benches):
-            angle = (2 * math.pi * i) / num_benches
-            bench_x = location[0] + plaza_size/3 * math.cos(angle)
-            bench_y = location[1] + plaza_size/3 * math.sin(angle)
-            bench_rotation = [0, 0, angle * 180/math.pi]
-            
-            bench_name = f"{name_prefix}_PlazaBench_{i}"
-            bench_result = unreal.send_command("spawn_actor", {
-                "name": bench_name,
-                "type": "StaticMeshActor",
-                "location": [bench_x, bench_y, location[2] + 30],
-                "rotation": bench_rotation,
-                "scale": [1.5, 0.5, 0.6],
-                "static_mesh": "/Engine/BasicShapes/Cube.Cube"
-            })
-            if bench_result and bench_result.get("status") == "success":
-                plaza.append(bench_result.get("result"))
-        
-        # Decorative light posts around plaza
-        num_lights = 12
-        for i in range(num_lights):
-            angle = (2 * math.pi * i) / num_lights
-            light_x = location[0] + plaza_size/2 * math.cos(angle)
-            light_y = location[1] + plaza_size/2 * math.sin(angle)
-            
-            # Decorative light post
-            post_name = f"{name_prefix}_PlazaLightPost_{i}"
-            post_result = unreal.send_command("spawn_actor", {
-                "name": post_name,
-                "type": "StaticMeshActor",
-                "location": [light_x, light_y, location[2] + 100],
-                "scale": [0.15, 0.15, 2.0],
-                "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
-            })
-            if post_result and post_result.get("status") == "success":
-                plaza.append(post_result.get("result"))
-            
-            # Light fixture
-            light_name = f"{name_prefix}_PlazaLight_{i}"
-            light_result = unreal.send_command("spawn_actor", {
-                "name": light_name,
-                "type": "StaticMeshActor",
-                "location": [light_x, light_y, location[2] + 180],
-                "scale": [0.4, 0.4, 0.3],
-                "static_mesh": "/Engine/BasicShapes/Sphere.Sphere"
-            })
-            if light_result and light_result.get("status") == "success":
-                plaza.append(light_result.get("result"))
-        
-        return {"success": True, "actors": plaza}
-        
-    except Exception as e:
-        logger.error(f"_create_central_plaza error: {e}")
-        return {"success": False, "actors": []}
 
 # Run the server
 if __name__ == "__main__":
