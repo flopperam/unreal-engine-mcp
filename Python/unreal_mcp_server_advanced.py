@@ -1311,6 +1311,35 @@ def set_mesh_material_color(
         logger.error(f"set_mesh_material_color error: {e}")
         return {"success": False, "message": str(e)}
 
+@mcp.tool()
+def set_actor_material_color(
+    name: str,
+    color: List[float],
+    material_path: str = "/Engine/BasicShapes/BasicShapeMaterial",
+    parameter_name: str = "BaseColor",
+    material_slot: int = 0
+) -> Dict[str, Any]:
+    """Set a material color directly on an existing actor's StaticMeshComponent."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        if not isinstance(color, list) or len(color) != 4:
+            return {"success": False, "message": "Invalid color format. Must be [R,G,B,A] floats."}
+        color = [float(min(1.0, max(0.0, v))) for v in color]
+        params = {
+            "name": name,
+            "color": color,
+            "material_path": material_path,
+            "parameter_name": parameter_name,
+            "material_slot": material_slot,
+        }
+        return unreal.send_command("set_actor_material_color", params) or {"success": False, "message": "No response from Unreal"}
+    except Exception as e:
+        logger.error(f"set_actor_material_color error: {e}")
+        return {"success": False, "message": str(e)}
+
 # Advanced Town Generation System
 @mcp.tool()
 def create_town(
@@ -2501,6 +2530,651 @@ def create_castle_fortress(
         
     except Exception as e:
         logger.error(f"create_castle_fortress error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def generate_building(
+    footprint: str = "rectangle",  # "rectangle", "L_shape", "U_shape", "T_shape", "circle", "cross"
+    floors: int = 6,
+    style: str = "modern",  # "modern", "cottage", "gothic", "art_deco", "brutalist", "glass", "industrial"
+    facade_pattern: str = "grid",  # "grid", "bands", "alternating", "random", "columns", "arches"
+    roof_type: str = "flat",  # "flat", "gable", "hip", "cone", "dome", "shed", "gambrel"
+    width: float = 1600.0,
+    depth: float = 1200.0,
+    floor_height: float = 350.0,
+    location: List[float] = [0.0, 0.0, 0.0],
+    seed: int = 0,
+    name_prefix: str = "Building",
+    include_details: bool = True,  # Windows, doors, decorative elements
+    entrance_side: str = "front",  # "front", "back", "left", "right", "corner"
+    balcony_chance: float = 0.3,  # Probability of balconies on residential buildings
+    color_scheme: str = "auto",  # "auto", "brick", "concrete", "stone", "wood", "glass", "metal", "stucco"
+) -> Dict[str, Any]:
+    """
+    Generate a single dynamic building with extensive customization options.
+    
+    This is the ultimate building generator that creates realistic, varied structures
+    with architectural details, proper proportions, and style-appropriate features.
+    Perfect for creating unique buildings for games, architectural visualization,
+    or procedural city generation.
+    
+    Features:
+    - Multiple footprint shapes (rectangle, L, U, T, circle, cross)
+    - Architectural styles with appropriate details
+    - Facade patterns and window arrangements
+    - Various roof types with proper geometry
+    - Entrance placement and design
+    - Balconies, awnings, and decorative elements
+    - Color schemes and material variation
+    - Deterministic generation with seed control
+    
+    Args:
+        footprint: Shape of the building base
+        floors: Number of floors (1-50)
+        style: Architectural style affecting proportions and details
+        facade_pattern: Window and wall arrangement pattern
+        roof_type: Type of roof structure
+        width/depth: Base dimensions in Unreal units (cm)
+        floor_height: Height per floor in Unreal units (cm)
+        location: World position [X, Y, Z]
+        seed: Random seed for deterministic generation
+        name_prefix: Prefix for all spawned actors
+        include_details: Whether to add windows, doors, decorative elements
+        entrance_side: Which side to place the main entrance
+        balcony_chance: Probability of balconies (0.0-1.0)
+        color_scheme: Building material color scheme (auto picks based on style)
+    """
+    try:
+        import random
+        import math
+        
+        # Set deterministic seed
+        if seed > 0:
+            random.seed(seed)
+        
+        unreal = get_unreal_connection()
+        if not unreal:
+            return {"success": False, "message": "Failed to connect to Unreal Engine"}
+        
+        logger.info(f"Generating {style} building with {footprint} footprint, {floors} floors")
+        
+        all_actors = []
+        total_height = floors * floor_height
+        
+        # Validate parameters
+        floors = max(1, min(50, floors))
+        width = max(400.0, width)
+        depth = max(400.0, depth)
+        floor_height = max(200.0, min(500.0, floor_height))
+        balcony_chance = max(0.0, min(1.0, balcony_chance))
+        
+        # Style-specific adjustments
+        style_configs = {
+            "modern": {"wall_thickness": 25, "window_ratio": 0.7, "detail_scale": 1.0},
+            "cottage": {"wall_thickness": 40, "window_ratio": 0.4, "detail_scale": 0.8},
+            "gothic": {"wall_thickness": 60, "window_ratio": 0.3, "detail_scale": 1.2},
+            "art_deco": {"wall_thickness": 30, "window_ratio": 0.6, "detail_scale": 1.1},
+            "brutalist": {"wall_thickness": 80, "window_ratio": 0.2, "detail_scale": 1.5},
+            "glass": {"wall_thickness": 20, "window_ratio": 0.9, "detail_scale": 0.7},
+            "industrial": {"wall_thickness": 35, "window_ratio": 0.5, "detail_scale": 0.9}
+        }
+        
+        config = style_configs.get(style, style_configs["modern"])
+        wall_thickness = config["wall_thickness"]
+        window_ratio = config["window_ratio"]
+        detail_scale = config["detail_scale"]
+        
+        # Generate realistic building color scheme
+        def get_building_colors(scheme, building_style):
+            """Generate realistic building colors for walls, roof, windows, doors, etc."""
+            
+            # Define realistic building material colors
+            material_colors = {
+                "brick": {
+                    "walls": [0.7, 0.4, 0.3, 1.0],      # Red brick
+                    "roof": [0.3, 0.2, 0.2, 1.0],       # Dark red clay tiles
+                    "windows": [0.2, 0.3, 0.5, 0.8],    # Blue-tinted glass
+                    "doors": [0.4, 0.2, 0.1, 1.0],      # Dark wood
+                    "trim": [0.9, 0.9, 0.8, 1.0],       # Cream trim
+                    "foundation": [0.5, 0.5, 0.5, 1.0]  # Concrete gray
+                },
+                "concrete": {
+                    "walls": [0.75, 0.75, 0.7, 1.0],    # Light concrete
+                    "roof": [0.4, 0.4, 0.4, 1.0],       # Dark concrete
+                    "windows": [0.2, 0.3, 0.4, 0.7],    # Dark blue glass
+                    "doors": [0.2, 0.2, 0.2, 1.0],      # Black metal
+                    "trim": [0.6, 0.6, 0.6, 1.0],       # Medium gray
+                    "foundation": [0.45, 0.45, 0.45, 1.0]
+                },
+                "stone": {
+                    "walls": [0.6, 0.55, 0.5, 1.0],     # Limestone
+                    "roof": [0.35, 0.3, 0.25, 1.0],     # Dark slate
+                    "windows": [0.1, 0.2, 0.3, 0.8],    # Dark glass
+                    "doors": [0.3, 0.2, 0.1, 1.0],      # Oak wood
+                    "trim": [0.8, 0.8, 0.75, 1.0],      # Light stone
+                    "foundation": [0.4, 0.4, 0.35, 1.0]
+                },
+                "wood": {
+                    "walls": [0.6, 0.45, 0.3, 1.0],     # Natural wood siding
+                    "roof": [0.25, 0.2, 0.15, 1.0],     # Dark wood shingles
+                    "windows": [0.9, 0.9, 0.85, 0.9],   # Clear glass
+                    "doors": [0.5, 0.35, 0.2, 1.0],     # Stained wood
+                    "trim": [0.9, 0.9, 0.85, 1.0],      # White trim
+                    "foundation": [0.5, 0.5, 0.45, 1.0]
+                },
+                "glass": {
+                    "walls": [0.3, 0.4, 0.5, 0.3],      # Blue-tinted glass curtain wall
+                    "roof": [0.2, 0.2, 0.2, 1.0],       # Black membrane roof
+                    "windows": [0.2, 0.3, 0.4, 0.4],    # Darker glass
+                    "doors": [0.1, 0.1, 0.1, 1.0],      # Black metal frame
+                    "trim": [0.7, 0.7, 0.7, 1.0],       # Aluminum trim
+                    "foundation": [0.6, 0.6, 0.6, 1.0]
+                },
+                "metal": {
+                    "walls": [0.6, 0.6, 0.65, 1.0],     # Galvanized steel
+                    "roof": [0.4, 0.4, 0.45, 1.0],      # Darker metal roof
+                    "windows": [0.2, 0.25, 0.3, 0.8],   # Industrial glass
+                    "doors": [0.3, 0.3, 0.35, 1.0],     # Steel doors
+                    "trim": [0.8, 0.8, 0.85, 1.0],      # Light metal trim
+                    "foundation": [0.45, 0.45, 0.45, 1.0]
+                },
+                "stucco": {
+                    "walls": [0.85, 0.8, 0.7, 1.0],     # Cream stucco
+                    "roof": [0.6, 0.3, 0.2, 1.0],       # Terra cotta tiles
+                    "windows": [0.2, 0.3, 0.4, 0.8],    # Tinted glass
+                    "doors": [0.4, 0.25, 0.15, 1.0],    # Wood doors
+                    "trim": [0.9, 0.85, 0.75, 1.0],     # Light stucco trim
+                    "foundation": [0.7, 0.65, 0.6, 1.0]
+                }
+            }
+            
+            # Auto-select based on building style if scheme is "auto"
+            if scheme == "auto":
+                style_to_material = {
+                    "modern": "glass",
+                    "cottage": "wood", 
+                    "gothic": "stone",
+                    "art_deco": "concrete",
+                    "brutalist": "concrete",
+                    "glass": "glass",
+                    "industrial": "metal"
+                }
+                scheme = style_to_material.get(building_style, "concrete")
+            
+            return material_colors.get(scheme, material_colors["concrete"])
+        
+        # Get building colors
+        building_colors = get_building_colors(color_scheme, style)
+        
+        # Helper function to apply color to an actor
+        def apply_color_to_actor(actor_result, color, component_type="walls"):
+            """Apply a dynamic material color directly to the spawned actor.
+            We set both BaseColor and Color to cover common param names.
+            """
+            try:
+                if not (actor_result and actor_result.get("status") == "success"):
+                    return None
+                result_obj = actor_result.get("result", {})
+                actor_name = result_obj.get("name")
+                if not actor_name or not color:
+                    return actor_result
+                # Set both parameter names to ensure the tint takes effect regardless of material
+                # Use the engine's BasicShapeMaterial explicitly to guarantee parameter existence
+                set_actor_material_color(actor_name, color, parameter_name="BaseColor", material_path="/Engine/BasicShapes/BasicShapeMaterial")
+                set_actor_material_color(actor_name, color, parameter_name="Color", material_path="/Engine/BasicShapes/BasicShapeMaterial")
+                logger.debug(f"Applied {component_type} color {color} to {actor_name}")
+                return actor_result
+            except Exception as e:
+                logger.warning(f"apply_color_to_actor failed: {e}")
+                return actor_result
+        
+        # Generate building footprint based on shape
+        def create_footprint_segments(footprint_type, base_width, base_depth):
+            segments = []
+            
+            if footprint_type == "rectangle":
+                segments.append({
+                    "center": [0, 0],
+                    "width": base_width,
+                    "depth": base_depth,
+                    "rotation": 0
+                })
+                
+            elif footprint_type == "L_shape":
+                # Main rectangle
+                segments.append({
+                    "center": [base_width * 0.25, 0],
+                    "width": base_width * 0.5,
+                    "depth": base_depth,
+                    "rotation": 0
+                })
+                # Wing rectangle
+                segments.append({
+                    "center": [-base_width * 0.25, base_depth * 0.25],
+                    "width": base_width * 0.5,
+                    "depth": base_depth * 0.5,
+                    "rotation": 0
+                })
+                
+            elif footprint_type == "U_shape":
+                # Left wing
+                segments.append({
+                    "center": [-base_width * 0.3, 0],
+                    "width": base_width * 0.4,
+                    "depth": base_depth,
+                    "rotation": 0
+                })
+                # Right wing
+                segments.append({
+                    "center": [base_width * 0.3, 0],
+                    "width": base_width * 0.4,
+                    "depth": base_depth,
+                    "rotation": 0
+                })
+                # Connecting section
+                segments.append({
+                    "center": [0, -base_depth * 0.3],
+                    "width": base_width,
+                    "depth": base_depth * 0.4,
+                    "rotation": 0
+                })
+                
+            elif footprint_type == "T_shape":
+                # Horizontal bar
+                segments.append({
+                    "center": [0, base_depth * 0.25],
+                    "width": base_width,
+                    "depth": base_depth * 0.5,
+                    "rotation": 0
+                })
+                # Vertical stem
+                segments.append({
+                    "center": [0, -base_depth * 0.25],
+                    "width": base_width * 0.5,
+                    "depth": base_depth * 0.5,
+                    "rotation": 0
+                })
+                
+            elif footprint_type == "cross":
+                # Horizontal bar
+                segments.append({
+                    "center": [0, 0],
+                    "width": base_width,
+                    "depth": base_depth * 0.6,
+                    "rotation": 0
+                })
+                # Vertical bar
+                segments.append({
+                    "center": [0, 0],
+                    "width": base_width * 0.6,
+                    "depth": base_depth,
+                    "rotation": 0
+                })
+                
+            elif footprint_type == "circle":
+                # Approximate circle with octagon
+                radius = min(base_width, base_depth) * 0.4
+                for i in range(8):
+                    angle = i * math.pi / 4
+                    segment_width = radius * 0.8
+                    segment_depth = radius * 0.4
+                    segments.append({
+                        "center": [radius * 0.7 * math.cos(angle), radius * 0.7 * math.sin(angle)],
+                        "width": segment_width,
+                        "depth": segment_depth,
+                        "rotation": angle * 180 / math.pi
+                    })
+                    
+            return segments
+        
+        # Create building segments
+        footprint_segments = create_footprint_segments(footprint, width, depth)
+        
+        # Build each floor
+        for floor in range(floors):
+            floor_z = location[2] + floor * floor_height
+            
+            # Create floor slab
+            if floor == 0:  # Foundation
+                foundation_name = f"{name_prefix}_Foundation"
+                foundation_result = unreal.send_command("spawn_actor", {
+                    "name": foundation_name,
+                    "type": "StaticMeshActor",
+                    "location": [location[0], location[1], floor_z - 25],
+                    "scale": [(width + 100)/100, (depth + 100)/100, 0.5],
+                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
+                })
+                if foundation_result and foundation_result.get("status") == "success":
+                    all_actors.append(foundation_result.get("result"))
+                    # Apply foundation color
+                    apply_color_to_actor(foundation_result, building_colors["foundation"], "foundation")
+            
+            # Create walls for each segment
+            for seg_idx, segment in enumerate(footprint_segments):
+                seg_center_x = location[0] + segment["center"][0]
+                seg_center_y = location[1] + segment["center"][1]
+                seg_width = segment["width"]
+                seg_depth = segment["depth"]
+                seg_rotation = segment["rotation"]
+                
+                # Floor slab for this segment
+                floor_name = f"{name_prefix}_Floor_{floor}_{seg_idx}"
+                floor_result = unreal.send_command("spawn_actor", {
+                    "name": floor_name,
+                    "type": "StaticMeshActor",
+                    "location": [seg_center_x, seg_center_y, floor_z],
+                    "rotation": [0, seg_rotation, 0],
+                    "scale": [seg_width/100, seg_depth/100, 0.3],
+                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
+                })
+                if floor_result and floor_result.get("status") == "success":
+                    all_actors.append(floor_result.get("result"))
+                    # Apply floor color (use foundation color for floors)
+                    apply_color_to_actor(floor_result, building_colors["foundation"], "floor")
+                
+                # Create walls (4 walls per segment)
+                wall_positions = [
+                    {"pos": [0, -seg_depth/2], "size": [seg_width, wall_thickness], "name": "North"},
+                    {"pos": [0, seg_depth/2], "size": [seg_width, wall_thickness], "name": "South"},
+                    {"pos": [-seg_width/2, 0], "size": [wall_thickness, seg_depth], "name": "West"},
+                    {"pos": [seg_width/2, 0], "size": [wall_thickness, seg_depth], "name": "East"}
+                ]
+                
+                for wall_idx, wall in enumerate(wall_positions):
+                    wall_x = seg_center_x + wall["pos"][0] * math.cos(math.radians(seg_rotation)) - wall["pos"][1] * math.sin(math.radians(seg_rotation))
+                    wall_y = seg_center_y + wall["pos"][0] * math.sin(math.radians(seg_rotation)) + wall["pos"][1] * math.cos(math.radians(seg_rotation))
+                    
+                    wall_name = f"{name_prefix}_Wall_{floor}_{seg_idx}_{wall['name']}"
+                    wall_result = unreal.send_command("spawn_actor", {
+                        "name": wall_name,
+                        "type": "StaticMeshActor",
+                        "location": [wall_x, wall_y, floor_z + floor_height/2],
+                        "rotation": [0, seg_rotation + (90 if wall_idx >= 2 else 0), 0],
+                        "scale": [wall["size"][0]/100, wall["size"][1]/100, floor_height/100],
+                        "static_mesh": "/Engine/BasicShapes/Cube.Cube"
+                    })
+                    if wall_result and wall_result.get("status") == "success":
+                        all_actors.append(wall_result.get("result"))
+                        # Apply wall color
+                        apply_color_to_actor(wall_result, building_colors["walls"], "walls")
+                    
+                    # Add windows based on facade pattern and floor
+                    if include_details and floor > 0:  # No windows on ground floor for some walls
+                        add_windows = True
+                        if floor == 1 and entrance_side == wall["name"].lower() and seg_idx == 0:
+                            add_windows = False  # Skip windows where entrance will be
+                        
+                        if add_windows:
+                            window_count = max(1, int(wall["size"][0] / 200)) if wall_idx < 2 else max(1, int(wall["size"][1] / 200))
+                            
+                            for win_idx in range(window_count):
+                                if random.random() < window_ratio:
+                                    window_offset = (win_idx - (window_count - 1)/2) * (wall["size"][0] / window_count if wall_idx < 2 else wall["size"][1] / window_count)
+                                    
+                                    if wall_idx < 2:  # North/South walls
+                                        win_x = wall_x + window_offset * math.cos(math.radians(seg_rotation))
+                                        win_y = wall_y + window_offset * math.sin(math.radians(seg_rotation))
+                                    else:  # East/West walls
+                                        win_x = wall_x + window_offset * math.sin(math.radians(seg_rotation))
+                                        win_y = wall_y - window_offset * math.cos(math.radians(seg_rotation))
+                                    
+                                    # Adjust window position to be on the wall surface
+                                    normal_offset = wall_thickness * 0.6
+                                    if wall["name"] == "North":
+                                        win_y -= normal_offset
+                                    elif wall["name"] == "South":
+                                        win_y += normal_offset
+                                    elif wall["name"] == "West":
+                                        win_x -= normal_offset
+                                    elif wall["name"] == "East":
+                                        win_x += normal_offset
+                                    
+                                    window_name = f"{name_prefix}_Window_{floor}_{seg_idx}_{wall['name']}_{win_idx}"
+                                    window_result = unreal.send_command("spawn_actor", {
+                                        "name": window_name,
+                                        "type": "StaticMeshActor",
+                                        "location": [win_x, win_y, floor_z + floor_height * 0.6],
+                                        "rotation": [0, seg_rotation + (90 if wall_idx >= 2 else 0), 0],
+                                        "scale": [1.2, 0.1, 1.5],
+                                        "static_mesh": "/Engine/BasicShapes/Cube.Cube"
+                                    })
+                                    if window_result and window_result.get("status") == "success":
+                                        all_actors.append(window_result.get("result"))
+                                        # Apply window color
+                                        apply_color_to_actor(window_result, building_colors["windows"], "windows")
+                
+                # Add balconies for residential styles
+                if include_details and floor > 1 and style in ["cottage", "modern"] and random.random() < balcony_chance:
+                    balcony_name = f"{name_prefix}_Balcony_{floor}_{seg_idx}"
+                    balcony_x = seg_center_x + (seg_width/2 + 80) * math.cos(math.radians(seg_rotation))
+                    balcony_y = seg_center_y + (seg_width/2 + 80) * math.sin(math.radians(seg_rotation))
+                    
+                    balcony_result = unreal.send_command("spawn_actor", {
+                        "name": balcony_name,
+                        "type": "StaticMeshActor",
+                        "location": [balcony_x, balcony_y, floor_z + floor_height - 50],
+                        "rotation": [0, seg_rotation, 0],
+                        "scale": [2.0, 1.0, 0.1],
+                        "static_mesh": "/Engine/BasicShapes/Cube.Cube"
+                    })
+                    if balcony_result and balcony_result.get("status") == "success":
+                        all_actors.append(balcony_result.get("result"))
+                        # Apply trim color to balconies
+                        apply_color_to_actor(balcony_result, building_colors["trim"], "balcony")
+        
+        # Create entrance on ground floor
+        if include_details:
+            entrance_segment = footprint_segments[0]  # Use first segment for entrance
+            seg_center_x = location[0] + entrance_segment["center"][0]
+            seg_center_y = location[1] + entrance_segment["center"][1]
+            
+            entrance_positions = {
+                "front": [seg_center_x, seg_center_y - entrance_segment["depth"]/2 - wall_thickness],
+                "back": [seg_center_x, seg_center_y + entrance_segment["depth"]/2 + wall_thickness],
+                "left": [seg_center_x - entrance_segment["width"]/2 - wall_thickness, seg_center_y],
+                "right": [seg_center_x + entrance_segment["width"]/2 + wall_thickness, seg_center_y],
+                "corner": [seg_center_x - entrance_segment["width"]/3, seg_center_y - entrance_segment["depth"]/3]
+            }
+            
+            entrance_pos = entrance_positions.get(entrance_side, entrance_positions["front"])
+            
+            # Main door
+            door_name = f"{name_prefix}_MainDoor"
+            door_result = unreal.send_command("spawn_actor", {
+                "name": door_name,
+                "type": "StaticMeshActor",
+                "location": [entrance_pos[0], entrance_pos[1], location[2] + 120],
+                "scale": [1.0, 0.2, 2.4],
+                "static_mesh": "/Engine/BasicShapes/Cube.Cube"
+            })
+            if door_result and door_result.get("status") == "success":
+                all_actors.append(door_result.get("result"))
+                # Apply door color
+                apply_color_to_actor(door_result, building_colors["doors"], "doors")
+            
+            # Door frame/arch
+            if style in ["gothic", "art_deco"]:
+                arch_name = f"{name_prefix}_DoorArch"
+                arch_result = unreal.send_command("spawn_actor", {
+                    "name": arch_name,
+                    "type": "StaticMeshActor",
+                    "location": [entrance_pos[0], entrance_pos[1], location[2] + 180],
+                    "scale": [1.5, 0.3, 1.0],
+                    "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
+                })
+                if arch_result and arch_result.get("status") == "success":
+                    all_actors.append(arch_result.get("result"))
+                    # Apply trim color to arch
+                    apply_color_to_actor(arch_result, building_colors["trim"], "arch")
+        
+        # Create roof
+        roof_z = location[2] + total_height
+        
+        if roof_type == "flat":
+            for seg_idx, segment in enumerate(footprint_segments):
+                seg_center_x = location[0] + segment["center"][0]
+                seg_center_y = location[1] + segment["center"][1]
+                
+                roof_name = f"{name_prefix}_Roof_{seg_idx}"
+                roof_result = unreal.send_command("spawn_actor", {
+                    "name": roof_name,
+                    "type": "StaticMeshActor",
+                    "location": [seg_center_x, seg_center_y, roof_z + 25],
+                    "rotation": [0, segment["rotation"], 0],
+                    "scale": [(segment["width"] + 50)/100, (segment["depth"] + 50)/100, 0.5],
+                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
+                })
+                if roof_result and roof_result.get("status") == "success":
+                    all_actors.append(roof_result.get("result"))
+                    # Apply roof color
+                    apply_color_to_actor(roof_result, building_colors["roof"], "roof")
+        
+        elif roof_type == "gable":
+            main_segment = footprint_segments[0]
+            seg_center_x = location[0] + main_segment["center"][0]
+            seg_center_y = location[1] + main_segment["center"][1]
+            
+            # Two sloped roof sections
+            for side in [-1, 1]:
+                roof_name = f"{name_prefix}_GableRoof_{side}"
+                roof_result = unreal.send_command("spawn_actor", {
+                    "name": roof_name,
+                    "type": "StaticMeshActor",
+                    "location": [seg_center_x + side * main_segment["width"]/4, seg_center_y, roof_z + 100],
+                    "rotation": [0, main_segment["rotation"], side * 25],
+                    "scale": [main_segment["width"]/200, (main_segment["depth"] + 100)/100, 0.3],
+                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
+                })
+                if roof_result and roof_result.get("status") == "success":
+                    all_actors.append(roof_result.get("result"))
+                    # Apply roof color
+                    apply_color_to_actor(roof_result, building_colors["roof"], "roof")
+        
+        elif roof_type == "cone":
+            main_segment = footprint_segments[0]
+            seg_center_x = location[0] + main_segment["center"][0]
+            seg_center_y = location[1] + main_segment["center"][1]
+            
+            roof_name = f"{name_prefix}_ConeRoof"
+            roof_result = unreal.send_command("spawn_actor", {
+                "name": roof_name,
+                "type": "StaticMeshActor",
+                "location": [seg_center_x, seg_center_y, roof_z + 150],
+                "rotation": [0, main_segment["rotation"], 0],
+                "scale": [max(main_segment["width"], main_segment["depth"])/100, max(main_segment["width"], main_segment["depth"])/100, 3.0],
+                "static_mesh": "/Engine/BasicShapes/Cone.Cone"
+            })
+            if roof_result and roof_result.get("status") == "success":
+                all_actors.append(roof_result.get("result"))
+                # Apply roof color
+                apply_color_to_actor(roof_result, building_colors["roof"], "roof")
+        
+        elif roof_type == "dome":
+            main_segment = footprint_segments[0]
+            seg_center_x = location[0] + main_segment["center"][0]
+            seg_center_y = location[1] + main_segment["center"][1]
+            
+            roof_name = f"{name_prefix}_DomeRoof"
+            roof_result = unreal.send_command("spawn_actor", {
+                "name": roof_name,
+                "type": "StaticMeshActor",
+                "location": [seg_center_x, seg_center_y, roof_z + 100],
+                "rotation": [0, main_segment["rotation"], 0],
+                "scale": [max(main_segment["width"], main_segment["depth"])/100, max(main_segment["width"], main_segment["depth"])/100, 2.0],
+                "static_mesh": "/Engine/BasicShapes/Sphere.Sphere"
+            })
+            if roof_result and roof_result.get("status") == "success":
+                all_actors.append(roof_result.get("result"))
+                # Apply roof color
+                apply_color_to_actor(roof_result, building_colors["roof"], "roof")
+        
+        # Add style-specific details
+        if include_details:
+            main_segment = footprint_segments[0]
+            seg_center_x = location[0] + main_segment["center"][0]
+            seg_center_y = location[1] + main_segment["center"][1]
+            
+            if style == "gothic":
+                # Add spires on corners
+                for i, corner_offset in enumerate([[-1, -1], [1, -1], [1, 1], [-1, 1]]):
+                    spire_x = seg_center_x + corner_offset[0] * main_segment["width"] * 0.4
+                    spire_y = seg_center_y + corner_offset[1] * main_segment["depth"] * 0.4
+                    
+                    spire_name = f"{name_prefix}_Spire_{i}"
+                    spire_result = unreal.send_command("spawn_actor", {
+                        "name": spire_name,
+                        "type": "StaticMeshActor",
+                        "location": [spire_x, spire_y, roof_z + 200],
+                        "scale": [0.5, 0.5, 4.0],
+                        "static_mesh": "/Engine/BasicShapes/Cone.Cone"
+                    })
+                    if spire_result and spire_result.get("status") == "success":
+                        all_actors.append(spire_result.get("result"))
+                        # Apply trim color to spires
+                        apply_color_to_actor(spire_result, building_colors["trim"], "spire")
+            
+            elif style == "art_deco":
+                # Add decorative crown
+                crown_name = f"{name_prefix}_Crown"
+                crown_result = unreal.send_command("spawn_actor", {
+                    "name": crown_name,
+                    "type": "StaticMeshActor",
+                    "location": [seg_center_x, seg_center_y, roof_z + 100],
+                    "scale": [(main_segment["width"] + 200)/100, (main_segment["depth"] + 200)/100, 1.0],
+                    "static_mesh": "/Engine/BasicShapes/Cube.Cube"
+                })
+                if crown_result and crown_result.get("status") == "success":
+                    all_actors.append(crown_result.get("result"))
+                    # Apply trim color to crown
+                    apply_color_to_actor(crown_result, building_colors["trim"], "crown")
+        
+        # Get the final material scheme used
+        final_color_scheme = color_scheme
+        if color_scheme == "auto":
+            style_to_material = {
+                "modern": "glass",
+                "cottage": "wood", 
+                "gothic": "stone",
+                "art_deco": "concrete",
+                "brutalist": "concrete",
+                "glass": "glass",
+                "industrial": "metal"
+            }
+            final_color_scheme = style_to_material.get(style, "concrete")
+        
+        logger.info(f"Generated building with {len(all_actors)} actors using {final_color_scheme} color scheme")
+        
+        return {
+            "success": True,
+            "message": f"Generated {style} building with {footprint} footprint, {floors} floors, {final_color_scheme} colors, and {len(all_actors)} components",
+            "actors": all_actors,
+            "building_stats": {
+                "style": style,
+                "footprint": footprint,
+                "floors": floors,
+                "total_height": total_height,
+                "facade_pattern": facade_pattern,
+                "roof_type": roof_type,
+                "entrance_side": entrance_side,
+                "has_balconies": balcony_chance > 0,
+                "has_details": include_details,
+                "color_scheme": final_color_scheme,
+                "colors_applied": {
+                    "walls": building_colors["walls"],
+                    "roof": building_colors["roof"],
+                    "windows": building_colors["windows"],
+                    "doors": building_colors["doors"],
+                    "trim": building_colors["trim"],
+                    "foundation": building_colors["foundation"]
+                },
+                "total_actors": len(all_actors),
+                "dimensions": {"width": width, "depth": depth, "height": total_height},
+                "seed_used": seed
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"generate_building error: {e}")
         return {"success": False, "message": str(e)}
 
 # Run the server

@@ -25,4 +25,7 @@ private:
 
     // Blueprint actor spawning
     TSharedPtr<FJsonObject> HandleSpawnBlueprintActor(const TSharedPtr<FJsonObject>& Params);
+
+    // Material utilities on existing actors
+    TSharedPtr<FJsonObject> HandleSetActorMaterialColor(const TSharedPtr<FJsonObject>& Params);
 }; 

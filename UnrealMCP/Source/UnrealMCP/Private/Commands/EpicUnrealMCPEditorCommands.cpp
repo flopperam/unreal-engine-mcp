@@ -55,6 +55,10 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCommand(const FStrin
     {
         return HandleSpawnBlueprintActor(Params);
     }
+    else if (CommandType == TEXT("set_actor_material_color"))
+    {
+        return HandleSetActorMaterialColor(Params);
+    }
     
     return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown editor command: %s"), *CommandType));
 }
@@ -305,4 +309,108 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleSpawnBlueprintActor(
     // This function will now correctly call the implementation in BlueprintCommands
     FEpicUnrealMCPBlueprintCommands BlueprintCommands;
     return BlueprintCommands.HandleCommand(TEXT("spawn_blueprint_actor"), Params);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleSetActorMaterialColor(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName;
+    if (!Params->TryGetStringField(TEXT("name"), ActorName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'name' parameter"));
+    }
+
+    int32 MaterialSlot = 0;
+    if (Params->HasField(TEXT("material_slot")))
+    {
+        MaterialSlot = Params->GetIntegerField(TEXT("material_slot"));
+    }
+
+    FString ParameterName = TEXT("BaseColor");
+    Params->TryGetStringField(TEXT("parameter_name"), ParameterName);
+
+    FString MaterialPath;
+    const bool bHasMaterialPath = Params->TryGetStringField(TEXT("material_path"), MaterialPath);
+
+    const TArray<TSharedPtr<FJsonValue>>* ColorJsonArray;
+    if (!Params->TryGetArrayField(TEXT("color"), ColorJsonArray) || ColorJsonArray->Num() != 4)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("'color' must be an array of 4 floats [R,G,B,A]"));
+    }
+
+    FLinearColor Color((*ColorJsonArray)[0]->AsNumber(), (*ColorJsonArray)[1]->AsNumber(), (*ColorJsonArray)[2]->AsNumber(), (*ColorJsonArray)[3]->AsNumber());
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get editor world"));
+    }
+
+    AActor* TargetActor = nullptr;
+    TArray<AActor*> AllActors;
+    UGameplayStatics::GetAllActorsOfClass(World, AActor::StaticClass(), AllActors);
+    for (AActor* Actor : AllActors)
+    {
+        if (Actor && Actor->GetName() == ActorName)
+        {
+            TargetActor = Actor;
+            break;
+        }
+    }
+
+    if (!TargetActor)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Actor not found: %s"), *ActorName));
+    }
+
+    // Try to find a StaticMeshComponent on this actor
+    UStaticMeshComponent* MeshComponent = TargetActor->FindComponentByClass<UStaticMeshComponent>();
+    if (!MeshComponent)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Actor has no StaticMeshComponent"));
+    }
+
+    UMaterialInterface* Material = nullptr;
+    if (bHasMaterialPath)
+    {
+        Material = Cast<UMaterialInterface>(UEditorAssetLibrary::LoadAsset(MaterialPath));
+        if (!Material)
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Failed to load material: %s"), *MaterialPath));
+        }
+    }
+    else
+    {
+        Material = MeshComponent->GetMaterial(MaterialSlot);
+        if (!Material)
+        {
+            Material = Cast<UMaterialInterface>(UEditorAssetLibrary::LoadAsset(TEXT("/Engine/BasicShapes/BasicShapeMaterial")));
+        }
+    }
+
+    if (!Material)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No material available to set color on"));
+    }
+
+    UMaterialInstanceDynamic* DynMaterial = Cast<UMaterialInstanceDynamic>(MeshComponent->GetMaterial(MaterialSlot));
+    if (!DynMaterial)
+    {
+        DynMaterial = UMaterialInstanceDynamic::Create(Material, MeshComponent);
+    }
+    if (!DynMaterial)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create dynamic material instance"));
+    }
+
+    DynMaterial->SetVectorParameterValue(*ParameterName, Color);
+    MeshComponent->SetMaterial(MaterialSlot, DynMaterial);
+    MeshComponent->MarkRenderStateDirty();
+    MeshComponent->ReregisterComponent();
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetStringField(TEXT("name"), ActorName);
+    ResultObj->SetStringField(TEXT("parameter_name"), ParameterName);
+    ResultObj->SetNumberField(TEXT("material_slot"), MaterialSlot);
+    ResultObj->SetBoolField(TEXT("success"), true);
+    return ResultObj;
 }

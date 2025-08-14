@@ -220,6 +220,7 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                      CommandType == TEXT("spawn_actor") ||
                      CommandType == TEXT("delete_actor") || 
                      CommandType == TEXT("set_actor_transform") ||
+                     CommandType == TEXT("set_actor_material_color") ||
                      CommandType == TEXT("spawn_blueprint_actor"))
             {
                 ResultJson = EditorCommands->HandleCommand(CommandType, Params);
