@@ -230,7 +230,13 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                      CommandType == TEXT("set_physics_properties") ||
                      CommandType == TEXT("compile_blueprint") ||
                      CommandType == TEXT("set_static_mesh_properties") ||
-                     CommandType == TEXT("set_mesh_material_color"))
+                     CommandType == TEXT("set_mesh_material_color") ||
+                     CommandType == TEXT("create_blueprint_variable") ||
+                     CommandType == TEXT("add_blueprint_event_node") ||
+                     CommandType == TEXT("add_blueprint_function_node") ||
+                     CommandType == TEXT("connect_blueprint_nodes") ||
+                     CommandType == TEXT("add_blueprint_branch_node") ||
+                     CommandType == TEXT("create_blueprint_custom_event"))
             {
                 ResultJson = BlueprintCommands->HandleCommand(CommandType, Params);
             }

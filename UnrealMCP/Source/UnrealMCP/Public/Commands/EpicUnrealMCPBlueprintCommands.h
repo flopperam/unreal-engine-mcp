@@ -24,5 +24,12 @@ private:
     TSharedPtr<FJsonObject> HandleSetStaticMeshProperties(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetMeshMaterialColor(const TSharedPtr<FJsonObject>& Params);
 
+    // New Blueprint node manipulation commands
+    TSharedPtr<FJsonObject> HandleCreateBlueprintVariable(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleAddBlueprintEventNode(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleAddBlueprintFunctionNode(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleConnectBlueprintNodes(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleAddBlueprintBranchNode(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCreateBlueprintCustomEvent(const TSharedPtr<FJsonObject>& Params);
 
 }; 
