@@ -95,6 +95,12 @@ MCPGameProject/Config/DefaultEditorPerProjectUserSettings.ini
 # Cursor
 .cursor/mcp.json
 
-#Misc
-
+# Visual Studio
 .vs
+.vscode
+*.code-workspace
+.ignore
+
+# Clang
+.clang-format
+.clangd
