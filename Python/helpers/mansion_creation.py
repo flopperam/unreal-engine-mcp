@@ -11,6 +11,19 @@ import random
 
 logger = logging.getLogger(__name__)
 
+# Import safe spawning functions
+try:
+    from .actor_name_manager import safe_spawn_actor
+except ImportError:
+    logger.warning("Could not import actor_name_manager, using fallback spawning")
+    def safe_spawn_actor(unreal_connection, params, auto_unique_name=True):
+        return unreal_connection.send_command("spawn_actor", params)
+
+def _safe_spawn_mansion_actor(unreal, params):
+    """Helper function to safely spawn mansion actors and track results."""
+    resp = safe_spawn_actor(unreal, params, auto_unique_name=True)
+    return resp
+
 
 def get_mansion_size_params(mansion_scale: str) -> Dict[str, Any]:
     """Get size parameters for different mansion scales."""
@@ -118,14 +131,14 @@ def _build_main_mansion_body(unreal, name_prefix: str, location: List[float],
         
         # Floor platform
         floor_name = f"{name_prefix}_MainFloor_{floor}"
-        floor_result = unreal.send_command("spawn_actor", {
+        floor_result = _safe_spawn_mansion_actor(unreal, {
             "name": floor_name,
             "type": "StaticMeshActor",
             "location": [location[0], location[1], floor_z],
             "scale": [main_width/100, main_depth/100, wall_thickness/100],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if floor_result and floor_result.get("status") == "success":
+        if floor_result and floor_result.get("success"):
             all_actors.append(floor_result.get("result"))
 
         # Build walls around perimeter
@@ -143,47 +156,47 @@ def _build_perimeter_walls(unreal, name_prefix: str, location: List[float],
     """Build perimeter walls around a rectangular area."""
     
     # Front wall (facing south)
-    front_wall = unreal.send_command("spawn_actor", {
+    front_wall = _safe_spawn_mansion_actor(unreal, {
         "name": f"{name_prefix}_{identifier}_FrontWall",
         "type": "StaticMeshActor",
         "location": [location[0], location[1] - depth/2, floor_z + floor_height/2],
         "scale": [width/100, wall_thickness/100, floor_height/100],
         "static_mesh": "/Engine/BasicShapes/Cube.Cube"
     })
-    if front_wall and front_wall.get("status") == "success":
+    if front_wall and front_wall.get("success"):
         all_actors.append(front_wall.get("result"))
 
     # Back wall (facing north)
-    back_wall = unreal.send_command("spawn_actor", {
+    back_wall = _safe_spawn_mansion_actor(unreal, {
         "name": f"{name_prefix}_{identifier}_BackWall",
         "type": "StaticMeshActor",
         "location": [location[0], location[1] + depth/2, floor_z + floor_height/2],
         "scale": [width/100, wall_thickness/100, floor_height/100],
         "static_mesh": "/Engine/BasicShapes/Cube.Cube"
     })
-    if back_wall and back_wall.get("status") == "success":
+    if back_wall and back_wall.get("success"):
         all_actors.append(back_wall.get("result"))
 
     # Left wall (facing west)
-    left_wall = unreal.send_command("spawn_actor", {
+    left_wall = _safe_spawn_mansion_actor(unreal, {
         "name": f"{name_prefix}_{identifier}_LeftWall",
         "type": "StaticMeshActor",
         "location": [location[0] - width/2, location[1], floor_z + floor_height/2],
         "scale": [wall_thickness/100, depth/100, floor_height/100],
         "static_mesh": "/Engine/BasicShapes/Cube.Cube"
     })
-    if left_wall and left_wall.get("status") == "success":
+    if left_wall and left_wall.get("success"):
         all_actors.append(left_wall.get("result"))
 
     # Right wall (facing east)
-    right_wall = unreal.send_command("spawn_actor", {
+    right_wall = _safe_spawn_mansion_actor(unreal, {
         "name": f"{name_prefix}_{identifier}_RightWall",
         "type": "StaticMeshActor",
         "location": [location[0] + width/2, location[1], floor_z + floor_height/2],
         "scale": [wall_thickness/100, depth/100, floor_height/100],
         "static_mesh": "/Engine/BasicShapes/Cube.Cube"
     })
-    if right_wall and right_wall.get("status") == "success":
+    if right_wall and right_wall.get("success"):
         all_actors.append(right_wall.get("result"))
 
 
@@ -203,14 +216,14 @@ def _add_realistic_windows(unreal, name_prefix: str, location: List[float],
         window_x = location[0] - width/2 + (i + 0.5) * (width / num_front_windows)
         window_name = f"{name_prefix}_{identifier}_FrontWindow_{i}"
         
-        window_result = unreal.send_command("spawn_actor", {
+        window_result = _safe_spawn_mansion_actor(unreal, {
             "name": window_name,
             "type": "StaticMeshActor",
             "location": [window_x, front_wall_y, floor_z + floor_height * 0.6],
             "scale": [window_width/100, 0.2, window_height/100],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if window_result and window_result.get("status") == "success":
+        if window_result and window_result.get("success"):
             all_actors.append(window_result.get("result"))
 
     # Windows on back wall
@@ -219,14 +232,14 @@ def _add_realistic_windows(unreal, name_prefix: str, location: List[float],
         window_x = location[0] - width/2 + (i + 0.5) * (width / num_front_windows)
         window_name = f"{name_prefix}_{identifier}_BackWindow_{i}"
         
-        window_result = unreal.send_command("spawn_actor", {
+        window_result = _safe_spawn_mansion_actor(unreal, {
             "name": window_name,
             "type": "StaticMeshActor",
             "location": [window_x, back_wall_y, floor_z + floor_height * 0.6],
             "scale": [window_width/100, 0.2, window_height/100],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if window_result and window_result.get("status") == "success":
+        if window_result and window_result.get("success"):
             all_actors.append(window_result.get("result"))
 
     # Windows on side walls
@@ -238,14 +251,14 @@ def _add_realistic_windows(unreal, name_prefix: str, location: List[float],
         window_y = location[1] - depth/2 + (i + 0.5) * (depth / num_side_windows)
         window_name = f"{name_prefix}_{identifier}_LeftWindow_{i}"
         
-        window_result = unreal.send_command("spawn_actor", {
+        window_result = _safe_spawn_mansion_actor(unreal, {
             "name": window_name,
             "type": "StaticMeshActor",
             "location": [left_wall_x, window_y, floor_z + floor_height * 0.6],
             "scale": [0.2, window_width/100, window_height/100],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if window_result and window_result.get("status") == "success":
+        if window_result and window_result.get("success"):
             all_actors.append(window_result.get("result"))
 
     # Right wall windows
@@ -254,14 +267,14 @@ def _add_realistic_windows(unreal, name_prefix: str, location: List[float],
         window_y = location[1] - depth/2 + (i + 0.5) * (depth / num_side_windows)
         window_name = f"{name_prefix}_{identifier}_RightWindow_{i}"
         
-        window_result = unreal.send_command("spawn_actor", {
+        window_result = _safe_spawn_mansion_actor(unreal, {
             "name": window_name,
             "type": "StaticMeshActor",
             "location": [right_wall_x, window_y, floor_z + floor_height * 0.6],
             "scale": [0.2, window_width/100, window_height/100],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if window_result and window_result.get("status") == "success":
+        if window_result and window_result.get("success"):
             all_actors.append(window_result.get("result"))
 
 
@@ -304,7 +317,7 @@ def _build_mansion_wing_realistic(unreal, name_prefix: str, location: List[float
         
         # Wing floor
         floor_name = f"{name_prefix}_Wing{wing_idx}_Floor{floor}"
-        floor_result = unreal.send_command("spawn_actor", {
+        floor_result = _safe_spawn_mansion_actor(unreal, {
             "name": floor_name,
             "type": "StaticMeshActor",
             "location": [wing_center_x, wing_center_y, floor_z],
@@ -312,7 +325,7 @@ def _build_mansion_wing_realistic(unreal, name_prefix: str, location: List[float
             "scale": [wing_length/100, wing_width/100, wall_thickness/100],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if floor_result and floor_result.get("status") == "success":
+        if floor_result and floor_result.get("success"):
             all_actors.append(floor_result.get("result"))
 
         # Build wing walls
@@ -338,14 +351,14 @@ def _build_mansion_entrances(unreal, name_prefix: str, location: List[float],
     # Main front entrance (grand door)
     entrance_y = location[1] - main_depth/2
     entrance_name = f"{name_prefix}_GrandEntrance"
-    entrance_result = unreal.send_command("spawn_actor", {
+    entrance_result = _safe_spawn_mansion_actor(unreal, {
         "name": entrance_name,
         "type": "StaticMeshActor",
         "location": [location[0], entrance_y, location[2] + floor_height * 0.7],
         "scale": [doorway_width/100, 0.3, floor_height * 0.8/100],
         "static_mesh": "/Engine/BasicShapes/Cube.Cube"
     })
-    if entrance_result and entrance_result.get("status") == "success":
+    if entrance_result and entrance_result.get("success"):
         all_actors.append(entrance_result.get("result"))
 
     # Side entrances for wings
@@ -365,14 +378,14 @@ def _build_mansion_entrances(unreal, name_prefix: str, location: List[float],
             ent_x = location[0]
             ent_y = location[1] - layout["main_depth"]/2 - 100
 
-        wing_entrance_result = unreal.send_command("spawn_actor", {
+        wing_entrance_result = _safe_spawn_mansion_actor(unreal, {
             "name": wing_entrance_name,
             "type": "StaticMeshActor",
             "location": [ent_x, ent_y, location[2] + floor_height * 0.6],
             "scale": [doorway_width/100 * 0.8, 0.2, floor_height * 0.7/100],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if wing_entrance_result and wing_entrance_result.get("status") == "success":
+        if wing_entrance_result and wing_entrance_result.get("success"):
             all_actors.append(wing_entrance_result.get("result"))
 
 
@@ -391,14 +404,14 @@ def _build_mansion_roofs(unreal, name_prefix: str, location: List[float],
 
     # Main building roof
     main_roof_name = f"{name_prefix}_MainRoof"
-    main_roof_result = unreal.send_command("spawn_actor", {
+    main_roof_result = _safe_spawn_mansion_actor(unreal, {
         "name": main_roof_name,
         "type": "StaticMeshActor",
         "location": [location[0], location[1], roof_z],
         "scale": [main_width/100 * 1.1, main_depth/100 * 1.1, roof_height/100],
         "static_mesh": "/Engine/BasicShapes/Wedge.Wedge"
     })
-    if main_roof_result and main_roof_result.get("status") == "success":
+    if main_roof_result and main_roof_result.get("success"):
         all_actors.append(main_roof_result.get("result"))
 
     # Wing roofs
@@ -422,7 +435,7 @@ def _build_mansion_roofs(unreal, name_prefix: str, location: List[float],
             roof_y = location[1] - main_depth/2 - wing_length/2
 
         wing_roof_name = f"{name_prefix}_Wing{wing_idx}_Roof"
-        wing_roof_result = unreal.send_command("spawn_actor", {
+        wing_roof_result = _safe_spawn_mansion_actor(unreal, {
             "name": wing_roof_name,
             "type": "StaticMeshActor",
             "location": [roof_x, roof_y, roof_z - roof_height/4],
@@ -430,7 +443,7 @@ def _build_mansion_roofs(unreal, name_prefix: str, location: List[float],
             "scale": [wing_length/100 * 1.1, wing_width/100 * 1.1, roof_height/100 * 0.8],
             "static_mesh": "/Engine/BasicShapes/Wedge.Wedge"
         })
-        if wing_roof_result and wing_roof_result.get("status") == "success":
+        if wing_roof_result and wing_roof_result.get("success"):
             all_actors.append(wing_roof_result.get("result"))
 
 
@@ -449,14 +462,14 @@ def _build_grand_staircase(unreal, name_prefix: str, location: List[float],
     staircase_height = floors * floor_height
 
     staircase_name = f"{name_prefix}_GrandStaircase"
-    staircase_result = unreal.send_command("spawn_actor", {
+    staircase_result = _safe_spawn_mansion_actor(unreal, {
         "name": staircase_name,
         "type": "StaticMeshActor",
         "location": [location[0], location[1] + staircase_depth/2, location[2] + staircase_height/2],
         "scale": [staircase_width/100, staircase_depth/100, staircase_height/100],
         "static_mesh": "/Engine/BasicShapes/Cube.Cube"
     })
-    if staircase_result and staircase_result.get("status") == "success":
+    if staircase_result and staircase_result.get("success"):
         all_actors.append(staircase_result.get("result"))
 
     # Individual staircase steps
@@ -468,14 +481,14 @@ def _build_grand_staircase(unreal, name_prefix: str, location: List[float],
         step_depth = staircase_depth * (1 - step/total_steps * 0.3)
 
         step_name = f"{name_prefix}_StairStep_{step}"
-        step_result = unreal.send_command("spawn_actor", {
+        step_result = _safe_spawn_mansion_actor(unreal, {
             "name": step_name,
             "type": "StaticMeshActor",
             "location": [location[0], location[1] + step_depth/2, step_z],
             "scale": [staircase_width/100, step_depth/100, staircase_height/total_steps/100],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if step_result and step_result.get("status") == "success":
+        if step_result and step_result.get("success"):
             all_actors.append(step_result.get("result"))
 
 
@@ -497,14 +510,14 @@ def _build_rooftop_bar_deck(unreal, name_prefix: str, location: List[float],
     
     # Main deck platform
     deck_name = f"{name_prefix}_RooftopDeck"
-    deck_result = unreal.send_command("spawn_actor", {
+    deck_result = _safe_spawn_mansion_actor(unreal, {
         "name": deck_name,
         "type": "StaticMeshActor",
         "location": [location[0], location[1], deck_height],
         "scale": [deck_width/100, deck_depth/100, deck_thickness/100],
         "static_mesh": "/Engine/BasicShapes/Cube.Cube"
     })
-    if deck_result and deck_result.get("status") == "success":
+    if deck_result and deck_result.get("success"):
         all_actors.append(deck_result.get("result"))
     
     # Support stilts/pillars - connect from house ceiling (underside of roof)
@@ -527,14 +540,14 @@ def _build_rooftop_bar_deck(unreal, name_prefix: str, location: List[float],
     
     for i, pos in enumerate(stilt_positions):
         stilt_name = f"{name_prefix}_DeckStilt_{i}"
-        stilt_result = unreal.send_command("spawn_actor", {
+        stilt_result = _safe_spawn_mansion_actor(unreal, {
             "name": stilt_name,
             "type": "StaticMeshActor",
             "location": [pos[0], pos[1], stilt_center_height],
             "scale": [1.2, 1.2, stilt_height/100],
             "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
         })
-        if stilt_result and stilt_result.get("status") == "success":
+        if stilt_result and stilt_result.get("success"):
             all_actors.append(stilt_result.get("result"))
     
     # Deck railings around perimeter
@@ -557,28 +570,28 @@ def _build_rooftop_bar_deck(unreal, name_prefix: str, location: List[float],
             railing_y = location[1] + deck_depth/2 - ((i-24) + 0.5) * (deck_depth/8)
         
         railing_name = f"{name_prefix}_DeckRailing_{i}"
-        railing_result = unreal.send_command("spawn_actor", {
+        railing_result = _safe_spawn_mansion_actor(unreal, {
             "name": railing_name,
             "type": "StaticMeshActor",
             "location": [railing_x, railing_y, deck_height + railing_height/2],
             "scale": [0.3, 0.3, railing_height/100],
             "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
         })
-        if railing_result and railing_result.get("status") == "success":
+        if railing_result and railing_result.get("success"):
             all_actors.append(railing_result.get("result"))
     
     # Bar counter
     bar_x = location[0] - deck_width * 0.25
     bar_y = location[1]
     bar_name = f"{name_prefix}_RooftopBar"
-    bar_result = unreal.send_command("spawn_actor", {
+    bar_result = _safe_spawn_mansion_actor(unreal, {
         "name": bar_name,
         "type": "StaticMeshActor",
         "location": [bar_x, bar_y, deck_height + 120],
         "scale": [8.0, 3.0, 2.4],
         "static_mesh": "/Engine/BasicShapes/Cube.Cube"
     })
-    if bar_result and bar_result.get("status") == "success":
+    if bar_result and bar_result.get("success"):
         all_actors.append(bar_result.get("result"))
     
     # Lounge seating areas
@@ -591,14 +604,14 @@ def _build_rooftop_bar_deck(unreal, name_prefix: str, location: List[float],
     
     for i, pos in enumerate(seating_positions):
         seating_name = f"{name_prefix}_RooftopSeating_{i}"
-        seating_result = unreal.send_command("spawn_actor", {
+        seating_result = _safe_spawn_mansion_actor(unreal, {
             "name": seating_name,
             "type": "StaticMeshActor",
             "location": [pos[0], pos[1], deck_height + 40],
             "scale": [2.5, 2.5, 0.8],
             "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
         })
-        if seating_result and seating_result.get("status") == "success":
+        if seating_result and seating_result.get("success"):
             all_actors.append(seating_result.get("result"))
     
     # Interior access to deck (access via mansion's internal stairs)
@@ -611,14 +624,14 @@ def _build_rooftop_bar_deck(unreal, name_prefix: str, location: List[float],
     
     for i, pos in enumerate(umbrella_positions):
         umbrella_name = f"{name_prefix}_RooftopUmbrella_{i}"
-        umbrella_result = unreal.send_command("spawn_actor", {
+        umbrella_result = _safe_spawn_mansion_actor(unreal, {
             "name": umbrella_name,
             "type": "StaticMeshActor",
             "location": [pos[0], pos[1], deck_height + 300],
             "scale": [4.0, 4.0, 0.5],
             "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
         })
-        if umbrella_result and umbrella_result.get("status") == "success":
+        if umbrella_result and umbrella_result.get("success"):
             all_actors.append(umbrella_result.get("result"))
 
 
@@ -669,14 +682,14 @@ def _build_driveway(unreal, name_prefix: str, location: List[float],
         drive_y = location[1] + math.sin(angle) * radius_variation
 
         driveway_name = f"{name_prefix}_Driveway_{i}"
-        driveway_result = unreal.send_command("spawn_actor", {
+        driveway_result = _safe_spawn_mansion_actor(unreal, {
             "name": driveway_name,
             "type": "StaticMeshActor",
             "location": [drive_x, drive_y, location[2] - 10],
             "scale": [4.5, 4.5, 0.25],  # Much wider and thicker driveway
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if driveway_result and driveway_result.get("status") == "success":
+        if driveway_result and driveway_result.get("success"):
             all_actors.append(driveway_result.get("result"))
 
     # Build long straight approach road leading to the circular driveway
@@ -687,14 +700,14 @@ def _build_driveway(unreal, name_prefix: str, location: List[float],
     for i in range(road_segments):
         road_y = approach_start_y + i * 300
         road_name = f"{name_prefix}_ApproachRoad_{i}"
-        road_result = unreal.send_command("spawn_actor", {
+        road_result = _safe_spawn_mansion_actor(unreal, {
             "name": road_name,
             "type": "StaticMeshActor",
             "location": [location[0], road_y, location[2] - 5],
             "scale": [approach_road_width/100, 3.0, 0.15],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if road_result and road_result.get("status") == "success":
+        if road_result and road_result.get("success"):
             all_actors.append(road_result.get("result"))
 
     # Add driveway connecting paths from circular to main entrance
@@ -705,14 +718,14 @@ def _build_driveway(unreal, name_prefix: str, location: List[float],
         segment_y = location[1] - driveway_radius - i * 150
         if segment_y > entrance_y:
             connect_name = f"{name_prefix}_DriveConnection_{i}"
-            connect_result = unreal.send_command("spawn_actor", {
+            connect_result = _safe_spawn_mansion_actor(unreal, {
                 "name": connect_name,
                 "type": "StaticMeshActor",
                 "location": [location[0], segment_y, location[2] - 5],
                 "scale": [3.0, 1.5, 0.15],
                 "static_mesh": "/Engine/BasicShapes/Cube.Cube"
             })
-            if connect_result and connect_result.get("status") == "success":
+            if connect_result and connect_result.get("success"):
                 all_actors.append(connect_result.get("result"))
 
 
@@ -728,7 +741,7 @@ def _build_front_gates(unreal, name_prefix: str, location: List[float],
     # Gate pillars
     for side in [-1, 1]:
         pillar_name = f"{name_prefix}_GatePillar_{side}"
-        pillar_result = unreal.send_command("spawn_actor", {
+        pillar_result = _safe_spawn_mansion_actor(unreal, {
             "name": pillar_name,
             "type": "StaticMeshActor",
             "location": [
@@ -739,13 +752,13 @@ def _build_front_gates(unreal, name_prefix: str, location: List[float],
             "scale": [2.0, 2.0, gate_height/100],
             "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
         })
-        if pillar_result and pillar_result.get("status") == "success":
+        if pillar_result and pillar_result.get("success"):
             all_actors.append(pillar_result.get("result"))
 
     # Gate doors
     for side in [-1, 1]:
         gate_name = f"{name_prefix}_GateDoor_{side}"
-        gate_result = unreal.send_command("spawn_actor", {
+        gate_result = _safe_spawn_mansion_actor(unreal, {
             "name": gate_name,
             "type": "StaticMeshActor",
             "location": [
@@ -756,7 +769,7 @@ def _build_front_gates(unreal, name_prefix: str, location: List[float],
             "scale": [0.3, gate_width/100 * 0.4, gate_height/100 * 1.2],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if gate_result and gate_result.get("status") == "success":
+        if gate_result and gate_result.get("success"):
             all_actors.append(gate_result.get("result"))
 
 
@@ -777,14 +790,14 @@ def _build_gardens(unreal, name_prefix: str, location: List[float],
         hedge_y = location[1] + math.sin(angle) * hedge_radius
 
         hedge_name = f"{name_prefix}_GardenHedge_{i}"
-        hedge_result = unreal.send_command("spawn_actor", {
+        hedge_result = _safe_spawn_mansion_actor(unreal, {
             "name": hedge_name,
             "type": "StaticMeshActor",
             "location": [hedge_x, hedge_y, location[2] + 50],
             "scale": [3.0, 3.0, 1.0],
             "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
         })
-        if hedge_result and hedge_result.get("status") == "success":
+        if hedge_result and hedge_result.get("success"):
             all_actors.append(hedge_result.get("result"))
 
     # Flower beds
@@ -797,14 +810,14 @@ def _build_gardens(unreal, name_prefix: str, location: List[float],
 
     for i, pos in enumerate(bed_positions):
         bed_name = f"{name_prefix}_FlowerBed_{i}"
-        bed_result = unreal.send_command("spawn_actor", {
+        bed_result = _safe_spawn_mansion_actor(unreal, {
             "name": bed_name,
             "type": "StaticMeshActor",
             "location": [pos[0], pos[1], location[2] + 25],
             "scale": [4.0, 4.0, 0.5],
             "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
         })
-        if bed_result and bed_result.get("status") == "success":
+        if bed_result and bed_result.get("success"):
             all_actors.append(bed_result.get("result"))
 
 
@@ -824,38 +837,38 @@ def _build_fountains(unreal, name_prefix: str, location: List[float],
 
         # Fountain base
         base_name = f"{name_prefix}_FountainBase_{i}"
-        base_result = unreal.send_command("spawn_actor", {
+        base_result = _safe_spawn_mansion_actor(unreal, {
             "name": base_name,
             "type": "StaticMeshActor",
             "location": [fountain_x, fountain_y, location[2] + 100],
             "scale": [3.0, 3.0, 2.0],
             "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
         })
-        if base_result and base_result.get("status") == "success":
+        if base_result and base_result.get("success"):
             all_actors.append(base_result.get("result"))
 
         # Fountain statue/ornament
         statue_name = f"{name_prefix}_FountainStatue_{i}"
-        statue_result = unreal.send_command("spawn_actor", {
+        statue_result = _safe_spawn_mansion_actor(unreal, {
             "name": statue_name,
             "type": "StaticMeshActor",
             "location": [fountain_x, fountain_y, location[2] + 250],
             "scale": [1.5, 1.5, 3.0],
             "static_mesh": "/Engine/BasicShapes/Cone.Cone"
         })
-        if statue_result and statue_result.get("status") == "success":
+        if statue_result and statue_result.get("success"):
             all_actors.append(statue_result.get("result"))
 
         # Water basin
         basin_name = f"{name_prefix}_FountainBasin_{i}"
-        basin_result = unreal.send_command("spawn_actor", {
+        basin_result = _safe_spawn_mansion_actor(unreal, {
             "name": basin_name,
             "type": "StaticMeshActor",
             "location": [fountain_x, fountain_y, location[2] + 50],
             "scale": [4.0, 4.0, 0.5],
             "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
         })
-        if basin_result and basin_result.get("status") == "success":
+        if basin_result and basin_result.get("success"):
             all_actors.append(basin_result.get("result"))
 
 
@@ -872,20 +885,20 @@ def _build_garage(unreal, name_prefix: str, location: List[float],
     garage_y = location[1] - wing_length * 0.4
 
     garage_name = f"{name_prefix}_Garage"
-    garage_result = unreal.send_command("spawn_actor", {
+    garage_result = _safe_spawn_mansion_actor(unreal, {
         "name": garage_name,
         "type": "StaticMeshActor",
         "location": [garage_x, garage_y, location[2] + layout["floor_height"]/2],
         "scale": [6.0, 8.0, layout["floor_height"]/100],
         "static_mesh": "/Engine/BasicShapes/Cube.Cube"
     })
-    if garage_result and garage_result.get("status") == "success":
+    if garage_result and garage_result.get("success"):
         all_actors.append(garage_result.get("result"))
 
     # Garage doors
     for door in range(3):
         door_name = f"{name_prefix}_GarageDoor_{door}"
-        door_result = unreal.send_command("spawn_actor", {
+        door_result = _safe_spawn_mansion_actor(unreal, {
             "name": door_name,
             "type": "StaticMeshActor",
             "location": [
@@ -896,7 +909,7 @@ def _build_garage(unreal, name_prefix: str, location: List[float],
             "scale": [2.5, 0.2, 2.5],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if door_result and door_result.get("status") == "success":
+        if door_result and door_result.get("success"):
             all_actors.append(door_result.get("result"))
 
     # Luxury cars
@@ -905,7 +918,7 @@ def _build_garage(unreal, name_prefix: str, location: List[float],
         car_y = garage_y + 100 - (car // 2) * 300
 
         car_name = f"{name_prefix}_LuxuryCar_{car}"
-        car_result = unreal.send_command("spawn_actor", {
+        car_result = _safe_spawn_mansion_actor(unreal, {
             "name": car_name,
             "type": "StaticMeshActor",
             "location": [car_x, car_y, location[2] + 80],
@@ -913,7 +926,7 @@ def _build_garage(unreal, name_prefix: str, location: List[float],
             "scale": [3.0, 1.5, 1.0],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if car_result and car_result.get("status") == "success":
+        if car_result and car_result.get("success"):
             all_actors.append(car_result.get("result"))
 
 
@@ -949,26 +962,26 @@ def _build_ballroom(unreal, name_prefix: str, location: List[float],
     floor_height = layout["floor_height"]
 
     ballroom_name = f"{name_prefix}_Ballroom"
-    ballroom_result = unreal.send_command("spawn_actor", {
+    ballroom_result = _safe_spawn_mansion_actor(unreal, {
         "name": ballroom_name,
         "type": "StaticMeshActor",
         "location": [location[0], location[1], location[2] + floor_height * 2.5],
         "scale": [wing_width/100 * 0.8, wing_width/100 * 0.8, floor_height/100 * 2],
         "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
     })
-    if ballroom_result and ballroom_result.get("status") == "success":
+    if ballroom_result and ballroom_result.get("success"):
         all_actors.append(ballroom_result.get("result"))
 
     # Grand chandelier
     chandelier_name = f"{name_prefix}_GrandChandelier"
-    chandelier_result = unreal.send_command("spawn_actor", {
+    chandelier_result = _safe_spawn_mansion_actor(unreal, {
         "name": chandelier_name,
         "type": "StaticMeshActor",
         "location": [location[0], location[1], location[2] + floor_height * 4],
         "scale": [2.0, 2.0, 3.0],
         "static_mesh": "/Engine/BasicShapes/Sphere.Sphere"
     })
-    if chandelier_result and chandelier_result.get("status") == "success":
+    if chandelier_result and chandelier_result.get("success"):
         all_actors.append(chandelier_result.get("result"))
 
 
@@ -985,26 +998,26 @@ def _build_dining_room(unreal, name_prefix: str, location: List[float],
     dining_y = location[1] - wing_length * 0.2
 
     dining_name = f"{name_prefix}_DiningRoom"
-    dining_result = unreal.send_command("spawn_actor", {
+    dining_result = _safe_spawn_mansion_actor(unreal, {
         "name": dining_name,
         "type": "StaticMeshActor",
         "location": [dining_x, dining_y, location[2] + floor_height * 1.5],
         "scale": [4.0, 6.0, floor_height/100],
         "static_mesh": "/Engine/BasicShapes/Cube.Cube"
     })
-    if dining_result and dining_result.get("status") == "success":
+    if dining_result and dining_result.get("success"):
         all_actors.append(dining_result.get("result"))
 
     # Grand dining table
     table_name = f"{name_prefix}_DiningTable"
-    table_result = unreal.send_command("spawn_actor", {
+    table_result = _safe_spawn_mansion_actor(unreal, {
         "name": table_name,
         "type": "StaticMeshActor",
         "location": [dining_x, dining_y, location[2] + floor_height + 75],
         "scale": [3.0, 1.0, 0.3],
         "static_mesh": "/Engine/BasicShapes/Cube.Cube"
     })
-    if table_result and table_result.get("status") == "success":
+    if table_result and table_result.get("success"):
         all_actors.append(table_result.get("result"))
 
 
@@ -1021,14 +1034,14 @@ def _build_library(unreal, name_prefix: str, location: List[float],
     library_y = location[1] + wing_length * 0.2
 
     library_name = f"{name_prefix}_Library"
-    library_result = unreal.send_command("spawn_actor", {
+    library_result = _safe_spawn_mansion_actor(unreal, {
         "name": library_name,
         "type": "StaticMeshActor",
         "location": [library_x, library_y, location[2] + floor_height * 1.5],
         "scale": [5.0, 4.0, floor_height/100 * 2],
         "static_mesh": "/Engine/BasicShapes/Cube.Cube"
     })
-    if library_result and library_result.get("status") == "success":
+    if library_result and library_result.get("success"):
         all_actors.append(library_result.get("result"))
 
     # Bookshelves
@@ -1039,7 +1052,7 @@ def _build_library(unreal, name_prefix: str, location: List[float],
         shelf_y = library_y + math.sin(shelf_rad) * 300
 
         shelf_name = f"{name_prefix}_Bookshelf_{shelf}"
-        shelf_result = unreal.send_command("spawn_actor", {
+        shelf_result = _safe_spawn_mansion_actor(unreal, {
             "name": shelf_name,
             "type": "StaticMeshActor",
             "location": [shelf_x, shelf_y, location[2] + floor_height * 1.5],
@@ -1047,7 +1060,7 @@ def _build_library(unreal, name_prefix: str, location: List[float],
             "scale": [2.0, 0.5, floor_height/100 * 2],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if shelf_result and shelf_result.get("status") == "success":
+        if shelf_result and shelf_result.get("success"):
             all_actors.append(shelf_result.get("result"))
 
 
@@ -1077,24 +1090,24 @@ def _build_bedrooms(unreal, name_prefix: str, location: List[float],
         bedroom_z = location[2] + floor * floor_height + floor_height * 1.5
 
         bedroom_name = f"{name_prefix}_Bedroom_{i}"
-        bedroom_result = unreal.send_command("spawn_actor", {
+        bedroom_result = _safe_spawn_mansion_actor(unreal, {
             "name": bedroom_name,
             "type": "StaticMeshActor",
             "location": [bedroom_x, bedroom_y, bedroom_z],
             "scale": [3.0, 3.0, floor_height/100],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if bedroom_result and bedroom_result.get("status") == "success":
+        if bedroom_result and bedroom_result.get("success"):
             all_actors.append(bedroom_result.get("result"))
 
         # King-sized bed
         bed_name = f"{name_prefix}_Bed_{i}"
-        bed_result = unreal.send_command("spawn_actor", {
+        bed_result = _safe_spawn_mansion_actor(unreal, {
             "name": bed_name,
             "type": "StaticMeshActor",
             "location": [bedroom_x, bedroom_y, bedroom_z],
             "scale": [2.0, 1.5, 0.5],
             "static_mesh": "/Engine/BasicShapes/Cube.Cube"
         })
-        if bed_result and bed_result.get("status") == "success":
+        if bed_result and bed_result.get("success"):
             all_actors.append(bed_result.get("result"))

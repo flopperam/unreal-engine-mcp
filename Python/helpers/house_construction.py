@@ -9,6 +9,14 @@ import logging
 
 logger = logging.getLogger("UnrealMCP_Advanced")
 
+# Import safe spawning functions
+try:
+    from .actor_name_manager import safe_spawn_actor
+except ImportError:
+    logger.warning("Could not import actor_name_manager, using fallback spawning")
+    def safe_spawn_actor(unreal_connection, params, auto_unique_name=True):
+        return unreal_connection.send_command("spawn_actor", params)
+
 def build_house(
     unreal_connection,
     width: int,
@@ -39,8 +47,8 @@ def build_house(
             "scale": [(width + 200)/100.0, (depth + 200)/100.0, floor_thickness/100.0],
             "static_mesh": mesh
         }
-        foundation_resp = unreal_connection.send_command("spawn_actor", foundation_params)
-        if foundation_resp:
+        foundation_resp = safe_spawn_actor(unreal_connection, foundation_params)
+        if foundation_resp and foundation_resp.get("success"):
             results.append(foundation_resp)
         
         # Create floor as single piece
@@ -51,8 +59,8 @@ def build_house(
             "scale": [width/100.0, depth/100.0, floor_thickness/100.0],
             "static_mesh": mesh
         }
-        floor_resp = unreal_connection.send_command("spawn_actor", floor_params)
-        if floor_resp:
+        floor_resp = safe_spawn_actor(unreal_connection, floor_params)
+        if floor_resp and floor_resp.get("success"):
             results.append(floor_resp)
         
         base_z = location[2] + floor_thickness
@@ -94,8 +102,8 @@ def _build_house_walls(unreal_connection, name_prefix, location, width, depth, h
         "scale": [front_left_width/100.0, wall_thickness/100.0, height/100.0],
         "static_mesh": mesh
     }
-    resp = unreal_connection.send_command("spawn_actor", front_left_params)
-    if resp:
+    resp = safe_spawn_actor(unreal_connection, front_left_params)
+    if resp and resp.get("success"):
         results.append(resp)
     
     # Front wall - right side of door
@@ -106,8 +114,8 @@ def _build_house_walls(unreal_connection, name_prefix, location, width, depth, h
         "scale": [front_left_width/100.0, wall_thickness/100.0, height/100.0],
         "static_mesh": mesh
     }
-    resp = unreal_connection.send_command("spawn_actor", front_right_params)
-    if resp:
+    resp = safe_spawn_actor(unreal_connection, front_right_params)
+    if resp and resp.get("success"):
         results.append(resp)
     
     # Front wall - above door
@@ -118,8 +126,8 @@ def _build_house_walls(unreal_connection, name_prefix, location, width, depth, h
         "scale": [door_width/100.0, wall_thickness/100.0, (height - door_height)/100.0],
         "static_mesh": mesh
     }
-    resp = unreal_connection.send_command("spawn_actor", front_top_params)
-    if resp:
+    resp = safe_spawn_actor(unreal_connection, front_top_params)
+    if resp and resp.get("success"):
         results.append(resp)
     
     # Back wall with window openings
@@ -135,8 +143,8 @@ def _build_house_walls(unreal_connection, name_prefix, location, width, depth, h
         "scale": [width/3/100.0, wall_thickness/100.0, height/100.0],
         "static_mesh": mesh
     }
-    resp = unreal_connection.send_command("spawn_actor", back_left_params)
-    if resp:
+    resp = safe_spawn_actor(unreal_connection, back_left_params)
+    if resp and resp.get("success"):
         results.append(resp)
     
     # Back wall - center section (with window cutouts)
@@ -147,8 +155,8 @@ def _build_house_walls(unreal_connection, name_prefix, location, width, depth, h
         "scale": [width/3/100.0, wall_thickness/100.0, (window_y - window_height/2 - base_z)/100.0],
         "static_mesh": mesh
     }
-    resp = unreal_connection.send_command("spawn_actor", back_center_bottom_params)
-    if resp:
+    resp = safe_spawn_actor(unreal_connection, back_center_bottom_params)
+    if resp and resp.get("success"):
         results.append(resp)
     
     back_center_top_params = {
@@ -158,8 +166,8 @@ def _build_house_walls(unreal_connection, name_prefix, location, width, depth, h
         "scale": [width/3/100.0, wall_thickness/100.0, (base_z + height - window_y - window_height/2)/100.0],
         "static_mesh": mesh
     }
-    resp = unreal_connection.send_command("spawn_actor", back_center_top_params)
-    if resp:
+    resp = safe_spawn_actor(unreal_connection, back_center_top_params)
+    if resp and resp.get("success"):
         results.append(resp)
     
     # Back wall - right section
@@ -170,8 +178,8 @@ def _build_house_walls(unreal_connection, name_prefix, location, width, depth, h
         "scale": [width/3/100.0, wall_thickness/100.0, height/100.0],
         "static_mesh": mesh
     }
-    resp = unreal_connection.send_command("spawn_actor", back_right_params)
-    if resp:
+    resp = safe_spawn_actor(unreal_connection, back_right_params)
+    if resp and resp.get("success"):
         results.append(resp)
     
     # Left wall
@@ -182,8 +190,8 @@ def _build_house_walls(unreal_connection, name_prefix, location, width, depth, h
         "scale": [wall_thickness/100.0, depth/100.0, height/100.0],
         "static_mesh": mesh
     }
-    resp = unreal_connection.send_command("spawn_actor", left_wall_params)
-    if resp:
+    resp = safe_spawn_actor(unreal_connection, left_wall_params)
+    if resp and resp.get("success"):
         results.append(resp)
     
     # Right wall  
@@ -194,8 +202,8 @@ def _build_house_walls(unreal_connection, name_prefix, location, width, depth, h
         "scale": [wall_thickness/100.0, depth/100.0, height/100.0],
         "static_mesh": mesh
     }
-    resp = unreal_connection.send_command("spawn_actor", right_wall_params)
-    if resp:
+    resp = safe_spawn_actor(unreal_connection, right_wall_params)
+    if resp and resp.get("success"):
         results.append(resp)
 
 def _build_house_roof(unreal_connection, name_prefix, location, width, depth, height, base_z, mesh, house_style, results):
@@ -216,8 +224,8 @@ def _build_house_roof(unreal_connection, name_prefix, location, width, depth, he
         "scale": [(width + roof_overhang*2)/100.0, (depth + roof_overhang*2)/100.0, roof_thickness/100.0],
         "static_mesh": mesh
     }
-    resp = unreal_connection.send_command("spawn_actor", flat_roof_params)
-    if resp:
+    resp = safe_spawn_actor(unreal_connection, flat_roof_params)
+    if resp and resp.get("success"):
         results.append(resp)
     
     # Add chimney for cottage style
@@ -233,8 +241,8 @@ def _build_house_roof(unreal_connection, name_prefix, location, width, depth, he
             "scale": [1.0, 1.0, 2.5],
             "static_mesh": "/Engine/BasicShapes/Cylinder.Cylinder"
         }
-        resp = unreal_connection.send_command("spawn_actor", chimney_params)
-        if resp:
+        resp = safe_spawn_actor(unreal_connection, chimney_params)
+        if resp and resp.get("success"):
             results.append(resp)
 
 def _add_house_features(unreal_connection, name_prefix, location, width, depth, height, base_z, wall_thickness, mesh, house_style, results):
@@ -251,8 +259,8 @@ def _add_house_features(unreal_connection, name_prefix, location, width, depth, 
             "scale": [2.5, 0.1, 2.5],
             "static_mesh": mesh
         }
-        resp = unreal_connection.send_command("spawn_actor", garage_params)
-        if resp:
+        resp = safe_spawn_actor(unreal_connection, garage_params)
+        if resp and resp.get("success"):
             results.append(resp)
 
 def _get_house_features(house_style: str) -> List[str]:

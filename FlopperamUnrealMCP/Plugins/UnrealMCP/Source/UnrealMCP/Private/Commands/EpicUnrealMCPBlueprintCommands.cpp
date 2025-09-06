@@ -80,6 +80,10 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCommand(const FSt
     {
         return HandleGetActorMaterialInfo(Params);
     }
+    else if (CommandType == TEXT("get_blueprint_material_info"))
+    {
+        return HandleGetBlueprintMaterialInfo(Params);
+    }
     
     return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown blueprint command: %s"), *CommandType));
 }
@@ -1037,6 +1041,99 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleGetActorMaterialI
     ResultObj->SetStringField(TEXT("actor_name"), ActorName);
     ResultObj->SetArrayField(TEXT("material_slots"), MaterialSlots);
     ResultObj->SetNumberField(TEXT("total_slots"), MaterialSlots.Num());
+    
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleGetBlueprintMaterialInfo(const TSharedPtr<FJsonObject>& Params)
+{
+    // Get required parameters
+    FString BlueprintName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BlueprintName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_name' parameter"));
+    }
+
+    FString ComponentName;
+    if (!Params->TryGetStringField(TEXT("component_name"), ComponentName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'component_name' parameter"));
+    }
+
+    // Find the blueprint
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintName);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
+    }
+
+    // Find the component
+    USCS_Node* ComponentNode = nullptr;
+    for (USCS_Node* Node : Blueprint->SimpleConstructionScript->GetAllNodes())
+    {
+        if (Node && Node->GetVariableName().ToString() == ComponentName)
+        {
+            ComponentNode = Node;
+            break;
+        }
+    }
+
+    if (!ComponentNode)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Component not found: %s"), *ComponentName));
+    }
+
+    UStaticMeshComponent* MeshComponent = Cast<UStaticMeshComponent>(ComponentNode->ComponentTemplate);
+    if (!MeshComponent)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Component is not a static mesh component"));
+    }
+
+    // Get material slot information
+    TArray<TSharedPtr<FJsonValue>> MaterialSlots;
+    int32 NumMaterials = 0;
+    
+    // Check if we have a static mesh assigned
+    UStaticMesh* StaticMesh = MeshComponent->GetStaticMesh();
+    if (StaticMesh)
+    {
+        NumMaterials = StaticMesh->GetNumSections(0); // Get number of material slots for LOD 0
+        
+        for (int32 i = 0; i < NumMaterials; i++)
+        {
+            TSharedPtr<FJsonObject> SlotInfo = MakeShared<FJsonObject>();
+            SlotInfo->SetNumberField(TEXT("slot"), i);
+            SlotInfo->SetStringField(TEXT("component"), ComponentName);
+            
+            UMaterialInterface* Material = MeshComponent->GetMaterial(i);
+            if (Material)
+            {
+                SlotInfo->SetStringField(TEXT("material_name"), Material->GetName());
+                SlotInfo->SetStringField(TEXT("material_path"), Material->GetPathName());
+                SlotInfo->SetStringField(TEXT("material_class"), Material->GetClass()->GetName());
+            }
+            else
+            {
+                SlotInfo->SetStringField(TEXT("material_name"), TEXT("None"));
+                SlotInfo->SetStringField(TEXT("material_path"), TEXT(""));
+                SlotInfo->SetStringField(TEXT("material_class"), TEXT(""));
+            }
+            
+            MaterialSlots.Add(MakeShared<FJsonValueObject>(SlotInfo));
+        }
+    }
+    else
+    {
+        // If no static mesh is assigned, we can't determine material slots
+        UE_LOG(LogTemp, Warning, TEXT("No static mesh assigned to component %s in blueprint %s"), *ComponentName, *BlueprintName);
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetStringField(TEXT("blueprint_name"), BlueprintName);
+    ResultObj->SetStringField(TEXT("component_name"), ComponentName);
+    ResultObj->SetArrayField(TEXT("material_slots"), MaterialSlots);
+    ResultObj->SetNumberField(TEXT("total_slots"), MaterialSlots.Num());
+    ResultObj->SetBoolField(TEXT("has_static_mesh"), StaticMesh != nullptr);
     
     return ResultObj;
 }

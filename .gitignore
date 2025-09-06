@@ -39,6 +39,7 @@ FlopperamUnrealMCP/FlopperamUnrealMCP.sln
 *.sdf
 *.cachefile
 *.VC.VC.opendb
+*.uasset
 
 # Unreal Engine user-specific files
 *.suo
