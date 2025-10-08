@@ -1,5 +1,6 @@
 #include "Commands/EpicUnrealMCPBlueprintCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
+#include "Commands/BlueprintGraph/NodeManager.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Factories/BlueprintFactory.h"
@@ -83,6 +84,10 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCommand(const FSt
     else if (CommandType == TEXT("get_blueprint_material_info"))
     {
         return HandleGetBlueprintMaterialInfo(Params);
+    else if (CommandType == TEXT("add_blueprint_node"))
+    {
+        return BlueprintGraph::FNodeManager::AddNode(Params);
+    }
     }
     
     return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown blueprint command: %s"), *CommandType));

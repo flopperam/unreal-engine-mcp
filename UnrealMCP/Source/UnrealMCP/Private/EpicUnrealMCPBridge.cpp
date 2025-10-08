@@ -54,6 +54,7 @@
 #include "Commands/EpicUnrealMCPEditorCommands.h"
 #include "Commands/EpicUnrealMCPBlueprintCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
+#include "Commands/BlueprintGraph/NodeManager.h"
 
 // Default settings
 #define MCP_SERVER_HOST "127.0.0.1"
@@ -225,8 +226,8 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 ResultJson = EditorCommands->HandleCommand(CommandType, Params);
             }
             // Blueprint Commands
-            else if (CommandType == TEXT("create_blueprint") || 
-                     CommandType == TEXT("add_component_to_blueprint") || 
+            else if (CommandType == TEXT("create_blueprint") ||
+                     CommandType == TEXT("add_component_to_blueprint") ||
                      CommandType == TEXT("set_physics_properties") ||
                      CommandType == TEXT("compile_blueprint") ||
                      CommandType == TEXT("set_static_mesh_properties") ||
@@ -238,6 +239,11 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                      CommandType == TEXT("get_blueprint_material_info"))
             {
                 ResultJson = BlueprintCommands->HandleCommand(CommandType, Params);
+            }
+            // Blueprint Graph Commands (F15-F22)
+            else if (CommandType == TEXT("add_blueprint_node"))
+            {
+                ResultJson = BlueprintGraph::FNodeManager::AddNode(Params);
             }
 
             else

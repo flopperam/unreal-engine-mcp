@@ -40,6 +40,14 @@ from helpers.bridge_aqueduct_creation import (
     build_suspension_bridge_structure, build_aqueduct_structure
 )
 
+# ============================================================================
+# Blueprint Node Graph Tools (F15-F22)
+# Author: Zoscran
+# Creation Date: 2025-01-06
+# ============================================================================
+from helpers.blueprint_graph import node_manager
+
+
 # Configure logging with more detailed format
 logging.basicConfig(
     level=logging.DEBUG,
@@ -1632,6 +1640,73 @@ def create_aqueduct(
     except Exception as e:
         logger.error(f"create_aqueduct error: {e}")
         return {"success": False, "message": str(e)}
+
+
+
+# ============================================================================
+# Blueprint Node Graph Tool (F15)
+# Author: Zoscran
+# Creation Date: 2025-01-06
+# ============================================================================
+
+@mcp.tool()
+def add_node(
+    blueprint_name: str,
+    node_type: str,
+    pos_x: float = 0,
+    pos_y: float = 0,
+    message: str = "",
+    event_type: str = "BeginPlay",
+    variable_name: str = ""
+) -> Dict[str, Any]:
+    """
+    Add a node to a Blueprint graph.
+    
+    Create various types of nodes (Print, Event, VariableGet, VariableSet)
+    in a Blueprint's event graph at specified positions.
+    
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        node_type: Type of node ("Print", "Event", "VariableGet", "VariableSet")
+        pos_x: X position in graph (default: 0)
+        pos_y: Y position in graph (default: 0)
+        message: For Print nodes, the text to print
+        event_type: For Event nodes, the event name (BeginPlay, Tick, etc.)
+        variable_name: For Variable nodes, the variable name
+    
+    Returns:
+        Dictionary with success status, node_id, and position
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    
+    try:
+        node_params = {
+            "pos_x": pos_x,
+            "pos_y": pos_y
+        }
+        
+        if message:
+            node_params["message"] = message
+        if event_type:
+            node_params["event_type"] = event_type
+        if variable_name:
+            node_params["variable_name"] = variable_name
+        
+        result = node_manager.add_node(
+            unreal,
+            blueprint_name,
+            node_type,
+            node_params
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"add_node error: {e}")
+        return {"success": False, "message": str(e)}
+
 
 
 # Run the server
