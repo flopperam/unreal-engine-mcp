@@ -238,7 +238,11 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                      CommandType == TEXT("apply_material_to_actor") ||
                      CommandType == TEXT("apply_material_to_blueprint") ||
                      CommandType == TEXT("get_actor_material_info") ||
-                     CommandType == TEXT("get_blueprint_material_info"))
+                     CommandType == TEXT("get_blueprint_material_info") ||
+                     CommandType == TEXT("read_blueprint_content") ||
+                     CommandType == TEXT("analyze_blueprint_graph") ||
+                     CommandType == TEXT("get_blueprint_variable_details") ||
+                     CommandType == TEXT("get_blueprint_function_details"))
             {
                 ResultJson = BlueprintCommands->HandleCommand(CommandType, Params);
             }
