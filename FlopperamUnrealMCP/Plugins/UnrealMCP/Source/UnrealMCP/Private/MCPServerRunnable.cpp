@@ -80,17 +80,30 @@ uint32 FMCPServerRunnable::Run()
                             FString CommandType;
                             if (JsonObject->TryGetStringField(TEXT("type"), CommandType))
                             {
+                                UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Executing command: %s"), *CommandType);
+
                                 // Execute command
                                 FString Response = Bridge->ExecuteCommand(CommandType, JsonObject->GetObjectField(TEXT("params")));
-                                
-                                // Log response for debugging
-                                UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Sending response: %s"), *Response);
-                                
+
+                                UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Command executed, response length: %d"), Response.Len());
+
+                                // Log response for debugging (truncated for large responses)
+                                FString LogResponse = Response.Len() > 200 ? Response.Left(200) + TEXT("...") : Response;
+                                UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Sending response: %s"), *LogResponse);
+
                                 // Send response
                                 int32 BytesSent = 0;
-                                if (!ClientSocket->Send((uint8*)TCHAR_TO_UTF8(*Response), Response.Len(), BytesSent))
+                                UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: About to call ClientSocket->Send()..."));
+
+                                bool bSendResult = ClientSocket->Send((uint8*)TCHAR_TO_UTF8(*Response), Response.Len(), BytesSent);
+
+                                UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Send() returned: %s, BytesSent: %d"),
+                                       bSendResult ? TEXT("true") : TEXT("false"), BytesSent);
+
+                                if (!bSendResult)
                                 {
-                                    UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Failed to send response"));
+                                    int32 LastError = (int32)ISocketSubsystem::Get()->GetLastErrorCode();
+                                    UE_LOG(LogTemp, Error, TEXT("MCPServerRunnable: Failed to send response - Error code: %d"), LastError);
                                 }
                                 else {
                                     UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Response sent successfully, bytes: %d"), BytesSent);

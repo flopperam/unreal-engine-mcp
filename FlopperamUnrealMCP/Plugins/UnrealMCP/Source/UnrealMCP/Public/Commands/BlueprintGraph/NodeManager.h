@@ -11,15 +11,11 @@
 #include "Dom/JsonObject.h"
 
 /**
- * Namespace for Blueprint Graph operations
+ * Handles adding and managing nodes in Blueprint graphs
+ * Static class for Blueprint node operations (no namespace to avoid conflicts)
  */
-namespace BlueprintGraph
+class UNREALMCP_API FBlueprintNodeManager
 {
-	/**
-	 * Handles adding and managing nodes in Blueprint graphs
-	 */
-	class UNREALMCP_API FNodeManager
-	{
 	public:
 		/**
 		 * Add a new node to a Blueprint graph
@@ -90,4 +86,3 @@ namespace BlueprintGraph
 		 */
 		static TSharedPtr<FJsonObject> CreateErrorResponse(const FString& ErrorMessage);
 	};
-}

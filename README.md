@@ -52,6 +52,7 @@ Check out these examples of the MCP server in action on our channel:
 | **Level Design** | `create_maze`, `create_pyramid`, `create_wall` | Design challenging game levels and puzzles |
 | **Physics & Materials** | `spawn_physics_blueprint_actor`, `set_physics_properties`, `get_available_materials`, `apply_material_to_actor`, `apply_material_to_blueprint`, `set_mesh_material_color` | Create realistic physics simulations and material systems |
 | **Blueprint System** | `create_blueprint`, `compile_blueprint`, `add_component_to_blueprint`, `set_static_mesh_properties` | Visual scripting and custom actor creation |
+| **Blueprint Graph** | `add_node`, `connect_nodes`, `create_variable` | Programmatically build Blueprint logic with nodes, connections, and variables |
 | **Actor Management** | `get_actors_in_level`, `find_actors_by_name`, `delete_actor`, `set_actor_transform`, `get_actor_material_info` | Precise control over scene objects and inspection |
 
 ---
@@ -128,6 +129,8 @@ Add this to your MCP configuration:
 ```
 
 > **⚠️ Having issues with setup?** Check our [Debugging & Troubleshooting Guide](DEBUGGING.md) for solutions to common problems like MCP installation errors and configuration issues.
+>
+> **🎯 Want to program Blueprints with AI?** Check our [Blueprint Graph Programming Guide](Guides/blueprint-graph-guide.md) to learn how to create nodes, connections, and variables programmatically.
 
 ### Recommended AI Model
 

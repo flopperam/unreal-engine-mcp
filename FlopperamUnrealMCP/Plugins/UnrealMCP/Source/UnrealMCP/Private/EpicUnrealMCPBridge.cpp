@@ -53,8 +53,8 @@
 // Include our new command handler classes
 #include "Commands/EpicUnrealMCPEditorCommands.h"
 #include "Commands/EpicUnrealMCPBlueprintCommands.h"
+#include "Commands/EpicUnrealMCPBlueprintGraphCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
-#include "Commands/BlueprintGraph/NodeManager.h"
 
 // Default settings
 #define MCP_SERVER_HOST "127.0.0.1"
@@ -64,12 +64,14 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
 {
     EditorCommands = MakeShared<FEpicUnrealMCPEditorCommands>();
     BlueprintCommands = MakeShared<FEpicUnrealMCPBlueprintCommands>();
+    BlueprintGraphCommands = MakeShared<FEpicUnrealMCPBlueprintGraphCommands>();
 }
 
 UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
 {
     EditorCommands.Reset();
     BlueprintCommands.Reset();
+    BlueprintGraphCommands.Reset();
 }
 
 // Initialize subsystem
@@ -240,12 +242,13 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
             {
                 ResultJson = BlueprintCommands->HandleCommand(CommandType, Params);
             }
-            // Blueprint Graph Commands (F15-F22)
-            else if (CommandType == TEXT("add_blueprint_node"))
+            // Blueprint Graph Commands
+            else if (CommandType == TEXT("add_blueprint_node") ||
+                     CommandType == TEXT("connect_nodes") ||
+                     CommandType == TEXT("create_variable"))
             {
-                ResultJson = BlueprintGraph::FNodeManager::AddNode(Params);
+                ResultJson = BlueprintGraphCommands->HandleCommand(CommandType, Params);
             }
-
             else
             {
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));

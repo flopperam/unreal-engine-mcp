@@ -41,11 +41,13 @@ from helpers.bridge_aqueduct_creation import (
 )
 
 # ============================================================================
-# Blueprint Node Graph Tools (F15-F22)
+# Blueprint Node Graph Tools
 # Author: Zoscran
 # Creation Date: 2025-01-06
 # ============================================================================
 from helpers.blueprint_graph import node_manager
+from helpers.blueprint_graph import variable_manager
+from helpers.blueprint_graph import connector_manager
 
 
 # Configure logging with more detailed format
@@ -111,10 +113,14 @@ class UnrealConnection:
         self.socket = None
         self.connected = False
 
-    def receive_full_response(self, sock, buffer_size=4096) -> bytes:
+    def receive_full_response(self, sock, buffer_size=4096, command_type="") -> bytes:
         """Receive a complete response from Unreal, handling chunked data."""
         chunks = []
-        sock.settimeout(30)
+        # Adaptive timeout based on command complexity
+        if "get_available_materials" in command_type:
+            sock.settimeout(90)   # 1.5 minutes for large material lists
+        else:
+            sock.settimeout(60)   # 1 minute for standard operations
         try:
             while True:
                 chunk = sock.recv(buffer_size)
@@ -123,15 +129,15 @@ class UnrealConnection:
                         raise Exception("Connection closed before receiving data")
                     break
                 chunks.append(chunk)
-                
+
                 # Process the data received so far
                 data = b''.join(chunks)
                 decoded_data = data.decode('utf-8')
-                
+
                 # Try to parse as JSON to check if complete
                 try:
                     json.loads(decoded_data)
-                    logger.info(f"Received complete response ({len(data)} bytes)")
+                    logger.info(f"Received complete response ({len(data)} bytes) for {command_type}")
                     return data
                 except json.JSONDecodeError:
                     # Not complete JSON yet, continue reading
@@ -141,34 +147,61 @@ class UnrealConnection:
                     logger.warning(f"Error processing response chunk: {str(e)}")
                     continue
         except socket.timeout:
-            logger.warning("Socket timeout during receive")
+            logger.warning(f"Socket timeout during receive for {command_type}")
             if chunks:
                 data = b''.join(chunks)
                 try:
                     json.loads(data.decode('utf-8'))
-                    logger.info(f"Using partial response after timeout ({len(data)} bytes)")
+                    logger.info(f"Using partial response after timeout ({len(data)} bytes) for {command_type}")
                     return data
                 except:
                     pass
-            raise Exception("Timeout receiving Unreal response")
+            raise Exception(f"Timeout receiving Unreal response for {command_type}")
         except Exception as e:
-            logger.error(f"Error during receive: {str(e)}")
+            logger.error(f"Error during receive for {command_type}: {str(e)}")
             raise
     
     def send_command(self, command: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """Send a command to Unreal Engine and get the response."""
-        # Always reconnect for each command
-        if self.socket:
-            try:
-                self.socket.close()
-            except:
-                pass
-            self.socket = None
-            self.connected = False
-        
-        if not self.connect():
-            logger.error("Failed to connect to Unreal Engine for command")
-            return None
+        # CRITICAL ARCHITECTURAL DECISION: Persistent Connection vs Reconnection
+        #
+        # Previous implementation (commented below) used systematic reconnection for each command.
+        # This was causing performance issues and timeouts, especially during Blueprint operations.
+        #
+        # New implementation uses persistent connection with automatic recovery.
+        # Benefits:
+        # - Eliminates reconnection latency (~50-100ms per command)
+        # - Prevents timeouts during Unreal Engine busy periods
+        # - Improves reliability for complex operations (Blueprint graph functions)
+        # - Reduces network overhead and socket churn
+        #
+        # Risks mitigated:
+        # - Connection drops handled by automatic reconnection logic
+        # - Memory overhead minimal (single TCP socket)
+        # - Port conflicts prevented by dedicated port assignment
+        #
+        # Team Review Required: This change affects core networking architecture.
+        # Please validate performance improvements vs stability concerns before merge.
+
+        # OLD CODE (commented for review - DO NOT DELETE):
+        # # Always reconnect for each command
+        # if self.socket:
+        #     try:
+        #         self.socket.close()
+        #     except:
+        #         pass
+        #     self.socket = None
+        #     self.connected = False
+        #
+        # if not self.connect():
+        #     logger.error("Failed to connect to Unreal Engine for command")
+        #     return None
+
+        # NEW CODE: Persistent connection with recovery
+        if not self.connected or not self.socket:
+            if not self.connect():
+                logger.error("Failed to connect to Unreal Engine for command")
+                return None
         
         try:
             command_obj = {
@@ -180,8 +213,14 @@ class UnrealConnection:
             logger.info(f"Sending command: {command_json}")
             self.socket.sendall(command_json.encode('utf-8'))
             
-            response_data = self.receive_full_response(self.socket)
-            response = json.loads(response_data.decode('utf-8'))
+            response_data = self.receive_full_response(self.socket, command_type=command)
+            if response_data is None:
+                return {"status": "error", "error": "No response data received"}
+            try:
+                response = json.loads(response_data.decode('utf-8'))
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error: {e}, data: {response_data[:200]}...")
+                return {"status": "error", "error": f"Invalid JSON response: {str(e)}"}
             
             logger.info(f"Complete response from Unreal: {response}")
             
@@ -265,7 +304,6 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
 # Initialize server
 mcp = FastMCP(
     "UnrealMCP_Advanced",
-    description="Unreal Engine Advanced Tools - Streamlined MCP server for advanced composition and building tools",
     lifespan=server_lifespan
 )
 
@@ -1644,7 +1682,7 @@ def create_aqueduct(
 
 
 # ============================================================================
-# Blueprint Node Graph Tool (F15)
+# Blueprint Node Graph Tool
 # Author: Zoscran
 # Creation Date: 2025-01-06
 # ============================================================================
@@ -1661,10 +1699,10 @@ def add_node(
 ) -> Dict[str, Any]:
     """
     Add a node to a Blueprint graph.
-    
+
     Create various types of nodes (Print, Event, VariableGet, VariableSet)
     in a Blueprint's event graph at specified positions.
-    
+
     Args:
         blueprint_name: Name of the Blueprint to modify
         node_type: Type of node ("Print", "Event", "VariableGet", "VariableSet")
@@ -1673,39 +1711,133 @@ def add_node(
         message: For Print nodes, the text to print
         event_type: For Event nodes, the event name (BeginPlay, Tick, etc.)
         variable_name: For Variable nodes, the variable name
-    
+
     Returns:
         Dictionary with success status, node_id, and position
     """
     unreal = get_unreal_connection()
     if not unreal:
         return {"success": False, "message": "Failed to connect to Unreal Engine"}
-    
+
     try:
         node_params = {
             "pos_x": pos_x,
             "pos_y": pos_y
         }
-        
+
         if message:
             node_params["message"] = message
         if event_type:
             node_params["event_type"] = event_type
         if variable_name:
             node_params["variable_name"] = variable_name
-        
+
         result = node_manager.add_node(
             unreal,
             blueprint_name,
             node_type,
             node_params
         )
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"add_node error: {e}")
         return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def connect_nodes(
+    blueprint_name: str,
+    source_node_id: str,
+    source_pin_name: str,
+    target_node_id: str,
+    target_pin_name: str
+) -> Dict[str, Any]:
+    """
+    Connect two nodes in a Blueprint graph.
+
+    Links a source pin to a target pin between existing nodes in a Blueprint's event graph.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        source_node_id: ID of the source node
+        source_pin_name: Name of the output pin on the source node
+        target_node_id: ID of the target node
+        target_pin_name: Name of the input pin on the target node
+
+    Returns:
+        Dictionary with success status and connection details
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = connector_manager.connect_nodes(
+            unreal,
+            blueprint_name,
+            source_node_id,
+            source_pin_name,
+            target_node_id,
+            target_pin_name
+        )
+
+        return result
+    except Exception as e:
+        logger.error(f"connect_nodes error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def create_variable(
+    blueprint_name: str,
+    variable_name: str,
+    variable_type: str,
+    default_value: Any = None,
+    is_public: bool = False,
+    tooltip: str = "",
+    category: str = "Default"
+) -> Dict[str, Any]:
+    """
+    Create a variable in a Blueprint.
+
+    Adds a new variable to a Blueprint with specified type, default value, and properties.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        variable_name: Name of the variable to create
+        variable_type: Type of the variable ("bool", "int", "float", "string", "vector", "rotator")
+        default_value: Default value for the variable (optional)
+        is_public: Whether the variable should be public/editable (default: False)
+        tooltip: Tooltip text for the variable (optional)
+        category: Category for organizing variables (default: "Default")
+
+    Returns:
+        Dictionary with success status and variable details
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = variable_manager.create_variable(
+            unreal,
+            blueprint_name,
+            variable_name,
+            variable_type,
+            default_value,
+            is_public,
+            tooltip,
+            category
+        )
+
+        return result
+    except Exception as e:
+        logger.error(f"create_variable error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+# Run the server
+
 
 
 
