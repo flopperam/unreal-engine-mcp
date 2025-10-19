@@ -20,11 +20,20 @@ This is perfect for:
 
 ## Available Tools
 
+### Creation Tools
 | Tool | Description | Use Case |
 |------|-------------|----------|
 | `add_node` | Add a node to a Blueprint graph | Create Print nodes, Events, Variable Get/Set |
 | `connect_nodes` | Connect two nodes together | Build execution flow and data connections |
 | `create_variable` | Create a new Blueprint variable | Add properties to your Blueprints |
+
+### Inspection Tools
+| Tool | Description | Use Case |
+|------|-------------|----------|
+| `read_blueprint_content` | Read complete Blueprint structure | Get all variables, functions, components, event graph |
+| `analyze_blueprint_graph` | Analyze graph nodes and connections | Detailed graph structure with pins and connections |
+| `get_blueprint_variable_details` | Get variable information | Variable types, defaults, metadata |
+| `get_blueprint_function_details` | Get function information | Function signatures, parameters, graphs |
 
 ---
 

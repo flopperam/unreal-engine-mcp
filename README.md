@@ -52,7 +52,7 @@ Check out these examples of the MCP server in action on our channel:
 | **Level Design** | `create_maze`, `create_pyramid`, `create_wall` | Design challenging game levels and puzzles |
 | **Physics & Materials** | `spawn_physics_blueprint_actor`, `set_physics_properties`, `get_available_materials`, `apply_material_to_actor`, `apply_material_to_blueprint`, `set_mesh_material_color` | Create realistic physics simulations and material systems |
 | **Blueprint System** | `create_blueprint`, `compile_blueprint`, `add_component_to_blueprint`, `set_static_mesh_properties` | Visual scripting and custom actor creation |
-| **Blueprint Graph** | `add_node`, `connect_nodes`, `create_variable` | Programmatically build Blueprint logic with nodes, connections, and variables |
+| **Blueprint Graph** | `add_node`, `connect_nodes`, `create_variable`, `read_blueprint_content`, `analyze_blueprint_graph`, `get_blueprint_variable_details`, `get_blueprint_function_details` | Create and inspect Blueprint logic with nodes, connections, variables, and graph analysis |
 | **Actor Management** | `get_actors_in_level`, `find_actors_by_name`, `delete_actor`, `set_actor_transform`, `get_actor_material_info` | Precise control over scene objects and inspection |
 
 ---

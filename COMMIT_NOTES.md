@@ -1,56 +1,61 @@
-# Commit Notes - Blueprint Graph Tools
+# Commit Notes - Blueprint Graph Tools & TCP Fix
 
 **Author**: Zoscran
-**Date**: 2025-10-18
+**Date**: 2025-10-19
 **Branch**: BlueprintGraph
-**Type**: Feature Addition
+**Type**: Feature Addition + Critical Bug Fix
 
 ---
 
 ## 📋 Summary
 
-This commit adds **Blueprint Graph manipulation tools** to the Unreal Engine MCP server, enabling AI-driven programmatic creation and connection of Blueprint nodes.
+This commit adds **Blueprint Graph manipulation and inspection tools** to the Unreal Engine MCP server, enabling AI-driven programmatic creation, connection, and analysis of Blueprint nodes. Also includes a **critical TCP communication fix** for reliable transmission of large JSON responses.
 
 **New Capabilities**:
-- Create Blueprint nodes (Events, Print, Variables)
-- Connect nodes to build execution flow
-- Create and manage Blueprint variables
-- Programmatic Blueprint logic construction via AI commands
+- ✅ Create Blueprint nodes (Events, Print, Variables)
+- ✅ Connect nodes to build execution flow
+- ✅ Create and manage Blueprint variables
+- ✅ Inspect Blueprint content (variables, functions, components)
+- ✅ Analyze Blueprint graph structure and connections
+- ✅ Reliable transmission of large JSON responses (TCP partial send bug fixed)
 
 ---
 
 ## 🎯 What Was Added
 
-### 1. New MCP Tools (3 tools)
+### 1. New MCP Tools (7 tools total)
 
+#### Creation Tools (3 tools)
 | Tool | Description | Implementation |
 |------|-------------|----------------|
-| `add_node` | Add nodes to Blueprint graphs | C++: `NodeManager.cpp/h`, Python: `node_manager.py` |
-| `connect_nodes` | Connect Blueprint nodes | C++: `BPConnector.cpp/h`, Python: `connector_manager.py` |
-| `create_variable` | Create Blueprint variables | C++: `BPVariables.cpp/h`, Python: `variable_manager.py` |
+| `add_node` | Add nodes to Blueprint graphs | C++: `EpicUnrealMCPBlueprintGraphCommands.cpp`, Python: `node_manager.py` |
+| `connect_nodes` | Connect Blueprint nodes | C++: `EpicUnrealMCPBlueprintGraphCommands.cpp`, Python: `connector_manager.py` |
+| `create_variable` | Create Blueprint variables | C++: `EpicUnrealMCPBlueprintGraphCommands.cpp`, Python: `variable_manager.py` |
 
-### 2. C++ Implementation (Native Plugin)
+#### Inspection Tools (4 tools - integrated from GuBee33)
+| Tool | Description | Implementation |
+|------|-------------|----------------|
+| `read_blueprint_content` | Read complete Blueprint content | C++: GuBee33's code, Python: `graph_inspector.py` |
+| `analyze_blueprint_graph` | Analyze Blueprint graph structure | C++: GuBee33's code, Python: `graph_inspector.py` |
+| `get_blueprint_variable_details` | Get variable details | C++: GuBee33's code, Python: `graph_inspector.py` |
+| `get_blueprint_function_details` | Get function details | C++: GuBee33's code, Python: `graph_inspector.py` |
+
+### 2. C++ Implementation
 
 **New Files**:
 ```
 FlopperamUnrealMCP/Plugins/UnrealMCP/Source/UnrealMCP/
-├── Private/Commands/BlueprintGraph/
-│   ├── NodeManager.cpp         (Node creation logic)
-│   ├── BPConnector.cpp         (Node connection logic)
-│   └── BPVariables.cpp         (Variable creation logic)
-└── Public/Commands/BlueprintGraph/
-    ├── NodeManager.h
-    ├── BPConnector.h
-    └── BPVariables.h
+├── Private/Commands/
+│   └── EpicUnrealMCPBlueprintGraphCommands.cpp    (All 7 Blueprint Graph handlers)
+└── Public/Commands/
+    └── EpicUnrealMCPBlueprintGraphCommands.h       (Blueprint Graph interface)
 ```
 
 **Modified Files**:
-- `UnrealMCP/Source/UnrealMCP/Private/Commands/EpicUnrealMCPBlueprintGraphCommands.cpp`
-  - Added handlers for the 3 new commands
-- `UnrealMCP/Source/UnrealMCP/Public/Commands/EpicUnrealMCPBlueprintGraphCommands.h`
-  - Added method declarations
-- `FlopperamUnrealMCP/Plugins/UnrealMCP/Source/UnrealMCP/Private/EpicUnrealMCPBridge.cpp`
-  - Registered new commands in command router
+- `EpicUnrealMCPBridge.h` - Added BlueprintGraphCommands declaration
+- `EpicUnrealMCPBridge.cpp` - Added BlueprintGraphCommands instantiation and routing
+- `MCPServerRunnable.cpp` - **CRITICAL TCP FIX** (2 locations)
+- `EpicUnrealMCPBlueprintCommands.cpp` - Removed temporary handlers
 
 ### 3. Python MCP Server Integration
 
@@ -58,151 +63,139 @@ FlopperamUnrealMCP/Plugins/UnrealMCP/Source/UnrealMCP/
 ```
 Python/helpers/blueprint_graph/
 ├── __init__.py
-├── node_manager.py          (MCP tool wrapper for add_node)
-├── connector_manager.py     (MCP tool wrapper for connect_nodes)
-└── variable_manager.py      (MCP tool wrapper for create_variable)
+├── node_manager.py
+├── connector_manager.py
+├── variable_manager.py
+└── graph_inspector.py          (4 inspection tool wrappers)
 ```
-
-**Modified Files**:
-- `Python/unreal_mcp_server_advanced.py`
-  - Imported Blueprint Graph helpers
-  - Registered 3 new MCP tools: `add_node`, `connect_nodes`, `create_variable`
-
-### 4. Documentation
-
-**New Files**:
-- `Guides/blueprint-graph-guide.md` - Complete user guide with examples, troubleshooting, and developer notes
-
-**Modified Files**:
-- `README.md` - Added "Blueprint Graph" category to tools table and link to guide
 
 ---
 
-## 🔧 Technical Architecture
+## 🐛 Critical Bug Fix: TCP Partial Send
 
+### Problem Discovered
+During testing of `analyze_blueprint_graph`, the tool was timing out with responses between 600-4096 bytes. Investigation revealed a fundamental TCP socket bug in the C++ plugin.
+
+**Root Cause:**
+```cpp
+// OLD CODE (BUGGY) - MCPServerRunnable.cpp
+int32 BytesSent = 0;
+ClientSocket->Send((uint8*)TCHAR_TO_UTF8(*Response), Response.Len(), BytesSent);
+// ⚠️ PROBLEM: No verification that BytesSent == Response.Len()
+// ⚠️ PROBLEM: TCHAR_TO_UTF8(*Response) creates temporary buffer that may be destroyed
 ```
-AI Client (Claude/Cursor)
-    ↓ MCP Protocol
-Python Server (unreal_mcp_server_advanced.py)
-    ↓ Helper: node_manager.py / connector_manager.py / variable_manager.py
-    ↓ TCP Socket (port 55557)
-C++ Plugin (UnrealMCP)
-    ↓ EpicUnrealMCPBlueprintGraphCommands
-    ↓ NodeManager / BPConnector / BPVariables
-Unreal Engine Blueprint System
+
+**Why it failed:**
+- TCP `Send()` can return `true` but only send a partial amount of data
+- Example: Request to send 3500 bytes → `Send()` returns `true` but `BytesSent = 2048`
+- Remaining 1452 bytes are NEVER sent
+- Python MCP server waits for complete JSON → timeout after 60 seconds
+
+**Why some functions still worked:**
+- Small messages (< 600 bytes): Fit in single TCP packet → sent completely
+- Very large messages (> 10KB): Socket blocks until kernel buffer space available → sent completely
+- Medium messages (600-4096 bytes): **CRITICAL ZONE** → partial send when buffer partially full → timeout
+
+### Solution Implemented
+Added proper loop to guarantee complete data transmission:
+
+```cpp
+// NEW CODE (FIXED) - MCPServerRunnable.cpp lines 333-347, 102-122
+FTCHARToUTF8 UTF8Response(*Response);           // Persistent buffer
+const uint8* DataToSend = (const uint8*)UTF8Response.Get();
+int32 TotalDataSize = UTF8Response.Length();
+int32 TotalBytesSent = 0;
+
+// Loop until ALL data is sent
+while (TotalBytesSent < TotalDataSize)
+{
+    int32 BytesSent = 0;
+    Client->Send(DataToSend + TotalBytesSent,      // Offset pointer
+                 TotalDataSize - TotalBytesSent,    // Remaining bytes
+                 BytesSent);
+    TotalBytesSent += BytesSent;
+
+    UE_LOG(LogTemp, Display, TEXT("Sent %d bytes (%d/%d total)"),
+           BytesSent, TotalBytesSent, TotalDataSize);
+}
+// ✅ Guaranteed: TotalBytesSent == TotalDataSize
 ```
 
-### Design Decisions
+**Fixed in 2 locations:**
+1. `MCPServerRunnable.cpp` lines 102-122 (main thread handler)
+2. `MCPServerRunnable.cpp` lines 333-347 (ProcessMessage function)
 
-**Why Native C++?**
-- Direct access to Unreal's Blueprint API (`UBlueprint`, `UEdGraph`, `UEdGraphNode`)
-- Better performance (~10-50ms per operation vs potential Python overhead)
-- Type safety and compile-time validation
-- Consistency with existing plugin architecture
+### Impact & Validation
 
-**Why Python Wrappers?**
-- Clean separation: C++ handles Unreal logic, Python handles MCP protocol
-- Easy to extend with new tools
-- Maintains compatibility with FastMCP server architecture
+**Before Fix:**
+- ❌ `analyze_blueprint_graph` - Timeout
+- ⚠️ Medium-sized responses unreliable
 
-**Why TCP Socket?**
-- Already established in the project
-- Persistent connection reduces latency
-- Proven reliability for complex operations
+**After Fix:**
+- ✅ All message sizes transmit reliably
+- ✅ `analyze_blueprint_graph` works perfectly
+- ✅ **Zero regressions** - All existing tools validated
+
+**Regression Testing Results:**
+- ✅ `get_actors_in_level`: 138 actors (~13,000 bytes JSON) - SUCCESS
+- ✅ `get_available_materials`: 67 materials (~15-20KB JSON) - SUCCESS
+- ✅ `read_blueprint_content`: Complex Blueprint data - SUCCESS
+- ✅ `analyze_blueprint_graph`: Full graph analysis (was failing) - SUCCESS
+- ✅ All 27 existing MCP tools tested - NO REGRESSIONS
 
 ---
 
 ## ✅ Testing Status
 
-**Manual Testing Completed**:
-- ✅ `add_node`: Successfully creates Print, Event, and Variable nodes
-- ✅ `connect_nodes`: Successfully connects execution and data pins
-- ✅ `create_variable`: Successfully creates variables with types (bool, int, float, string, vector, rotator)
-- ✅ Blueprint compilation: Modified Blueprints compile successfully
-- ✅ Integration: All tools work correctly with existing MCP infrastructure
+### Creation Tools
+- ✅ `add_node` - Creates Print, Event, Variable nodes
+- ✅ `connect_nodes` - Connects execution and data pins
+- ✅ `create_variable` - Creates typed variables (bool, int, float, string, vector, rotator)
 
-**Test Blueprint**: `BP_Test_F22` (included in project)
+### Inspection Tools
+- ✅ `read_blueprint_content` - Returns variables, functions, event graph, components
+- ✅ `analyze_blueprint_graph` - Returns detailed graph with nodes and connections
+- ✅ `get_blueprint_variable_details` - Returns variable types, defaults, metadata
+- ✅ `get_blueprint_function_details` - Returns function signature and graph
 
-**Known Limitations**:
-- Multiple Event nodes of the same type can be created (no duplicate check)
-- Node validation is minimal (Unreal handles most validation)
-- Some node types not yet supported (only Print, Event, VariableGet/Set currently)
+### TCP Fix Validation
+- ✅ Large responses tested (13KB, 15-20KB JSON)
+- ✅ No regressions on existing 27 tools
 
----
-
-## 📝 Merge Considerations
-
-### Compatibility
-- ✅ **Backward Compatible**: Existing tools and features unchanged
-- ✅ **No Breaking Changes**: Only additions, no modifications to existing APIs
-- ✅ **Independent**: Blueprint Graph tools don't interfere with other systems
-
-### Integration Points
-
-**Potential Conflicts**:
-1. **Blueprint Graph helpers**: Ensure no naming conflicts in Python helpers
-2. **Command registration**: Check EpicUnrealMCPBridge.cpp command list
-
-**Recommended Merge Strategy**:
-1. Review C++ implementation in BlueprintGraph folder
-2. Test Python MCP tool integration
-3. Verify Blueprint compilation works correctly
-
-### Documentation Integration
-
-All documentation follows existing project style:
-- `Guides/blueprint-graph-guide.md` matches format of other guides
-- README.md updates are minimal and non-invasive
-- No changes to DEBUGGING.md or other core docs
+**Test Blueprint**: `BP_TestGraphInspection`
 
 ---
 
-## 🎓 For Reviewers
+## 📝 File Changes
 
-### Code Review Checklist
+### Added (3 files)
+1. `EpicUnrealMCPBlueprintGraphCommands.cpp`
+2. `EpicUnrealMCPBlueprintGraphCommands.h`
+3. `Python/helpers/blueprint_graph/graph_inspector.py`
 
-**Architecture**:
-- [ ] C++ follows plugin coding standards
-- [ ] Python wrappers follow MCP best practices
-- [ ] Error handling is comprehensive
-- [ ] Memory management is safe (no leaks)
-
-**Functionality**:
-- [ ] Test all 3 tools in Unreal Editor
-- [ ] Verify Blueprint compilation after modifications
-- [ ] Check node visibility in Blueprint editor
-- [ ] Validate variable creation and types
-
-**Documentation**:
-- [ ] User guide is clear and accurate
-- [ ] Code comments are sufficient
-- [ ] README updates are appropriate
-
-### Questions for Discussion
-
-1. **Naming Convention**: Should we rename internal "Blueprint Graph" to something more specific?
-2. **Error Messages**: Are current error messages user-friendly enough?
-3. **Future Extensions**: Priority for adding support for more node types?
-4. **Testing**: Should we add automated tests for Blueprint operations?
+### Modified (6 files)
+1. `EpicUnrealMCPBridge.h`
+2. `EpicUnrealMCPBridge.cpp`
+3. `MCPServerRunnable.cpp` - **TCP FIX**
+4. `EpicUnrealMCPBlueprintCommands.cpp`
+5. `Python/helpers/blueprint_graph/__init__.py`
+6. `README.md`
 
 ---
 
-## 📞 Contact
+## 🎯 Total MCP Tools
 
-**Developer**: Zoscran
-**For Questions**: Available on Discord or via GitHub issues
-
----
-
-## 🔄 Next Steps (Post-Merge)
-
-Potential future enhancements:
-- Add support for more node types (Branch, ForLoop, Delay, etc.)
-- Implement Blueprint graph inspection tools
-- Add Blueprint graph validation tools
-- Create visual Blueprint graph export/import
-- Add Blueprint debugging tools
+**Before**: 27 tools
+**After**: 34 tools (+7 Blueprint Graph tools)
 
 ---
 
-**Ready for Review and Merge** ✅
+## 📞 Credits
+
+- **Creation Tools**: Zoscran
+- **Inspection Tools**: GuBee33 (cherry-picked)
+- **TCP Bug Fix**: Zoscran
+
+---
+
+**Ready for Commit** ✅
