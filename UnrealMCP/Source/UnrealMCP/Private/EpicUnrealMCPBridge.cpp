@@ -53,8 +53,8 @@
 // Include our new command handler classes
 #include "Commands/EpicUnrealMCPEditorCommands.h"
 #include "Commands/EpicUnrealMCPBlueprintCommands.h"
+#include "Commands/EpicUnrealMCPBlueprintGraphCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
-#include "Commands/BlueprintGraph/NodeManager.h"
 
 // Default settings
 #define MCP_SERVER_HOST "127.0.0.1"
@@ -64,12 +64,14 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
 {
     EditorCommands = MakeShared<FEpicUnrealMCPEditorCommands>();
     BlueprintCommands = MakeShared<FEpicUnrealMCPBlueprintCommands>();
+    BlueprintGraphCommands = MakeShared<FEpicUnrealMCPBlueprintGraphCommands>();
 }
 
 UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
 {
     EditorCommands.Reset();
     BlueprintCommands.Reset();
+    BlueprintGraphCommands.Reset();
 }
 
 // Initialize subsystem
@@ -236,16 +238,21 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                      CommandType == TEXT("apply_material_to_actor") ||
                      CommandType == TEXT("apply_material_to_blueprint") ||
                      CommandType == TEXT("get_actor_material_info") ||
-                     CommandType == TEXT("get_blueprint_material_info"))
+                     CommandType == TEXT("get_blueprint_material_info") ||
+                     CommandType == TEXT("read_blueprint_content") ||
+                     CommandType == TEXT("analyze_blueprint_graph") ||
+                     CommandType == TEXT("get_blueprint_variable_details") ||
+                     CommandType == TEXT("get_blueprint_function_details"))
             {
                 ResultJson = BlueprintCommands->HandleCommand(CommandType, Params);
             }
-            // Blueprint Graph Commands (F15-F22)
-            else if (CommandType == TEXT("add_blueprint_node"))
+            // Blueprint Graph Commands
+            else if (CommandType == TEXT("add_blueprint_node") ||
+                     CommandType == TEXT("connect_nodes") ||
+                     CommandType == TEXT("create_variable"))
             {
-                ResultJson = FBlueprintNodeManager::AddNode(Params);
+                ResultJson = BlueprintGraphCommands->HandleCommand(CommandType, Params);
             }
-
             else
             {
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));
