@@ -17,11 +17,11 @@ TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
 
     // Extraire paramètres
-    FString BlueprintName = Params->GetStringField("blueprint_name");
-    FString SourceNodeId = Params->GetStringField("source_node_id");
-    FString SourcePinName = Params->GetStringField("source_pin_name");
-    FString TargetNodeId = Params->GetStringField("target_node_id");
-    FString TargetPinName = Params->GetStringField("target_pin_name");
+    FString BlueprintName = Params->GetStringField(TEXT("blueprint_name"));
+    FString SourceNodeId = Params->GetStringField(TEXT("source_node_id"));
+    FString SourcePinName = Params->GetStringField(TEXT("source_pin_name"));
+    FString TargetNodeId = Params->GetStringField(TEXT("target_node_id"));
+    FString TargetPinName = Params->GetStringField(TEXT("target_pin_name"));
 
     // Charger Blueprint
     UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintName);
