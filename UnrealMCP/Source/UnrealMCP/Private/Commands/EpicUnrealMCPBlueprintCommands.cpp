@@ -101,7 +101,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCommand(const FSt
     {
         return HandleGetBlueprintFunctionDetails(Params);
     }
-    
+
     return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown blueprint command: %s"), *CommandType));
 }
 
@@ -232,26 +232,26 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleAddComponentToBlu
     UClass* ComponentClass = nullptr;
 
     // Try to find the class with exact name first
-    ComponentClass = FindObject<UClass>(ANY_PACKAGE, *ComponentType);
+    ComponentClass = FindObject<UClass>(nullptr, *ComponentType);
     
     // If not found, try with "Component" suffix
     if (!ComponentClass && !ComponentType.EndsWith(TEXT("Component")))
     {
         FString ComponentTypeWithSuffix = ComponentType + TEXT("Component");
-        ComponentClass = FindObject<UClass>(ANY_PACKAGE, *ComponentTypeWithSuffix);
+        ComponentClass = FindObject<UClass>(nullptr, *ComponentTypeWithSuffix);
     }
     
     // If still not found, try with "U" prefix
     if (!ComponentClass && !ComponentType.StartsWith(TEXT("U")))
     {
         FString ComponentTypeWithPrefix = TEXT("U") + ComponentType;
-        ComponentClass = FindObject<UClass>(ANY_PACKAGE, *ComponentTypeWithPrefix);
+        ComponentClass = FindObject<UClass>(nullptr, *ComponentTypeWithPrefix);
         
         // Try with both prefix and suffix
         if (!ComponentClass && !ComponentType.EndsWith(TEXT("Component")))
         {
             FString ComponentTypeWithBoth = TEXT("U") + ComponentType + TEXT("Component");
-            ComponentClass = FindObject<UClass>(ANY_PACKAGE, *ComponentTypeWithBoth);
+            ComponentClass = FindObject<UClass>(nullptr, *ComponentTypeWithBoth);
         }
     }
     
@@ -1467,7 +1467,15 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleGetBlueprintVaria
         VarObj->SetStringField(TEXT("sub_category"), Variable.VarType.PinSubCategory.ToString());
         VarObj->SetStringField(TEXT("default_value"), Variable.DefaultValue);
         VarObj->SetStringField(TEXT("friendly_name"), Variable.FriendlyName.IsEmpty() ? Variable.VarName.ToString() : Variable.FriendlyName);
-        VarObj->SetStringField(TEXT("tooltip"), Variable.VarTooltip);
+        
+        // Get tooltip from metadata (VarTooltip doesn't exist in UE 5.5)
+        FString TooltipValue;
+        if (Variable.HasMetaData(FBlueprintMetadata::MD_Tooltip))
+        {
+            TooltipValue = Variable.GetMetaData(FBlueprintMetadata::MD_Tooltip);
+        }
+        VarObj->SetStringField(TEXT("tooltip"), TooltipValue);
+        
         VarObj->SetStringField(TEXT("category"), Variable.Category.ToString());
 
         // Property flags
