@@ -7,7 +7,7 @@ public class UnrealMCP : ModuleRules
 	public UnrealMCP(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-		
+
 		PublicDefinitions.Add("UNREALMCP_EXPORTS=1");
 
 		PublicIncludePaths.AddRange(
@@ -15,13 +15,13 @@ public class UnrealMCP : ModuleRules
 				// ... add public include paths required here ...
 			}
 		);
-		
+
 		PrivateIncludePaths.AddRange(
 			new string[] {
 				// ... add other private include paths required here ...
 			}
 		);
-		
+
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
@@ -37,10 +37,10 @@ public class UnrealMCP : ModuleRules
 				"DeveloperSettings",
 				"PhysicsCore",
 				"PCG",
-        "PythonScriptPlugin"
+				"PythonScriptPlugin"
 			}
 		);
-		
+
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
@@ -56,7 +56,7 @@ public class UnrealMCP : ModuleRules
 				"AssetRegistry"
 			}
 		);
-		
+
 		if (Target.bBuildEditor == true)
 		{
 			PrivateDependencyModuleNames.AddRange(
@@ -68,7 +68,7 @@ public class UnrealMCP : ModuleRules
 				}
 			);
 		}
-		
+
 		DynamicallyLoadedModuleNames.AddRange(
 			new string[]
 			{
@@ -76,4 +76,4 @@ public class UnrealMCP : ModuleRules
 			}
 		);
 	}
-} 
+}

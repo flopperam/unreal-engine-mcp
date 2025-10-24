@@ -68,147 +68,146 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
     BlueprintCommands = MakeShared<FEpicUnrealMCPBlueprintCommands>();
     PCGCommands = MakeShared<FEpicUnrealMCPPCGCommands>();
     UtilityCommands = MakeShared<FEpicUnrealMCPUtilityCommands>();
-}
 
-UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
-{
-    EditorCommands.Reset();
-    BlueprintCommands.Reset();
-    PCGCommands.Reset();
-    UtilityCommands.Reset();
-}
-
-// Initialize subsystem
-void UEpicUnrealMCPBridge::Initialize(FSubsystemCollectionBase &Collection)
-{
-    UE_LOG(LogTemp, Display, TEXT("EpicUnrealMCPBridge: Initializing"));
-
-    bIsRunning = false;
-    ListenerSocket = nullptr;
-    ConnectionSocket = nullptr;
-    ServerThread = nullptr;
-    Port = MCP_SERVER_PORT;
-    FIPv4Address::Parse(MCP_SERVER_HOST, ServerAddress);
-
-    // Start the server automatically
-    StartServer();
-}
-
-// Clean up resources when subsystem is destroyed
-void UEpicUnrealMCPBridge::Deinitialize()
-{
-    UE_LOG(LogTemp, Display, TEXT("EpicUnrealMCPBridge: Shutting down"));
-    StopServer();
-}
-
-// Start the MCP server
-void UEpicUnrealMCPBridge::StartServer()
-{
-    if (bIsRunning)
+    UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
     {
-        UE_LOG(LogTemp, Warning, TEXT("EpicUnrealMCPBridge: Server is already running"));
-        return;
+        EditorCommands.Reset();
+        BlueprintCommands.Reset();
+        PCGCommands.Reset();
+        UtilityCommands.Reset();
     }
 
-    // Create socket subsystem
-    ISocketSubsystem *SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
-    if (!SocketSubsystem)
+    // Initialize subsystem
+    void UEpicUnrealMCPBridge::Initialize(FSubsystemCollectionBase & Collection)
     {
-        UE_LOG(LogTemp, Error, TEXT("EpicUnrealMCPBridge: Failed to get socket subsystem"));
-        return;
-    }
+        UE_LOG(LogTemp, Display, TEXT("EpicUnrealMCPBridge: Initializing"));
 
-    // Create listener socket
-    TSharedPtr<FSocket> NewListenerSocket = MakeShareable(SocketSubsystem->CreateSocket(NAME_Stream, TEXT("UnrealMCPListener"), false));
-    if (!NewListenerSocket.IsValid())
-    {
-        UE_LOG(LogTemp, Error, TEXT("EpicUnrealMCPBridge: Failed to create listener socket"));
-        return;
-    }
-
-    // Allow address reuse for quick restarts
-    NewListenerSocket->SetReuseAddr(true);
-    NewListenerSocket->SetNonBlocking(true);
-
-    // Bind to address
-    FIPv4Endpoint Endpoint(ServerAddress, Port);
-    if (!NewListenerSocket->Bind(*Endpoint.ToInternetAddr()))
-    {
-        UE_LOG(LogTemp, Error, TEXT("EpicUnrealMCPBridge: Failed to bind listener socket to %s:%d"), *ServerAddress.ToString(), Port);
-        return;
-    }
-
-    // Start listening
-    if (!NewListenerSocket->Listen(5))
-    {
-        UE_LOG(LogTemp, Error, TEXT("EpicUnrealMCPBridge: Failed to start listening"));
-        return;
-    }
-
-    ListenerSocket = NewListenerSocket;
-    bIsRunning = true;
-    UE_LOG(LogTemp, Display, TEXT("EpicUnrealMCPBridge: Server started on %s:%d"), *ServerAddress.ToString(), Port);
-
-    // Start server thread
-    ServerThread = FRunnableThread::Create(
-        new FMCPServerRunnable(this, ListenerSocket),
-        TEXT("UnrealMCPServerThread"),
-        0, TPri_Normal);
-
-    if (!ServerThread)
-    {
-        UE_LOG(LogTemp, Error, TEXT("EpicUnrealMCPBridge: Failed to create server thread"));
-        StopServer();
-        return;
-    }
-}
-
-// Stop the MCP server
-void UEpicUnrealMCPBridge::StopServer()
-{
-    if (!bIsRunning)
-    {
-        return;
-    }
-
-    bIsRunning = false;
-
-    // Clean up thread
-    if (ServerThread)
-    {
-        ServerThread->Kill(true);
-        delete ServerThread;
+        bIsRunning = false;
+        ListenerSocket = nullptr;
+        ConnectionSocket = nullptr;
         ServerThread = nullptr;
+        Port = MCP_SERVER_PORT;
+        FIPv4Address::Parse(MCP_SERVER_HOST, ServerAddress);
+
+        // Start the server automatically
+        StartServer();
     }
 
-    // Close sockets
-    if (ConnectionSocket.IsValid())
+    // Clean up resources when subsystem is destroyed
+    void UEpicUnrealMCPBridge::Deinitialize()
     {
-        ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(ConnectionSocket.Get());
-        ConnectionSocket.Reset();
+        UE_LOG(LogTemp, Display, TEXT("EpicUnrealMCPBridge: Shutting down"));
+        StopServer();
     }
 
-    if (ListenerSocket.IsValid())
+    // Start the MCP server
+    void UEpicUnrealMCPBridge::StartServer()
     {
-        ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(ListenerSocket.Get());
-        ListenerSocket.Reset();
+        if (bIsRunning)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("EpicUnrealMCPBridge: Server is already running"));
+            return;
+        }
+
+        // Create socket subsystem
+        ISocketSubsystem *SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+        if (!SocketSubsystem)
+        {
+            UE_LOG(LogTemp, Error, TEXT("EpicUnrealMCPBridge: Failed to get socket subsystem"));
+            return;
+        }
+
+        // Create listener socket
+        TSharedPtr<FSocket> NewListenerSocket = MakeShareable(SocketSubsystem->CreateSocket(NAME_Stream, TEXT("UnrealMCPListener"), false));
+        if (!NewListenerSocket.IsValid())
+        {
+            UE_LOG(LogTemp, Error, TEXT("EpicUnrealMCPBridge: Failed to create listener socket"));
+            return;
+        }
+
+        // Allow address reuse for quick restarts
+        NewListenerSocket->SetReuseAddr(true);
+        NewListenerSocket->SetNonBlocking(true);
+
+        // Bind to address
+        FIPv4Endpoint Endpoint(ServerAddress, Port);
+        if (!NewListenerSocket->Bind(*Endpoint.ToInternetAddr()))
+        {
+            UE_LOG(LogTemp, Error, TEXT("EpicUnrealMCPBridge: Failed to bind listener socket to %s:%d"), *ServerAddress.ToString(), Port);
+            return;
+        }
+
+        // Start listening
+        if (!NewListenerSocket->Listen(5))
+        {
+            UE_LOG(LogTemp, Error, TEXT("EpicUnrealMCPBridge: Failed to start listening"));
+            return;
+        }
+
+        ListenerSocket = NewListenerSocket;
+        bIsRunning = true;
+        UE_LOG(LogTemp, Display, TEXT("EpicUnrealMCPBridge: Server started on %s:%d"), *ServerAddress.ToString(), Port);
+
+        // Start server thread
+        ServerThread = FRunnableThread::Create(
+            new FMCPServerRunnable(this, ListenerSocket),
+            TEXT("UnrealMCPServerThread"),
+            0, TPri_Normal);
+
+        if (!ServerThread)
+        {
+            UE_LOG(LogTemp, Error, TEXT("EpicUnrealMCPBridge: Failed to create server thread"));
+            StopServer();
+            return;
+        }
     }
 
-    UE_LOG(LogTemp, Display, TEXT("EpicUnrealMCPBridge: Server stopped"));
-}
+    // Stop the MCP server
+    void UEpicUnrealMCPBridge::StopServer()
+    {
+        if (!bIsRunning)
+        {
+            return;
+        }
 
-// Execute a command received from a client
-FString UEpicUnrealMCPBridge::ExecuteCommand(const FString &CommandType, const TSharedPtr<FJsonObject> &Params)
-{
-    UE_LOG(LogTemp, Display, TEXT("EpicUnrealMCPBridge: Executing command: %s"), *CommandType);
+        bIsRunning = false;
 
-    // Create a promise to wait for the result
-    TPromise<FString> Promise;
-    TFuture<FString> Future = Promise.GetFuture();
+        // Clean up thread
+        if (ServerThread)
+        {
+            ServerThread->Kill(true);
+            delete ServerThread;
+            ServerThread = nullptr;
+        }
 
-    // Queue execution on Game Thread
-    AsyncTask(ENamedThreads::GameThread, [this, CommandType, Params, Promise = MoveTemp(Promise)]() mutable
-              {
+        // Close sockets
+        if (ConnectionSocket.IsValid())
+        {
+            ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(ConnectionSocket.Get());
+            ConnectionSocket.Reset();
+        }
+
+        if (ListenerSocket.IsValid())
+        {
+            ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(ListenerSocket.Get());
+            ListenerSocket.Reset();
+        }
+
+        UE_LOG(LogTemp, Display, TEXT("EpicUnrealMCPBridge: Server stopped"));
+    }
+
+    // Execute a command received from a client
+    FString UEpicUnrealMCPBridge::ExecuteCommand(const FString &CommandType, const TSharedPtr<FJsonObject> &Params)
+    {
+        UE_LOG(LogTemp, Display, TEXT("EpicUnrealMCPBridge: Executing command: %s"), *CommandType);
+
+        // Create a promise to wait for the result
+        TPromise<FString> Promise;
+        TFuture<FString> Future = Promise.GetFuture();
+
+        // Queue execution on Game Thread
+        AsyncTask(ENamedThreads::GameThread, [this, CommandType, Params, Promise = MoveTemp(Promise)]() mutable
+                  {
         TSharedPtr<FJsonObject> ResponseJson = MakeShareable(new FJsonObject);
         
         try
@@ -308,5 +307,5 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString &CommandType, const T
         FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
         Promise.SetValue(ResultString); });
 
-    return Future.Get();
-}
+        return Future.Get();
+    }
