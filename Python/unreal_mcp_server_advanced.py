@@ -1632,7 +1632,86 @@ def create_aqueduct(
     except Exception as e:
         logger.error(f"create_aqueduct error: {e}")
         return {"success": False, "message": str(e)}
+@mcp.tool()
+def analyze_pcg_graph(graph_path: str) -> Dict[str, Any]:
+    """
+    Analyzes an existing PCG (Procedural Content Generation) graph and returns its structure.
 
+    Args:
+        graph_path: The asset path to the PCG graph (e.g., "/Game/PCG/MyPCGGraph.MyPCGGraph").
+    
+    Returns:
+        A dictionary containing the nodes and their exposed parameters.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    try:
+        params = {"graph_path": graph_path}
+        response = unreal.send_command("analyze_pcg_graph", params)
+        return response or {"success": False, "message": "No response from Unreal"}
+    except Exception as e:
+        logger.error(f"analyze_pcg_graph error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def update_pcg_graph_parameter(
+    graph_path: str,
+    node_title: str,
+    parameter_name: str,
+    new_value: float
+) -> Dict[str, Any]:
+    """
+    Updates a specific parameter on a node within a PCG graph.
+
+    Args:
+        graph_path: The asset path to the PCG graph.
+        node_title: The display name of the node to modify (e.g., "Static Mesh Spawner").
+        parameter_name: The name of the parameter to change (e.g., "Seed").
+        new_value: The new floating-point value for the parameter.
+    
+    Returns:
+        A success or failure message.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    try:
+        params = {
+            "graph_path": graph_path,
+            "node_title": node_title,
+            "parameter_name": parameter_name,
+            "new_value": new_value
+        }
+        response = unreal.send_command("update_pcg_graph_parameter", params)
+        return response or {"success": False, "message": "No response from Unreal"}
+    except Exception as e:
+        logger.error(f"update_pcg_graph_parameter error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def execute_python_script(script: str) -> Dict[str, Any]:
+    """
+    Executes a Python script directly within the Unreal Engine editor context.
+    WARNING: This tool has direct access to the editor and can perform destructive actions. Use with caution.
+    The script can import 'unreal' to access the Unreal Python API.
+
+    Args:
+        script: A string containing the Python code to execute.
+    
+    Returns:
+        A dictionary containing the success status and any output or errors from the script.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    try:
+        params = {"script": script}
+        response = unreal.send_command("execute_python_script", params)
+        return response or {"success": False, "message": "No response from Unreal"}
+    except Exception as e:
+        logger.error(f"execute_python_script error: {e}")
+        return {"success": False, "message": str(e)}
 
 # Run the server
 if __name__ == "__main__":

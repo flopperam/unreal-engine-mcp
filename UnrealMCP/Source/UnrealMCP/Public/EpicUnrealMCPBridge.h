@@ -11,6 +11,8 @@
 #include "Commands/EpicUnrealMCPEditorCommands.h"
 #include "Commands/EpicUnrealMCPBlueprintCommands.h"
 #include "EpicUnrealMCPBridge.generated.h"
+#include "Commands/EpicUnrealMCPPCGCommands.h"
+#include "Commands/EpicUnrealMCPUtilityCommands.h"
 
 class FMCPServerRunnable;
 
@@ -30,7 +32,7 @@ public:
 	virtual ~UEpicUnrealMCPBridge();
 
 	// UEditorSubsystem implementation
-	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Initialize(FSubsystemCollectionBase &Collection) override;
 	virtual void Deinitialize() override;
 
 	// Server functions
@@ -39,14 +41,14 @@ public:
 	bool IsRunning() const { return bIsRunning; }
 
 	// Command execution
-	FString ExecuteCommand(const FString& CommandType, const TSharedPtr<FJsonObject>& Params);
+	FString ExecuteCommand(const FString &CommandType, const TSharedPtr<FJsonObject> &Params);
 
 private:
 	// Server state
 	bool bIsRunning;
 	TSharedPtr<FSocket> ListenerSocket;
 	TSharedPtr<FSocket> ConnectionSocket;
-	FRunnableThread* ServerThread;
+	FRunnableThread *ServerThread;
 
 	// Server configuration
 	FIPv4Address ServerAddress;
@@ -55,4 +57,6 @@ private:
 	// Command handler instances
 	TSharedPtr<FEpicUnrealMCPEditorCommands> EditorCommands;
 	TSharedPtr<FEpicUnrealMCPBlueprintCommands> BlueprintCommands;
-}; 
+	TSharedPtr<FEpicUnrealMCPPCGCommands> PCGCommands;
+	TSharedPtr<FEpicUnrealMCPUtilityCommands> UtilityCommands;
+};

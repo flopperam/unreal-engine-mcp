@@ -35,7 +35,9 @@ public class UnrealMCP : ModuleRules
 				"Json",
 				"JsonUtilities",
 				"DeveloperSettings",
-				"PhysicsCore"
+				"PhysicsCore",
+				"PCG",
+        "PythonScriptPlugin"
 			}
 		);
 		

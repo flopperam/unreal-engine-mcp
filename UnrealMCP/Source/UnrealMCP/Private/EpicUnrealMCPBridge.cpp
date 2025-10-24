@@ -54,6 +54,9 @@
 #include "Commands/EpicUnrealMCPEditorCommands.h"
 #include "Commands/EpicUnrealMCPBlueprintCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
+// PCG
+#include "Commands/EpicUnrealMCPPCGCommands.h"
+#include "Commands/EpicUnrealMCPUtilityCommands.h"
 
 // Default settings
 #define MCP_SERVER_HOST "127.0.0.1"
@@ -63,19 +66,23 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
 {
     EditorCommands = MakeShared<FEpicUnrealMCPEditorCommands>();
     BlueprintCommands = MakeShared<FEpicUnrealMCPBlueprintCommands>();
+    PCGCommands = MakeShared<FEpicUnrealMCPPCGCommands>();
+    UtilityCommands = MakeShared<FEpicUnrealMCPUtilityCommands>();
 }
 
 UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
 {
     EditorCommands.Reset();
     BlueprintCommands.Reset();
+    PCGCommands.Reset();
+    UtilityCommands.Reset();
 }
 
 // Initialize subsystem
-void UEpicUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
+void UEpicUnrealMCPBridge::Initialize(FSubsystemCollectionBase &Collection)
 {
     UE_LOG(LogTemp, Display, TEXT("EpicUnrealMCPBridge: Initializing"));
-    
+
     bIsRunning = false;
     ListenerSocket = nullptr;
     ConnectionSocket = nullptr;
@@ -104,7 +111,7 @@ void UEpicUnrealMCPBridge::StartServer()
     }
 
     // Create socket subsystem
-    ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+    ISocketSubsystem *SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
     if (!SocketSubsystem)
     {
         UE_LOG(LogTemp, Error, TEXT("EpicUnrealMCPBridge: Failed to get socket subsystem"));
@@ -146,8 +153,7 @@ void UEpicUnrealMCPBridge::StartServer()
     ServerThread = FRunnableThread::Create(
         new FMCPServerRunnable(this, ListenerSocket),
         TEXT("UnrealMCPServerThread"),
-        0, TPri_Normal
-    );
+        0, TPri_Normal);
 
     if (!ServerThread)
     {
@@ -192,17 +198,17 @@ void UEpicUnrealMCPBridge::StopServer()
 }
 
 // Execute a command received from a client
-FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TSharedPtr<FJsonObject>& Params)
+FString UEpicUnrealMCPBridge::ExecuteCommand(const FString &CommandType, const TSharedPtr<FJsonObject> &Params)
 {
     UE_LOG(LogTemp, Display, TEXT("EpicUnrealMCPBridge: Executing command: %s"), *CommandType);
-    
+
     // Create a promise to wait for the result
     TPromise<FString> Promise;
     TFuture<FString> Future = Promise.GetFuture();
-    
+
     // Queue execution on Game Thread
     AsyncTask(ENamedThreads::GameThread, [this, CommandType, Params, Promise = MoveTemp(Promise)]() mutable
-    {
+              {
         TSharedPtr<FJsonObject> ResponseJson = MakeShareable(new FJsonObject);
         
         try
@@ -239,7 +245,20 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
             {
                 ResultJson = BlueprintCommands->HandleCommand(CommandType, Params);
             }
-
+            START ADDING HERE
+                // PCG Commands
+                else if (CommandType == TEXT("analyze_pcg_graph") ||
+                         CommandType == TEXT("update_pcg_graph_parameter") ||
+                         CommandType == TEXT("create_pcg_graph"))
+            {
+                ResultJson = PCGCommands->HandleCommand(CommandType, Params);
+            }
+            // Utility Commands
+            else if (CommandType == TEXT("execute_python_script"))
+            {
+                ResultJson = UtilityCommands->HandleCommand(CommandType, Params);
+            }
+            // END ADDING HERE
             else
             {
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));
@@ -287,8 +306,7 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
         FString ResultString;
         TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultString);
         FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
-        Promise.SetValue(ResultString);
-    });
-    
+        Promise.SetValue(ResultString); });
+
     return Future.Get();
 }
