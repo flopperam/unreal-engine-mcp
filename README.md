@@ -43,16 +43,92 @@ Check out these examples of the MCP server in action on our channel:
 
 ---
 
-## Complete Tool Arsenal
+## Complete Tool Arsenal (45 Tools)
 
-| **Category** | **Tools** | **Description** |
-|--------------|-----------|-----------------|
-| **World Building** | `create_town`, `construct_house`, `construct_mansion`, `create_tower`, `create_arch`, `create_staircase` | Build complex architectural structures and entire settlements |
-| **Epic Structures** | `create_castle_fortress`, `create_suspension_bridge`, `create_aqueduct` | Massive engineering marvels and medieval fortresses |
-| **Level Design** | `create_maze`, `create_pyramid`, `create_wall` | Design challenging game levels and puzzles |
-| **Physics & Materials** | `spawn_physics_blueprint_actor`, `set_physics_properties`, `get_available_materials`, `apply_material_to_actor`, `apply_material_to_blueprint`, `set_mesh_material_color` | Create realistic physics simulations and material systems |
-| **Blueprint System** | `create_blueprint`, `compile_blueprint`, `add_component_to_blueprint`, `set_static_mesh_properties` | Visual scripting and custom actor creation |
-| **Actor Management** | `get_actors_in_level`, `find_actors_by_name`, `delete_actor`, `set_actor_transform`, `get_actor_material_info` | Precise control over scene objects and inspection |
+### 🏗️ World Building & Architecture (11 tools)
+| Tool | Description |
+|------|-------------|
+| `create_town` | Generate complete towns with buildings, streets, infrastructure, and vehicles |
+| `construct_house` | Build detailed houses with multiple rooms, windows, doors, and roofs |
+| `construct_mansion` | Create magnificent mansions with wings, gardens, fountains, and luxury features |
+| `create_castle_fortress` | Build massive medieval castles with walls, towers, courtyards, and villages |
+| `create_church` | Construct detailed churches with gothic, romanesque, baroque, or modern styles |
+| `create_tower` | Build realistic towers with cylindrical, square, or tapered architectural styles |
+| `create_arch` | Create decorative arches using cubes arranged in semicircles |
+| `create_staircase` | Generate staircases with configurable steps and dimensions |
+| `create_suspension_bridge` | Build engineering marvels with towers, cables, and multi-lane decks |
+| `create_aqueduct` | Construct Roman-style aqueducts with repeating arches and water channels |
+| `create_forest` | Generate procedural forests with trees, undergrowth, and optional magical elements |
+
+### 🎮 Level Design & Primitives (3 tools)
+| Tool | Description |
+|------|-------------|
+| `create_maze` | Generate solvable mazes with guaranteed paths using recursive backtracking |
+| `create_pyramid` | Build pyramids from stacked cubes with configurable base size |
+| `create_wall` | Create simple walls with adjustable length, height, and orientation |
+
+### 🌍 Terrain & Environment (4 tools)
+| Tool | Description |
+|------|-------------|
+| `create_terrain_grid` | Build terrain grids with optional height mapping for hills and valleys |
+| `create_path` | Connect waypoints with roads, rivers, or walls |
+| `snap_actors_to_height` | Align actors to specific Z coordinates (absolute or relative) |
+| `create_lighting_rig` | Set up lighting with day, sunset, night, or dramatic styles |
+
+### ⚡ Batch Operations & Performance (3 tools)
+| Tool | Description |
+|------|-------------|
+| `batch_spawn_actors` | Spawn multiple actors efficiently in chunks (10-50x faster than one-by-one) |
+| `clone_actor_array` | Duplicate actors in patterns: grid, circle, line, or random scatter |
+| `apply_random_variation` | Add natural randomness to rotation, scale, and location of actors |
+
+### 🎯 Selection & Manipulation (3 tools)
+| Tool | Description |
+|------|-------------|
+| `select_actors_by_region` | Select all actors within a spherical or box-shaped region |
+| `move_actors_relative` | Move multiple actors together by an offset while preserving relative positions |
+| `rotate_actors_around_point` | Rotate actors around a pivot point on X, Y, or Z axis |
+
+### 📊 Scene Management & Organization (3 tools)
+| Tool | Description |
+|------|-------------|
+| `clear_scene_by_prefix` | Safely delete actors by name prefix with dry-run and confirmation modes |
+| `get_scene_statistics` | Analyze scene composition with actor counts, bounding boxes, and type distribution |
+| `organize_actors_by_height` | Group actors into vertical layers based on Z coordinate |
+
+### 🔍 Validation & Debugging (3 tools)
+| Tool | Description |
+|------|-------------|
+| `validate_scene_performance` | Check actor counts against thresholds and get optimization recommendations |
+| `find_overlapping_actors` | Detect actors that are too close together or occupying the same space |
+| `analyze_actor_distribution` | Grid-based spatial analysis to identify dense areas and hotspots |
+
+### 🎨 Materials & Visual Effects (6 tools)
+| Tool | Description |
+|------|-------------|
+| `get_available_materials` | List all available materials in the project |
+| `apply_material_to_actor` | Apply specific materials to actors in the level |
+| `apply_material_to_blueprint` | Apply materials to Blueprint components |
+| `get_actor_material_info` | Retrieve material information from actors |
+| `set_mesh_material_color` | Set material colors on mesh components with RGB/RGBA values |
+| `spawn_physics_blueprint_actor` | Quickly spawn actors with physics, color, and custom meshes |
+
+### 🔧 Blueprint System (5 tools)
+| Tool | Description |
+|------|-------------|
+| `create_blueprint` | Create new Blueprint classes with specified parent types |
+| `add_component_to_blueprint` | Add components (mesh, light, etc.) to Blueprints |
+| `set_static_mesh_properties` | Configure static mesh properties on Blueprint components |
+| `set_physics_properties` | Set physics parameters: mass, gravity, damping, and simulation |
+| `compile_blueprint` | Compile Blueprints to apply changes |
+
+### 🎭 Actor Management (4 tools)
+| Tool | Description |
+|------|-------------|
+| `get_actors_in_level` | Retrieve all actors currently in the level |
+| `find_actors_by_name` | Search for actors using name pattern matching |
+| `delete_actor` | Remove actors from the level by name |
+| `set_actor_transform` | Set position, rotation, and scale of actors |
 
 ---
 
