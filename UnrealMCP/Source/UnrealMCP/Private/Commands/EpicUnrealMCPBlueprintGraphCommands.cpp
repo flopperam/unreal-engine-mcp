@@ -14,6 +14,9 @@
 #include "Commands/BlueprintGraph/NodeManager.h"
 #include "Commands/BlueprintGraph/BPConnector.h"
 #include "Commands/BlueprintGraph/BPVariables.h"
+#include "Commands/BlueprintGraph/EventManager.h"
+#include "Commands/BlueprintGraph/NodeDeleter.h"
+#include "Commands/BlueprintGraph/NodePropertyManager.h"
 
 FEpicUnrealMCPBlueprintGraphCommands::FEpicUnrealMCPBlueprintGraphCommands()
 {
@@ -36,6 +39,18 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintGraphCommands::HandleCommand(cons
     else if (CommandType == TEXT("create_variable"))
     {
         return HandleCreateVariable(Params);
+    }
+    else if (CommandType == TEXT("add_event_node"))
+    {
+        return HandleAddEventNode(Params);
+    }
+    else if (CommandType == TEXT("delete_node"))
+    {
+        return HandleDeleteNode(Params);
+    }
+    else if (CommandType == TEXT("set_node_property"))
+    {
+        return HandleSetNodeProperty(Params);
     }
 
     return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown blueprint graph command: %s"), *CommandType));
@@ -128,4 +143,74 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintGraphCommands::HandleCreateVariab
 
     // Use the BPVariables to create the variable
     return FBPVariables::CreateVariable(Params);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintGraphCommands::HandleAddEventNode(const TSharedPtr<FJsonObject>& Params)
+{
+    // Get required parameters
+    FString BlueprintName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BlueprintName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_name' parameter"));
+    }
+
+    FString EventName;
+    if (!Params->TryGetStringField(TEXT("event_name"), EventName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'event_name' parameter"));
+    }
+
+    UE_LOG(LogTemp, Display, TEXT("FEpicUnrealMCPBlueprintGraphCommands::HandleAddEventNode: Adding event '%s' to blueprint '%s'"),
+        *EventName, *BlueprintName);
+
+    // Use the EventManager to add the event node
+    return FEventManager::AddEventNode(Params);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintGraphCommands::HandleDeleteNode(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BlueprintName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_name' parameter"));
+    }
+
+    FString NodeID;
+    if (!Params->TryGetStringField(TEXT("node_id"), NodeID))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'node_id' parameter"));
+    }
+
+    UE_LOG(LogTemp, Display,
+        TEXT("FEpicUnrealMCPBlueprintGraphCommands::HandleDeleteNode: Deleting node '%s' from blueprint '%s'"),
+        *NodeID, *BlueprintName);
+
+    return FNodeDeleter::DeleteNode(Params);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintGraphCommands::HandleSetNodeProperty(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BlueprintName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_name' parameter"));
+    }
+
+    FString NodeID;
+    if (!Params->TryGetStringField(TEXT("node_id"), NodeID))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'node_id' parameter"));
+    }
+
+    FString PropertyName;
+    if (!Params->TryGetStringField(TEXT("property_name"), PropertyName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'property_name' parameter"));
+    }
+
+    UE_LOG(LogTemp, Display,
+        TEXT("FEpicUnrealMCPBlueprintGraphCommands::HandleSetNodeProperty: Setting '%s' on node '%s' in blueprint '%s'"),
+        *PropertyName, *NodeID, *BlueprintName);
+
+    return FNodePropertyManager::SetNodeProperty(Params);
 }

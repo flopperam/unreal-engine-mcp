@@ -9,6 +9,9 @@
  * - add_blueprint_node
  * - connect_nodes
  * - create_variable
+ * - add_event_node
+ * - delete_node (F20)
+ * - set_node_property (F21)
  */
 
 #pragma once
@@ -39,4 +42,13 @@ private:
 
     // Create variable in Blueprint
     TSharedPtr<FJsonObject> HandleCreateVariable(const TSharedPtr<FJsonObject>& Params);
+
+    // Add event node to Blueprint graph
+    TSharedPtr<FJsonObject> HandleAddEventNode(const TSharedPtr<FJsonObject>& Params);
+
+    // Delete node from Blueprint graph (F20)
+    TSharedPtr<FJsonObject> HandleDeleteNode(const TSharedPtr<FJsonObject>& Params);
+
+    // Set node property in Blueprint graph (F21)
+    TSharedPtr<FJsonObject> HandleSetNodeProperty(const TSharedPtr<FJsonObject>& Params);
 };

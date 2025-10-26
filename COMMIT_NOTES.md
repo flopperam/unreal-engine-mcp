@@ -199,3 +199,198 @@ while (TotalBytesSent < TotalDataSize)
 ---
 
 **Ready for Commit** ✅
+
+---
+
+# Commit Notes - Blueprint Node Creation, Deletion & Property Management
+
+**Author**: Zoscran
+**Date**: 2025-10-26
+**Branch**: BlueprintGraph
+**Type**: Feature Addition
+
+---
+
+## 📋 Summary
+
+This commit adds three essential Blueprint node manipulation tools that complete the core node lifecycle for programmatic Blueprint development:
+- **add_event_node**: Create event nodes (ReceiveBeginPlay, ReceiveTick, etc.) in Blueprint graphs
+- **delete_node**: Remove nodes from Blueprint graphs (EventGraph or function graphs)
+- **set_node_property**: Modify properties of existing nodes (message, position, comments, variable names)
+
+These tools enable complete node lifecycle management: Creation → Connection → Deletion → Property Modification.
+
+**Total MCP Tools**: 34 → 37 (+3 new tools)
+
+---
+
+## 🎯 What Was Added
+
+### 1. New MCP Tools (3 tools)
+
+| Tool | Description |
+|------|-------------|
+| `add_event_node` | Create specialized event nodes in Blueprint graphs (ReceiveBeginPlay, ReceiveTick, ReceiveDestroyed, etc.) |
+| `delete_node` | Remove nodes from Blueprint graphs with proper link disconnection |
+| `set_node_property` | Modify node properties after creation (message text, position, comments, variable names) |
+
+### 2. C++ Implementation
+
+**New Files** (6 files):
+- `NodeDeleter.h` / `NodeDeleter.cpp` - Node deletion with link management
+- `NodePropertyManager.h` / `NodePropertyManager.cpp` - Node property modification
+- BlueprintGraph/ directory structure established for node tools
+
+**Modified Files** (3 files):
+- `EpicUnrealMCPBlueprintGraphCommands.h` - Added handler declarations
+- `EpicUnrealMCPBlueprintGraphCommands.cpp` - Added handler implementations
+- `EpicUnrealMCPBridge.cpp` - Added command routing for new tools
+
+### 3. Python MCP Server Integration
+
+**New Files** (2 files):
+- `node_deleter.py` - delete_node MCP tool wrapper
+- `node_properties.py` - set_node_property MCP tool wrapper
+
+**Modified Files** (1 file):
+- `unreal_mcp_server_advanced.py` - Added tool imports and decorators
+
+---
+
+## 🔧 Tool Details
+
+### add_event_node
+
+**Purpose**: Create specialized event nodes in Blueprint graphs
+
+**Function Signature**:
+```python
+add_event_node(
+    blueprint_name: str,
+    event_name: str,
+    pos_x: float = 0,
+    pos_y: float = 0
+) -> Dict[str, Any]
+```
+
+**Supported Events**:
+- ReceiveBeginPlay, ReceiveTick, ReceiveEndPlay
+- ReceiveDestroyed, ReceiveAnyDamage
+- ReceiveActorBeginOverlap, ReceiveActorEndOverlap
+
+**Implementation Details**:
+- Creates UK2Node_Event nodes with proper EventReference setup
+- Prevents duplicate event nodes in same graph
+- Properly allocates execution pins
+- Marks Blueprint as modified
+
+---
+
+### delete_node
+
+**Purpose**: Remove nodes from Blueprint graphs to enable iterative development and error correction
+
+**Function Signature**:
+```python
+delete_node(
+    blueprint_name: str,
+    node_id: str,
+    function_name: Optional[str] = None
+) -> Dict[str, Any]
+```
+
+**Implementation Details**:
+- Locates nodes by NodeGuid or node name
+- Disconnects all node links (execution and data) before removal
+- Supports both EventGraph and function-specific graphs
+- Updates graph and notifies Blueprint editor of changes
+
+---
+
+### set_node_property
+
+**Purpose**: Modify node properties after creation to update behavior and appearance
+
+**Function Signature**:
+```python
+set_node_property(
+    blueprint_name: str,
+    node_id: str,
+    property_name: str,
+    property_value: Any,
+    function_name: Optional[str] = None
+) -> Dict[str, Any]
+```
+
+**Supported Properties**:
+- **Print nodes**: "message", "duration" (via pin modification)
+- **Variable nodes**: "variable_name" (Get/Set nodes)
+- **All nodes**: "pos_x", "pos_y", "comment" (position and comments)
+
+**Implementation Details**:
+- Handles Print node properties via FindPin("InString")
+- Handles Variable Get/Set nodes via VariableReference
+- Handles position and comment for all node types
+- Extensible pattern for node type-specific properties
+
+---
+
+## ✅ Testing Status
+
+**All tools tested and functional**:
+- ✅ add_event_node - Event node creation verified
+- ✅ delete_node - Node removal and link disconnection verified
+- ✅ set_node_property - Property modification (message, position, comment) verified
+- ✅ Error handling for invalid nodes validated
+- ✅ No regressions on existing 34 MCP tools
+
+---
+
+## 📝 File Changes Summary
+
+### Added (8 files)
+```
+FlopperamUnrealMCP/Plugins/UnrealMCP/Private/Commands/BlueprintGraph/
+  ├── NodeDeleter.cpp
+  └── NodePropertyManager.cpp
+FlopperamUnrealMCP/Plugins/UnrealMCP/Public/Commands/BlueprintGraph/
+  ├── NodeDeleter.h
+  └── NodePropertyManager.h
+UnrealMCP/Source/UnrealMCP/... (synchronized copies)
+Python/helpers/blueprint_graph/
+  ├── node_deleter.py
+  └── node_properties.py
+```
+
+### Modified (4 files)
+```
+EpicUnrealMCPBlueprintGraphCommands.h (handlers added)
+EpicUnrealMCPBlueprintGraphCommands.cpp (implementations added)
+EpicUnrealMCPBridge.cpp (routing added)
+unreal_mcp_server_advanced.py (tool imports/decorators)
+```
+
+---
+
+## 🎯 Node Lifecycle Tools Summary
+
+**Complete node manipulation tools now available**:
+1. add_node - Create generic nodes
+2. add_event_node - Create event nodes
+3. delete_node - Remove nodes
+4. set_node_property - Modify node properties
+5. connect_nodes - Connect nodes
+
+**Total MCP Tools Summary**:
+- Before: 34 tools
+- After: 37 tools (+3 new)
+
+---
+
+## 📞 Credits
+
+- **Implementation**: Zoscran
+
+---
+
+**Ready for Commit** ✅

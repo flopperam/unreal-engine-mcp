@@ -49,6 +49,8 @@ from helpers.blueprint_graph import node_manager
 from helpers.blueprint_graph import variable_manager
 from helpers.blueprint_graph import connector_manager
 from helpers.blueprint_graph import event_manager
+from helpers.blueprint_graph import node_deleter
+from helpers.blueprint_graph import node_properties
 
 
 # Configure logging with more detailed format
@@ -2059,6 +2061,91 @@ def add_event_node(
         return result
     except Exception as e:
         logger.error(f"add_event_node error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def delete_node(
+    blueprint_name: str,
+    node_id: str,
+    function_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Delete a node from a Blueprint graph.
+
+    Removes a node and all its connections from either the EventGraph
+    or a specific function graph.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        node_id: ID of the node to delete (NodeGuid or node name)
+        function_name: Name of function graph (optional, defaults to EventGraph)
+
+    Returns:
+        Dictionary with success status and deleted_node_id
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = node_deleter.delete_node(
+            unreal,
+            blueprint_name,
+            node_id,
+            function_name
+        )
+        return result
+    except Exception as e:
+        logger.error(f"delete_node error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def set_node_property(
+    blueprint_name: str,
+    node_id: str,
+    property_name: str,
+    property_value: Any,
+    function_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Set a property on a Blueprint node.
+
+    Modify properties of existing nodes such as Print message text,
+    variable names, node positions, or comments.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        node_id: ID of the node to modify
+        property_name: Name of the property to set (e.g., "message", "variable_name", "pos_x")
+        property_value: Value to set (type depends on property)
+        function_name: Name of function graph (optional, defaults to EventGraph)
+
+    Returns:
+        Dictionary with success status and updated_property name
+
+    Supported properties by node type:
+        - Print nodes: "message", "duration", "text_color"
+        - Variable nodes: "variable_name"
+        - All nodes: "pos_x", "pos_y", "comment"
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = node_properties.set_node_property(
+            unreal,
+            blueprint_name,
+            node_id,
+            property_name,
+            property_value,
+            function_name
+        )
+        return result
+    except Exception as e:
+        logger.error(f"set_node_property error: {e}")
         return {"success": False, "message": str(e)}
 
 
