@@ -48,6 +48,7 @@ from helpers.bridge_aqueduct_creation import (
 from helpers.blueprint_graph import node_manager
 from helpers.blueprint_graph import variable_manager
 from helpers.blueprint_graph import connector_manager
+from helpers.blueprint_graph import event_manager
 
 
 # Configure logging with more detailed format
@@ -283,16 +284,13 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
     """Handle server startup and shutdown."""
     global _unreal_connection
     logger.info("UnrealMCP Advanced server starting up")
-    try:
-        _unreal_connection = get_unreal_connection()
-        if _unreal_connection:
-            logger.info("Connected to Unreal Engine on startup")
-        else:
-            logger.warning("Could not connect to Unreal Engine on startup")
-    except Exception as e:
-        logger.error(f"Error connecting to Unreal Engine on startup: {e}")
-        _unreal_connection = None
-    
+
+    # FIX: Don't connect to Unreal at startup (blocking call in async context)
+    # Connection will be established lazily on first tool call via get_unreal_connection()
+    # This prevents "RuntimeError: Received request before initialization was complete"
+    _unreal_connection = None
+    logger.info("Unreal connection will be established on first tool call (lazy connection)")
+
     try:
         yield {}
     finally:
@@ -2021,6 +2019,46 @@ def create_variable(
         return result
     except Exception as e:
         logger.error(f"create_variable error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def add_event_node(
+    blueprint_name: str,
+    event_name: str,
+    pos_x: float = 0,
+    pos_y: float = 0
+) -> Dict[str, Any]:
+    """
+    Add an event node to a Blueprint graph.
+
+    Create specialized event nodes (ReceiveBeginPlay, ReceiveTick, etc.)
+    in a Blueprint's event graph at specified positions.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        event_name: Name of the event (e.g., "ReceiveBeginPlay", "ReceiveTick", "ReceiveDestroyed")
+        pos_x: X position in graph (default: 0)
+        pos_y: Y position in graph (default: 0)
+
+    Returns:
+        Dictionary with success status, node_id, event_name, and position
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = event_manager.add_event_node(
+            unreal,
+            blueprint_name,
+            event_name,
+            pos_x,
+            pos_y
+        )
+
+        return result
+    except Exception as e:
+        logger.error(f"add_event_node error: {e}")
         return {"success": False, "message": str(e)}
 
 

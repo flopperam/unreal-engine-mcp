@@ -249,7 +249,8 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
             // Blueprint Graph Commands
             else if (CommandType == TEXT("add_blueprint_node") ||
                      CommandType == TEXT("connect_nodes") ||
-                     CommandType == TEXT("create_variable"))
+                     CommandType == TEXT("create_variable") ||
+                     CommandType == TEXT("add_event_node"))
             {
                 ResultJson = BlueprintGraphCommands->HandleCommand(CommandType, Params);
             }

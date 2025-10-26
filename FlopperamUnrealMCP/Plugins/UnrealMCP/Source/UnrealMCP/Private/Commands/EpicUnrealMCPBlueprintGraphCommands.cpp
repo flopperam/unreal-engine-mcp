@@ -14,6 +14,7 @@
 #include "Commands/BlueprintGraph/NodeManager.h"
 #include "Commands/BlueprintGraph/BPConnector.h"
 #include "Commands/BlueprintGraph/BPVariables.h"
+#include "Commands/BlueprintGraph/EventManager.h"
 
 FEpicUnrealMCPBlueprintGraphCommands::FEpicUnrealMCPBlueprintGraphCommands()
 {
@@ -36,6 +37,10 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintGraphCommands::HandleCommand(cons
     else if (CommandType == TEXT("create_variable"))
     {
         return HandleCreateVariable(Params);
+    }
+    else if (CommandType == TEXT("add_event_node"))
+    {
+        return HandleAddEventNode(Params);
     }
 
     return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown blueprint graph command: %s"), *CommandType));
@@ -128,4 +133,26 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintGraphCommands::HandleCreateVariab
 
     // Use the BPVariables to create the variable
     return FBPVariables::CreateVariable(Params);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintGraphCommands::HandleAddEventNode(const TSharedPtr<FJsonObject>& Params)
+{
+    // Get required parameters
+    FString BlueprintName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BlueprintName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_name' parameter"));
+    }
+
+    FString EventName;
+    if (!Params->TryGetStringField(TEXT("event_name"), EventName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'event_name' parameter"));
+    }
+
+    UE_LOG(LogTemp, Display, TEXT("FEpicUnrealMCPBlueprintGraphCommands::HandleAddEventNode: Adding event '%s' to blueprint '%s'"),
+        *EventName, *BlueprintName);
+
+    // Use the EventManager to add the event node
+    return FEventManager::AddEventNode(Params);
 }
