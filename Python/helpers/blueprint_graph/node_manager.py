@@ -20,18 +20,21 @@ def add_node(
 ) -> Dict[str, Any]:
     """
     Add a node to a Blueprint graph.
-    
+
     Args:
         unreal_connection: Connection to Unreal Engine
         blueprint_name: Name of the Blueprint to modify
-        node_type: Type of node to create ("Print", "Event", "VariableGet", "VariableSet")
+        node_type: Type of node to create ("Print", "Event", "VariableGet", "VariableSet", "CallFunction")
         node_params: Additional parameters for the node:
             - pos_x (float): X position in graph (default: 0)
             - pos_y (float): Y position in graph (default: 0)
             - message (str): For Print nodes, the text to print
             - event_type (str): For Event nodes, the event name (BeginPlay, Tick, etc.)
             - variable_name (str): For Variable nodes, the variable name
-    
+            - target_function (str): For CallFunction nodes, the function to call
+            - target_blueprint (str): For CallFunction nodes, optional path to target Blueprint
+            - function_name (str): Optional name of function graph to add node to (if None, uses EventGraph)
+
     Returns:
         Dictionary containing:
             - success (bool): Whether operation succeeded
@@ -40,7 +43,7 @@ def add_node(
             - pos_x (float): X position
             - pos_y (float): Y position
             - error (str): Error message if failed
-    
+
     Example:
         >>> result = add_node(
         ...     unreal,
@@ -195,17 +198,17 @@ def add_variable_set_node(
 ) -> Dict[str, Any]:
     """
     Add a Variable Set node to modify a variable's value.
-    
+
     Args:
         unreal_connection: Connection to Unreal Engine
         blueprint_name: Name of the Blueprint
         variable_name: Name of the variable to set
         pos_x: X position in graph
         pos_y: Y position in graph
-    
+
     Returns:
         Dictionary containing node_id and status
-        
+
     Example:
         >>> add_variable_set_node(unreal, "MyActor", "Health", 300, 200)
     """
@@ -218,4 +221,46 @@ def add_variable_set_node(
             "pos_y": pos_y,
             "variable_name": variable_name
         }
+    )
+
+
+def add_call_function_node(
+    unreal_connection,
+    blueprint_name: str,
+    target_function: str,
+    pos_x: float = 0,
+    pos_y: float = 0,
+    target_blueprint: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Add a Call Function node to call a Blueprint function.
+
+    Args:
+        unreal_connection: Connection to Unreal Engine
+        blueprint_name: Name of the Blueprint containing the EventGraph
+        target_function: Name of the function to call
+        pos_x: X position in graph
+        pos_y: Y position in graph
+        target_blueprint: Optional path to target Blueprint (defaults to same blueprint)
+
+    Returns:
+        Dictionary containing node_id and status
+
+    Example:
+        >>> add_call_function_node(unreal, "MyActor", "MyFunction", 400, 0)
+    """
+    node_params = {
+        "pos_x": pos_x,
+        "pos_y": pos_y,
+        "target_function": target_function
+    }
+
+    if target_blueprint:
+        node_params["target_blueprint"] = target_blueprint
+
+    return add_node(
+        unreal_connection,
+        blueprint_name,
+        "CallFunction",
+        node_params
     )

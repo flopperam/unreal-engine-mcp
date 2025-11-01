@@ -59,16 +59,54 @@ TSharedPtr<FJsonObject> FBlueprintNodeManager::AddNode(const TSharedPtr<FJsonObj
 		return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
 	}
 
-	// Get the event graph
-	if (BP->UbergraphPages.Num() == 0)
-	{
-		return CreateErrorResponse(TEXT("Blueprint has no event graph"));
-	}
+	// Get the target graph (function graph or event graph)
+	FString FunctionName;
+	UEdGraph* Graph = nullptr;
 
-	UEdGraph* Graph = BP->UbergraphPages[0];
-	if (!Graph)
+	if (NodeParams->TryGetStringField(TEXT("function_name"), FunctionName) && !FunctionName.IsEmpty())
 	{
-		return CreateErrorResponse(TEXT("Failed to get Blueprint event graph"));
+		// Try to find the function graph
+		for (UEdGraph* FuncGraph : BP->FunctionGraphs)
+		{
+			if (FuncGraph && (FuncGraph->GetFName().ToString() == FunctionName ||
+							  (FuncGraph->GetOuter() && FuncGraph->GetOuter()->GetFName().ToString() == FunctionName)))
+			{
+				Graph = FuncGraph;
+				break;
+			}
+		}
+
+		if (!Graph)
+		{
+			// Fallback: partial match for auto-generated names
+			for (UEdGraph* FuncGraph : BP->FunctionGraphs)
+			{
+				if (FuncGraph && FuncGraph->GetFName().ToString().Contains(FunctionName))
+				{
+					Graph = FuncGraph;
+					break;
+				}
+			}
+		}
+
+		if (!Graph)
+		{
+			return CreateErrorResponse(FString::Printf(TEXT("Function graph not found: %s"), *FunctionName));
+		}
+	}
+	else
+	{
+		// Use event graph if no function specified
+		if (BP->UbergraphPages.Num() == 0)
+		{
+			return CreateErrorResponse(TEXT("Blueprint has no event graph"));
+		}
+
+		Graph = BP->UbergraphPages[0];
+		if (!Graph)
+		{
+			return CreateErrorResponse(TEXT("Failed to get Blueprint event graph"));
+		}
 	}
 
 	// Create node based on type
@@ -89,6 +127,10 @@ TSharedPtr<FJsonObject> FBlueprintNodeManager::AddNode(const TSharedPtr<FJsonObj
 	else if (NodeType.Equals(TEXT("VariableSet"), ESearchCase::IgnoreCase))
 	{
 		NewNode = CreateVariableSetNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("CallFunction"), ESearchCase::IgnoreCase))
+	{
+		NewNode = CreateCallFunctionNode(Graph, NodeParams);
 	}
 	else
 	{
@@ -315,6 +357,53 @@ UBlueprint* FBlueprintNodeManager::LoadBlueprint(const FString& BlueprintName)
 	}
 
 	return BP;
+}
+
+UK2Node* FBlueprintNodeManager::CreateCallFunctionNode(UEdGraph* Graph, const TSharedPtr<FJsonObject>& Params)
+{
+	if (!Graph)
+	{
+		return nullptr;
+	}
+
+	// Get target function name
+	FString TargetFunction;
+	if (!Params->TryGetStringField(TEXT("target_function"), TargetFunction))
+	{
+		return nullptr;
+	}
+
+	UK2Node_CallFunction* CallNode = NewObject<UK2Node_CallFunction>(Graph);
+	if (!CallNode)
+	{
+		return nullptr;
+	}
+
+	// Set position
+	double PosX = 0.0;
+	double PosY = 0.0;
+	Params->TryGetNumberField(TEXT("pos_x"), PosX);
+	Params->TryGetNumberField(TEXT("pos_y"), PosY);
+
+	CallNode->NodePosX = static_cast<int32>(PosX);
+	CallNode->NodePosY = static_cast<int32>(PosY);
+
+	// Create GUID for the node
+	CallNode->CreateNewGuid();
+
+	// Set the function reference
+	CallNode->FunctionReference.SetSelfMember(*TargetFunction);
+
+	// Add node to graph with proper initialization
+	Graph->AddNode(CallNode, true, false);
+
+	// Post-place initialization
+	CallNode->PostPlacedNewNode();
+
+	// Allocate pins after all setup
+	CallNode->AllocateDefaultPins();
+
+	return CallNode;
 }
 
 TSharedPtr<FJsonObject> FBlueprintNodeManager::CreateSuccessResponse(const UK2Node* Node, const FString& NodeType)

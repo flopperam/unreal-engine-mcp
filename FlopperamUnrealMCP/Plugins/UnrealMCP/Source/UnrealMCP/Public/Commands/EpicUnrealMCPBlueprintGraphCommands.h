@@ -51,4 +51,19 @@ private:
 
     // Set node property in Blueprint graph (F21)
     TSharedPtr<FJsonObject> HandleSetNodeProperty(const TSharedPtr<FJsonObject>& Params);
+
+    // Create function in Blueprint
+    TSharedPtr<FJsonObject> HandleCreateFunction(const TSharedPtr<FJsonObject>& Params);
+
+    // Add function input parameter
+    TSharedPtr<FJsonObject> HandleAddFunctionInput(const TSharedPtr<FJsonObject>& Params);
+
+    // Add function output parameter
+    TSharedPtr<FJsonObject> HandleAddFunctionOutput(const TSharedPtr<FJsonObject>& Params);
+
+    // Delete function from Blueprint
+    TSharedPtr<FJsonObject> HandleDeleteFunction(const TSharedPtr<FJsonObject>& Params);
+
+    // Rename function in Blueprint
+    TSharedPtr<FJsonObject> HandleRenameFunction(const TSharedPtr<FJsonObject>& Params);
 };

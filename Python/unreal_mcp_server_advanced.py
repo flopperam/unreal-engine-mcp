@@ -51,6 +51,8 @@ from helpers.blueprint_graph import connector_manager
 from helpers.blueprint_graph import event_manager
 from helpers.blueprint_graph import node_deleter
 from helpers.blueprint_graph import node_properties
+from helpers.blueprint_graph import function_manager
+from helpers.blueprint_graph import function_io
 
 
 # Configure logging with more detailed format
@@ -1883,22 +1885,28 @@ def add_node(
     pos_y: float = 0,
     message: str = "",
     event_type: str = "BeginPlay",
-    variable_name: str = ""
+    variable_name: str = "",
+    target_function: str = "",
+    target_blueprint: Optional[str] = None,
+    function_name: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Add a node to a Blueprint graph.
 
-    Create various types of nodes (Print, Event, VariableGet, VariableSet)
-    in a Blueprint's event graph at specified positions.
+    Create various types of nodes (Print, Event, VariableGet, VariableSet, CallFunction)
+    in a Blueprint's event graph or a specific function graph at specified positions.
 
     Args:
         blueprint_name: Name of the Blueprint to modify
-        node_type: Type of node ("Print", "Event", "VariableGet", "VariableSet")
+        node_type: Type of node ("Print", "Event", "VariableGet", "VariableSet", "CallFunction")
         pos_x: X position in graph (default: 0)
         pos_y: Y position in graph (default: 0)
         message: For Print nodes, the text to print
         event_type: For Event nodes, the event name (BeginPlay, Tick, etc.)
         variable_name: For Variable nodes, the variable name
+        target_function: For CallFunction nodes, the function to call
+        target_blueprint: For CallFunction nodes, optional path to target Blueprint
+        function_name: Optional name of function graph to add node to (if None, uses EventGraph)
 
     Returns:
         Dictionary with success status, node_id, and position
@@ -1919,6 +1927,12 @@ def add_node(
             node_params["event_type"] = event_type
         if variable_name:
             node_params["variable_name"] = variable_name
+        if target_function:
+            node_params["target_function"] = target_function
+        if target_blueprint:
+            node_params["target_blueprint"] = target_blueprint
+        if function_name:
+            node_params["function_name"] = function_name
 
         result = node_manager.add_node(
             unreal,
@@ -1939,12 +1953,13 @@ def connect_nodes(
     source_node_id: str,
     source_pin_name: str,
     target_node_id: str,
-    target_pin_name: str
+    target_pin_name: str,
+    function_name: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Connect two nodes in a Blueprint graph.
 
-    Links a source pin to a target pin between existing nodes in a Blueprint's event graph.
+    Links a source pin to a target pin between existing nodes in a Blueprint's event graph or function graph.
 
     Args:
         blueprint_name: Name of the Blueprint to modify
@@ -1952,6 +1967,7 @@ def connect_nodes(
         source_pin_name: Name of the output pin on the source node
         target_node_id: ID of the target node
         target_pin_name: Name of the input pin on the target node
+        function_name: Optional name of function graph (if None, uses EventGraph)
 
     Returns:
         Dictionary with success status and connection details
@@ -1967,7 +1983,8 @@ def connect_nodes(
             source_node_id,
             source_pin_name,
             target_node_id,
-            target_pin_name
+            target_pin_name,
+            function_name
         )
 
         return result
@@ -2146,6 +2163,185 @@ def set_node_property(
         return result
     except Exception as e:
         logger.error(f"set_node_property error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def create_function(
+    blueprint_name: str,
+    function_name: str,
+    return_type: str = "void"
+) -> Dict[str, Any]:
+    """
+    Create a new function in a Blueprint.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        function_name: Name for the new function
+        return_type: Return type of the function (default: "void")
+
+    Returns:
+        Dictionary with function_name, graph_id or error
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = function_manager.create_function_handler(
+            unreal,
+            blueprint_name,
+            function_name,
+            return_type
+        )
+        return result
+    except Exception as e:
+        logger.error(f"create_function error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def add_function_input(
+    blueprint_name: str,
+    function_name: str,
+    param_name: str,
+    param_type: str,
+    is_array: bool = False
+) -> Dict[str, Any]:
+    """
+    Add an input parameter to a Blueprint function.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        function_name: Name of the function
+        param_name: Name of the input parameter
+        param_type: Type of the parameter (bool, int, float, string, vector, etc.)
+        is_array: Whether the parameter is an array (default: False)
+
+    Returns:
+        Dictionary with param_name, param_type, and direction or error
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = function_io.add_function_input_handler(
+            unreal,
+            blueprint_name,
+            function_name,
+            param_name,
+            param_type,
+            is_array
+        )
+        return result
+    except Exception as e:
+        logger.error(f"add_function_input error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def add_function_output(
+    blueprint_name: str,
+    function_name: str,
+    param_name: str,
+    param_type: str,
+    is_array: bool = False
+) -> Dict[str, Any]:
+    """
+    Add an output parameter to a Blueprint function.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        function_name: Name of the function
+        param_name: Name of the output parameter
+        param_type: Type of the parameter (bool, int, float, string, vector, etc.)
+        is_array: Whether the parameter is an array (default: False)
+
+    Returns:
+        Dictionary with param_name, param_type, and direction or error
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = function_io.add_function_output_handler(
+            unreal,
+            blueprint_name,
+            function_name,
+            param_name,
+            param_type,
+            is_array
+        )
+        return result
+    except Exception as e:
+        logger.error(f"add_function_output error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def delete_function(
+    blueprint_name: str,
+    function_name: str
+) -> Dict[str, Any]:
+    """
+    Delete a function from a Blueprint.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        function_name: Name of the function to delete
+
+    Returns:
+        Dictionary with deleted_function_name or error
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = function_manager.delete_function_handler(
+            unreal,
+            blueprint_name,
+            function_name
+        )
+        return result
+    except Exception as e:
+        logger.error(f"delete_function error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def rename_function(
+    blueprint_name: str,
+    old_function_name: str,
+    new_function_name: str
+) -> Dict[str, Any]:
+    """
+    Rename a function in a Blueprint.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        old_function_name: Current name of the function
+        new_function_name: New name for the function
+
+    Returns:
+        Dictionary with new_function_name or error
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = function_manager.rename_function_handler(
+            unreal,
+            blueprint_name,
+            old_function_name,
+            new_function_name
+        )
+        return result
+    except Exception as e:
+        logger.error(f"rename_function error: {e}")
         return {"success": False, "message": str(e)}
 
 

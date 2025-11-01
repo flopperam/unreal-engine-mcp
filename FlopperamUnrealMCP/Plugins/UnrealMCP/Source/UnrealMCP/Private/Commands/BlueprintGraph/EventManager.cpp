@@ -50,7 +50,7 @@ TSharedPtr<FJsonObject> FEventManager::AddEventNode(const TSharedPtr<FJsonObject
 		return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
 	}
 
-	// Get the event graph
+	// Get the event graph (events can only exist in the event graph)
 	if (Blueprint->UbergraphPages.Num() == 0)
 	{
 		return CreateErrorResponse(TEXT("Blueprint has no event graph"));

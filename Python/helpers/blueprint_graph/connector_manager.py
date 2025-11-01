@@ -7,7 +7,7 @@ Description: Python wrapper for Blueprint node connection management
 
 import json
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger("BlueprintGraph.ConnectorManager")
 
@@ -18,12 +18,13 @@ def connect_nodes(
     source_node_id: str,
     source_pin_name: str,
     target_node_id: str,
-    target_pin_name: str
+    target_pin_name: str,
+    function_name: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Connect two nodes in a Blueprint graph.
 
-    Links a source pin to a target pin between existing nodes in a Blueprint's event graph.
+    Links a source pin to a target pin between existing nodes in a Blueprint's event graph or function graph.
 
     Args:
         unreal_connection: Connection to Unreal Engine
@@ -32,6 +33,7 @@ def connect_nodes(
         source_pin_name: Name of the output pin on the source node
         target_node_id: ID of the target node
         target_pin_name: Name of the input pin on the target node
+        function_name: Optional name of function graph (if None, uses EventGraph)
 
     Returns:
         Dictionary containing:
@@ -59,6 +61,9 @@ def connect_nodes(
             "target_node_id": target_node_id,
             "target_pin_name": target_pin_name
         }
+
+        if function_name:
+            params["function_name"] = function_name
 
         response = unreal_connection.send_command("connect_nodes", params)
 

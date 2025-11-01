@@ -11,6 +11,7 @@
 #include "EdGraph/EdGraphPin.h"
 #include "EdGraphSchema_K2.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "EditorAssetLibrary.h"
 
 TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>& Params)
 {
@@ -23,8 +24,38 @@ TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>
     FString TargetNodeId = Params->GetStringField(TEXT("target_node_id"));
     FString TargetPinName = Params->GetStringField(TEXT("target_pin_name"));
 
-    // Charger Blueprint
-    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintName);
+    FString FunctionName;
+    Params->TryGetStringField(TEXT("function_name"), FunctionName);
+
+    // Charger Blueprint - handle both full paths and simple names
+    UBlueprint* Blueprint = nullptr;
+    FString BlueprintPath = BlueprintName;
+
+    // If no path prefix, assume /Game/Blueprints/
+    if (!BlueprintPath.StartsWith(TEXT("/")))
+    {
+        BlueprintPath = TEXT("/Game/Blueprints/") + BlueprintPath;
+    }
+
+    // Add .Blueprint suffix if not present
+    if (!BlueprintPath.Contains(TEXT(".")))
+    {
+        BlueprintPath += TEXT(".") + FPaths::GetBaseFilename(BlueprintPath);
+    }
+
+    // Try to load the Blueprint
+    Blueprint = LoadObject<UBlueprint>(nullptr, *BlueprintPath);
+
+    // If not found, try with UEditorAssetLibrary
+    if (!Blueprint)
+    {
+        FString AssetPath = BlueprintPath;
+        if (UEditorAssetLibrary::DoesAssetExist(AssetPath))
+        {
+            UObject* Asset = UEditorAssetLibrary::LoadAsset(AssetPath);
+            Blueprint = Cast<UBlueprint>(Asset);
+        }
+    }
 
     if (!Blueprint)
     {
@@ -34,7 +65,54 @@ TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>
     }
 
     // Obtenir graphe
-    UEdGraph* Graph = Blueprint->UbergraphPages[0];
+    UEdGraph* Graph = nullptr;
+
+    if (!FunctionName.IsEmpty())
+    {
+        // Strategy 1: Try exact name match with GetFName()
+        for (UEdGraph* FuncGraph : Blueprint->FunctionGraphs)
+        {
+            if (FuncGraph && (FuncGraph->GetFName().ToString() == FunctionName ||
+                              (FuncGraph->GetOuter() && FuncGraph->GetOuter()->GetFName().ToString() == FunctionName)))
+            {
+                Graph = FuncGraph;
+                break;
+            }
+        }
+
+        // Strategy 2: Fallback - partial match for auto-generated names
+        if (!Graph)
+        {
+            for (UEdGraph* FuncGraph : Blueprint->FunctionGraphs)
+            {
+                if (FuncGraph && FuncGraph->GetFName().ToString().Contains(FunctionName))
+                {
+                    Graph = FuncGraph;
+                    break;
+                }
+            }
+        }
+
+        if (!Graph)
+        {
+            Result->SetBoolField("success", false);
+            Result->SetStringField("error", FString::Printf(TEXT("Function graph not found: %s"), *FunctionName));
+            return Result;
+        }
+    }
+    else
+    {
+        // Use event graph if no function specified
+        if (Blueprint->UbergraphPages.Num() == 0)
+        {
+            Result->SetBoolField("success", false);
+            Result->SetStringField("error", "Blueprint has no event graph");
+            return Result;
+        }
+
+        Graph = Blueprint->UbergraphPages[0];
+    }
+
     if (!Graph)
     {
         Result->SetBoolField("success", false);
@@ -96,14 +174,33 @@ TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>
 
 UK2Node* FBPConnector::FindNodeById(UEdGraph* Graph, const FString& NodeId)
 {
+    if (!Graph)
+    {
+        return nullptr;
+    }
+
     for (UEdGraphNode* Node : Graph->Nodes)
     {
-        UK2Node* K2Node = Cast<UK2Node>(Node);
-        if (K2Node && K2Node->GetName() == NodeId)
+        if (!Node)
         {
-            return K2Node;
+            continue;
+        }
+
+        // Try matching by NodeGuid first
+        if (Node->NodeGuid.ToString().Equals(NodeId, ESearchCase::IgnoreCase))
+        {
+            UK2Node* K2Node = Cast<UK2Node>(Node);
+            return K2Node;  // Return even if nullptr (caller will handle)
+        }
+
+        // Try matching by GetName()
+        if (Node->GetName().Equals(NodeId, ESearchCase::IgnoreCase))
+        {
+            UK2Node* K2Node = Cast<UK2Node>(Node);
+            return K2Node;  // Return even if nullptr (caller will handle)
         }
     }
+
     return nullptr;
 }
 

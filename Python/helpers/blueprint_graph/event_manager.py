@@ -63,12 +63,14 @@ def add_event_node(
         - ReceiveActorEndOverlap: Called when actor ends overlap
     """
     try:
-        response = unreal_connection.send_command("add_event_node", {
+        params = {
             "blueprint_name": blueprint_name,
             "event_name": event_name,
             "pos_x": pos_x,
             "pos_y": pos_y
-        })
+        }
+
+        response = unreal_connection.send_command("add_event_node", params)
 
         if response.get("success"):
             logger.info(
