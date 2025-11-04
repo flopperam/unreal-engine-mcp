@@ -224,15 +224,31 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintGraphCommands::HandleSetNodePrope
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'node_id' parameter"));
     }
 
-    FString PropertyName;
-    if (!Params->TryGetStringField(TEXT("property_name"), PropertyName))
-    {
-        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'property_name' parameter"));
-    }
+    // Check if this is semantic mode (action parameter) or legacy mode (property_name)
+    bool bHasAction = Params->HasField(TEXT("action"));
 
-    UE_LOG(LogTemp, Display,
-        TEXT("FEpicUnrealMCPBlueprintGraphCommands::HandleSetNodeProperty: Setting '%s' on node '%s' in blueprint '%s'"),
-        *PropertyName, *NodeID, *BlueprintName);
+    if (bHasAction)
+    {
+        // Semantic mode - delegate directly to SetNodeProperty
+        FString Action;
+        Params->TryGetStringField(TEXT("action"), Action);
+        UE_LOG(LogTemp, Display,
+            TEXT("FEpicUnrealMCPBlueprintGraphCommands::HandleSetNodeProperty: Semantic mode - action '%s' on node '%s' in blueprint '%s'"),
+            *Action, *NodeID, *BlueprintName);
+    }
+    else
+    {
+        // Legacy mode - require property_name
+        FString PropertyName;
+        if (!Params->TryGetStringField(TEXT("property_name"), PropertyName))
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'property_name' parameter"));
+        }
+
+        UE_LOG(LogTemp, Display,
+            TEXT("FEpicUnrealMCPBlueprintGraphCommands::HandleSetNodeProperty: Legacy mode - Setting '%s' on node '%s' in blueprint '%s'"),
+            *PropertyName, *NodeID, *BlueprintName);
+    }
 
     return FNodePropertyManager::SetNodeProperty(Params);
 }
