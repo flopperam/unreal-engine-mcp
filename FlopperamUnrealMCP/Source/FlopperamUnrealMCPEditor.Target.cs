@@ -5,10 +5,12 @@ using System.Collections.Generic;
 
 public class FlopperamUnrealMCPEditorTarget : TargetRules
 {
-	public FlopperamUnrealMCPEditorTarget( TargetInfo Target) : base(Target)
+	public FlopperamUnrealMCPEditorTarget(TargetInfo Target) : base(Target)
 	{
 		Type = TargetType.Editor;
-		DefaultBuildSettings = BuildSettingsVersion.V5;
+
+		// Use Latest to automatically match the engine's default build and include order settings
+		DefaultBuildSettings = BuildSettingsVersion.Latest;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
 		ExtraModuleNames.Add("FlopperamUnrealMCP");
 	}

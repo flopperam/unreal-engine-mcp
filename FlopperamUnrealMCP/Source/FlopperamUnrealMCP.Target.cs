@@ -8,7 +8,9 @@ public class FlopperamUnrealMCPTarget : TargetRules
 	public FlopperamUnrealMCPTarget(TargetInfo Target) : base(Target)
 	{
 		Type = TargetType.Game;
-		DefaultBuildSettings = BuildSettingsVersion.V5;
+
+		// Use Latest to automatically match the engine's default build and include order settings
+		DefaultBuildSettings = BuildSettingsVersion.Latest;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
 		ExtraModuleNames.Add("FlopperamUnrealMCP");
 	}
