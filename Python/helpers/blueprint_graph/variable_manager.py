@@ -1,7 +1,5 @@
 """
 Filename: variable_manager.py
-Creation Date: 2025-10-11
-Author: Zoscran
 Description: Python wrapper for Blueprint variable management
 """
 

@@ -1,8 +1,3 @@
-// Nom du fichier: NodeCreatorUtils.cpp
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Implémentation des utilitaires partagés pour la création de K2Nodes
-
 #include "BlueprintGraph/Nodes/NodeCreatorUtils.h"
 #include "K2Node.h"
 #include "EdGraph/EdGraph.h"
@@ -10,19 +5,19 @@
 
 bool FNodeCreatorUtils::InitializeK2Node(UK2Node* Node, UEdGraph* Graph)
 {
-	// Vérifications basiques
+	// Basic checks
 	if (!Node || !Graph)
 	{
 		return false;
 	}
 
-	// 1. Allouer les pins par défaut
+	// 1. Allocate default pins
 	Node->AllocateDefaultPins();
 
-	// 2. Reconstruire le nœud (notifie Unreal des modifications)
+	// 2. Reconstruct the node (notifies Unreal of changes)
 	Node->ReconstructNode();
 
-	// 3. Notifier le graph que quelque chose a changé
+	// 3. Notify the graph that something changed
 	Graph->NotifyGraphChanged();
 
 	return true;
@@ -30,23 +25,23 @@ bool FNodeCreatorUtils::InitializeK2Node(UK2Node* Node, UEdGraph* Graph)
 
 void FNodeCreatorUtils::ExtractNodePosition(const TSharedPtr<FJsonObject>& Params, double& OutX, double& OutY)
 {
-	// Initialiser les valeurs par défaut
+	// Initialize default values
 	OutX = 0.0;
 	OutY = 0.0;
 
-	// Vérifier que Params est valide
+	// Check that Params is valid
 	if (!Params.IsValid())
 	{
 		return;
 	}
 
-	// Essayer de récupérer pos_x
+	// Try to get pos_x
 	if (!Params->TryGetNumberField(TEXT("pos_x"), OutX))
 	{
 		OutX = 0.0;
 	}
 
-	// Essayer de récupérer pos_y
+	// Try to get pos_y
 	if (!Params->TryGetNumberField(TEXT("pos_y"), OutY))
 	{
 		OutY = 0.0;

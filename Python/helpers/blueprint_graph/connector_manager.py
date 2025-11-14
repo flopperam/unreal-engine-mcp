@@ -1,7 +1,5 @@
 """
 Filename: connector_manager.py
-Creation Date: 2025-10-11
-Author: Zoscran
 Description: Python wrapper for Blueprint node connection management
 """
 

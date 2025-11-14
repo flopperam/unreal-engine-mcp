@@ -1,10 +1,3 @@
-/**
- * Filename: NodeManager.cpp
- * Creation Date: 2025-01-06
- * Author: Zoscran
- * Description: Implementation of Blueprint node management
- */
-
 #include "Commands/BlueprintGraph/NodeManager.h"
 #include "Commands/BlueprintGraph/Nodes/ControlFlowNodes.h"
 #include "Commands/BlueprintGraph/Nodes/DataNodes.h"

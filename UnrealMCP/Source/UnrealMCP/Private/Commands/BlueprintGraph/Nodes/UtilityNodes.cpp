@@ -1,8 +1,3 @@
-// Nom du fichier: UtilityNodes.cpp
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Implémentation des nodes utilitaires (Print, CallFunction, Select, SpawnActor)
-
 #include "BlueprintGraph/Nodes/UtilityNodes.h"
 #include "BlueprintGraph/Nodes/NodeCreatorUtils.h"
 #include "K2Node_CallFunction.h"

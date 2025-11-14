@@ -1,8 +1,3 @@
-// Nom du fichier: NodePropertyManager.h
-// Date de création: 2025-10-26
-// Auteur: Zoscran
-// Description: Blueprint node property modification manager
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -34,6 +29,18 @@ public:
 	 * @return JSON response with updated_property or error
 	 */
 	static TSharedPtr<FJsonObject> SetNodeProperty(const TSharedPtr<FJsonObject>& Params);
+
+	/**
+	 * Edit a Blueprint node with semantic actions (add pins, change types, etc.)
+	 * @param Params JSON parameters containing:
+	 *   - blueprint_name (string): Name of the Blueprint
+	 *   - node_id (string): ID of the node
+	 *   - action (string): Action to perform (add_pin, remove_pin, set_enum_type, set_pin_type, etc.)
+	 *   - function_name (string, optional): Function graph name (null = EventGraph)
+	 *   - Additional parameters depend on action
+	 * @return JSON response with success and action-specific results
+	 */
+	static TSharedPtr<FJsonObject> EditNode(const TSharedPtr<FJsonObject>& Params);
 
 private:
 	/**
@@ -75,7 +82,19 @@ private:
 	 */
 	static UBlueprint* LoadBlueprint(const FString& BlueprintName);
 
+	// Routing dispatcher for edit actions
+	// Delegates to specialized editors (PinManagementEditor, TypeModificationEditor, ReferenceUpdateEditor)
+	static TSharedPtr<FJsonObject> DispatchEditAction(
+		UK2Node* Node,
+		UEdGraph* Graph,
+		const FString& Action,
+		const TSharedPtr<FJsonObject>& Params);
+
 	// Helper functions
 	static TSharedPtr<FJsonObject> CreateSuccessResponse(const FString& PropertyName);
 	static TSharedPtr<FJsonObject> CreateErrorResponse(const FString& ErrorMessage);
+	static TSharedPtr<FJsonObject> CreateActionResponse(
+		bool bSuccess,
+		const FString& Action,
+		const TSharedPtr<FJsonObject>& Details = nullptr);
 };

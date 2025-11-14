@@ -1,8 +1,3 @@
-// Nom du fichier: EventManager.cpp
-// Date de création: 2025-10-26
-// Auteur: Zoscran
-// Description: F18 - Implementation of Blueprint event node creation
-
 #include "Commands/BlueprintGraph/EventManager.h"
 #include "Engine/Blueprint.h"
 #include "EdGraph/EdGraph.h"

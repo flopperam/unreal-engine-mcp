@@ -1,7 +1,4 @@
-// Nom du fichier: DataNodes.h
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Header pour création de nodes de données (Variable Get/Set, MakeArray)
+// Header for creating data nodes (Variable Get/Set, MakeArray)
 
 #pragma once
 

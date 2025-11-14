@@ -1,8 +1,3 @@
-// Nom du fichier: AnimationNodes.cpp
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Implémentation des nodes d'animation (Timeline)
-
 #include "BlueprintGraph/Nodes/AnimationNodes.h"
 #include "BlueprintGraph/Nodes/NodeCreatorUtils.h"
 #include "K2Node_Timeline.h"

@@ -1,7 +1,4 @@
-// Nom du fichier: SpecializedNodes.h
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Header pour création de nodes spécialisés (GetDataTableRow, AddComponentByClass, Self, etc.)
+// Header for creating specialized nodes (Timeline, GetDataTableRow, AddComponentByClass, Self, Knot)
 
 #pragma once
 

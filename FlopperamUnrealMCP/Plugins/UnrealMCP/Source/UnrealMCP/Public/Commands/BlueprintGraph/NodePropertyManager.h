@@ -1,7 +1,4 @@
-// Nom du fichier: NodePropertyManager.h
-// Date de création: 2025-10-26
-// Auteur: Zoscran
-// Description: Blueprint node property modification manager
+// Manages Blueprint node property modification
 
 #pragma once
 

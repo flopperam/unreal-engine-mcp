@@ -1,11 +1,10 @@
-/**
- * Filename: NodeManager.cpp
- * Creation Date: 2025-01-06
- * Author: Zoscran
- * Description: Implementation of Blueprint node management
- */
-
 #include "Commands/BlueprintGraph/NodeManager.h"
+#include "Commands/BlueprintGraph/Nodes/ControlFlowNodes.h"
+#include "Commands/BlueprintGraph/Nodes/DataNodes.h"
+#include "Commands/BlueprintGraph/Nodes/UtilityNodes.h"
+#include "Commands/BlueprintGraph/Nodes/CastingNodes.h"
+#include "Commands/BlueprintGraph/Nodes/AnimationNodes.h"
+#include "Commands/BlueprintGraph/Nodes/SpecializedNodes.h"
 #include "Engine/Blueprint.h"
 #include "EdGraph/EdGraph.h"
 #include "EdGraphSchema_K2.h"
@@ -13,11 +12,14 @@
 #include "K2Node_Event.h"
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
+#include "K2Node_PromotableOperator.h"
+#include "K2Node_IfThenElse.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "KismetCompiler.h"
 #include "EditorAssetLibrary.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Kismet/KismetMathLibrary.h"
 
 TSharedPtr<FJsonObject> FBlueprintNodeManager::AddNode(const TSharedPtr<FJsonObject>& Params)
 {
@@ -109,28 +111,107 @@ TSharedPtr<FJsonObject> FBlueprintNodeManager::AddNode(const TSharedPtr<FJsonObj
 		}
 	}
 
-	// Create node based on type
+	// Create node based on type - routed to specialized node creators
 	UK2Node* NewNode = nullptr;
 
-	if (NodeType.Equals(TEXT("Print"), ESearchCase::IgnoreCase))
+	// Control Flow Nodes
+	if (NodeType.Equals(TEXT("Branch"), ESearchCase::IgnoreCase))
 	{
-		NewNode = CreatePrintNode(Graph, NodeParams);
+		NewNode = FControlFlowNodeCreator::CreateBranchNode(Graph, NodeParams);
 	}
-	else if (NodeType.Equals(TEXT("Event"), ESearchCase::IgnoreCase))
+	else if (NodeType.Equals(TEXT("Comparison"), ESearchCase::IgnoreCase))
 	{
-		NewNode = CreateEventNode(Graph, NodeParams);
+		NewNode = FControlFlowNodeCreator::CreateComparisonNode(Graph, NodeParams);
 	}
+	else if (NodeType.Equals(TEXT("Switch"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FControlFlowNodeCreator::CreateSwitchNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("SwitchEnum"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FControlFlowNodeCreator::CreateSwitchEnumNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("SwitchInteger"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FControlFlowNodeCreator::CreateSwitchIntegerNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("ExecutionSequence"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FControlFlowNodeCreator::CreateExecutionSequenceNode(Graph, NodeParams);
+	}
+	// Data Nodes
 	else if (NodeType.Equals(TEXT("VariableGet"), ESearchCase::IgnoreCase))
 	{
-		NewNode = CreateVariableGetNode(Graph, NodeParams);
+		NewNode = FDataNodeCreator::CreateVariableGetNode(Graph, NodeParams);
 	}
 	else if (NodeType.Equals(TEXT("VariableSet"), ESearchCase::IgnoreCase))
 	{
-		NewNode = CreateVariableSetNode(Graph, NodeParams);
+		NewNode = FDataNodeCreator::CreateVariableSetNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("MakeArray"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FDataNodeCreator::CreateMakeArrayNode(Graph, NodeParams);
+	}
+	// Utility Nodes
+	else if (NodeType.Equals(TEXT("Print"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FUtilityNodeCreator::CreatePrintNode(Graph, NodeParams);
 	}
 	else if (NodeType.Equals(TEXT("CallFunction"), ESearchCase::IgnoreCase))
 	{
-		NewNode = CreateCallFunctionNode(Graph, NodeParams);
+		NewNode = FUtilityNodeCreator::CreateCallFunctionNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("Select"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FUtilityNodeCreator::CreateSelectNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("SpawnActor"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FUtilityNodeCreator::CreateSpawnActorNode(Graph, NodeParams);
+	}
+	// Casting Nodes
+	else if (NodeType.Equals(TEXT("DynamicCast"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FCastingNodeCreator::CreateDynamicCastNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("ClassDynamicCast"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FCastingNodeCreator::CreateClassDynamicCastNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("CastByteToEnum"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FCastingNodeCreator::CreateCastByteToEnumNode(Graph, NodeParams);
+	}
+	// Animation Nodes
+	else if (NodeType.Equals(TEXT("Timeline"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FAnimationNodeCreator::CreateTimelineNode(Graph, NodeParams);
+	}
+	// Specialized Nodes
+	else if (NodeType.Equals(TEXT("GetDataTableRow"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FSpecializedNodeCreator::CreateGetDataTableRowNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("AddComponentByClass"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FSpecializedNodeCreator::CreateAddComponentByClassNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("Self"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FSpecializedNodeCreator::CreateSelfNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("ConstructObject"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FSpecializedNodeCreator::CreateConstructObjectNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("Knot"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FSpecializedNodeCreator::CreateKnotNode(Graph, NodeParams);
+	}
+	// Event nodes (kept for backward compatibility - should use add_event_node)
+	else if (NodeType.Equals(TEXT("Event"), ESearchCase::IgnoreCase))
+	{
+		NewNode = CreateEventNode(Graph, NodeParams);
 	}
 	else
 	{
@@ -404,6 +485,123 @@ UK2Node* FBlueprintNodeManager::CreateCallFunctionNode(UEdGraph* Graph, const TS
 	CallNode->AllocateDefaultPins();
 
 	return CallNode;
+}
+
+UK2Node* FBlueprintNodeManager::CreateComparisonNode(UEdGraph* Graph, const TSharedPtr<FJsonObject>& Params)
+{
+	if (!Graph)
+	{
+		return nullptr;
+	}
+
+	// Create a Promotable Operator node for comparisons
+	// Note: UK2Node_PromotableOperator in UE5.5 doesn't expose SetOperator() method
+	// The node is created with default operator (Equal) and Unreal handles initialization
+	UK2Node_PromotableOperator* ComparisonNode = NewObject<UK2Node_PromotableOperator>(Graph);
+	if (!ComparisonNode)
+	{
+		return nullptr;
+	}
+
+	// Set position
+	double PosX = 0.0;
+	double PosY = 0.0;
+	Params->TryGetNumberField(TEXT("pos_x"), PosX);
+	Params->TryGetNumberField(TEXT("pos_y"), PosY);
+
+	ComparisonNode->NodePosX = static_cast<int32>(PosX);
+	ComparisonNode->NodePosY = static_cast<int32>(PosY);
+
+	// Add to graph and initialize pins
+	Graph->AddNode(ComparisonNode, false, false);
+	ComparisonNode->CreateNewGuid();
+	ComparisonNode->PostPlacedNewNode();
+	ComparisonNode->AllocateDefaultPins();
+
+	// Set pin type if specified (int, float, string, bool, etc.)
+	FString PinType;
+	if (Params->TryGetStringField(TEXT("pin_type"), PinType))
+	{
+		// Find and update the A and B pins to the specified type
+		UEdGraphPin* PinA = ComparisonNode->FindPin(TEXT("A"));
+		UEdGraphPin* PinB = ComparisonNode->FindPin(TEXT("B"));
+
+		if (PinA && PinB)
+		{
+			// Create a proper FEdGraphPinType structure
+			FEdGraphPinType NewPinType;
+
+			if (PinType.Equals(TEXT("int"), ESearchCase::IgnoreCase))
+			{
+				NewPinType.PinCategory = UEdGraphSchema_K2::PC_Int;
+			}
+			else if (PinType.Equals(TEXT("float"), ESearchCase::IgnoreCase) || PinType.Equals(TEXT("double"), ESearchCase::IgnoreCase))
+			{
+				NewPinType.PinCategory = UEdGraphSchema_K2::PC_Real;
+			}
+			else if (PinType.Equals(TEXT("string"), ESearchCase::IgnoreCase))
+			{
+				NewPinType.PinCategory = UEdGraphSchema_K2::PC_String;
+			}
+			else if (PinType.Equals(TEXT("bool"), ESearchCase::IgnoreCase))
+			{
+				NewPinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
+			}
+			else if (PinType.Equals(TEXT("vector"), ESearchCase::IgnoreCase))
+			{
+				NewPinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+				NewPinType.PinSubCategoryObject = TBaseStructure<FVector>::Get();
+			}
+			else if (PinType.Equals(TEXT("name"), ESearchCase::IgnoreCase))
+			{
+				NewPinType.PinCategory = UEdGraphSchema_K2::PC_Name;
+			}
+			else if (PinType.Equals(TEXT("text"), ESearchCase::IgnoreCase))
+			{
+				NewPinType.PinCategory = UEdGraphSchema_K2::PC_Text;
+			}
+
+			// Apply the entire pin type structure
+			PinA->PinType = NewPinType;
+			PinB->PinType = NewPinType;
+
+			// Notify schema that pins have changed
+			ComparisonNode->ReconstructNode();
+		}
+	}
+
+	return ComparisonNode;
+}
+
+UK2Node* FBlueprintNodeManager::CreateBranchNode(UEdGraph* Graph, const TSharedPtr<FJsonObject>& Params)
+{
+	if (!Graph)
+	{
+		return nullptr;
+	}
+
+	// Create a Branch node using K2Node_IfThenElse
+	UK2Node_IfThenElse* BranchNode = NewObject<UK2Node_IfThenElse>(Graph);
+	if (!BranchNode)
+	{
+		return nullptr;
+	}
+
+	// Set position
+	double PosX = 0.0;
+	double PosY = 0.0;
+	Params->TryGetNumberField(TEXT("pos_x"), PosX);
+	Params->TryGetNumberField(TEXT("pos_y"), PosY);
+
+	BranchNode->NodePosX = static_cast<int32>(PosX);
+	BranchNode->NodePosY = static_cast<int32>(PosY);
+
+	// Add to graph and initialize pins
+	Graph->AddNode(BranchNode, false, false);
+	BranchNode->CreateNewGuid();
+	BranchNode->PostPlacedNewNode();
+	BranchNode->AllocateDefaultPins();
+	return BranchNode;
 }
 
 TSharedPtr<FJsonObject> FBlueprintNodeManager::CreateSuccessResponse(const UK2Node* Node, const FString& NodeType)

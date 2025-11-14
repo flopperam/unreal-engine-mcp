@@ -1,7 +1,3 @@
-// BPVariables.cpp
-// Created by: Zoscran
-// Date: 2025-10-09
-
 #include "Commands/BlueprintGraph/BPVariables.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "Engine/Blueprint.h"

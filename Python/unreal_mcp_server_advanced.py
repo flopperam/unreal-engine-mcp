@@ -42,8 +42,6 @@ from helpers.bridge_aqueduct_creation import (
 
 # ============================================================================
 # Blueprint Node Graph Tools
-# Author: Zoscran
-# Creation Date: 2025-01-06
 # ============================================================================
 from helpers.blueprint_graph import node_manager
 from helpers.blueprint_graph import variable_manager
@@ -1873,8 +1871,6 @@ def create_aqueduct(
 
 # ============================================================================
 # Blueprint Node Graph Tool
-# Author: Zoscran
-# Creation Date: 2025-01-06
 # ============================================================================
 
 @mcp.tool()

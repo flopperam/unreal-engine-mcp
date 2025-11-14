@@ -1,8 +1,3 @@
-// Nom du fichier: MakeArrayEditor.cpp
-// Date de création: 2025-11-03
-// Auteur: Zoscran
-// Description: Implementation of MakeArrayEditor
-
 #include "Commands/BlueprintGraph/Nodes/MakeArrayEditor.h"
 #include "K2Node_MakeArray.h"
 #include "EdGraph/EdGraph.h"

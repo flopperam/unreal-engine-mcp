@@ -1,14 +1,3 @@
-/**
- * @file EpicUnrealMCPBlueprintGraphCommands.cpp
- * @brief Implementation of Blueprint Graph Commands Handler
- * @author Zoscran
- * @date 2025-01-13
- * @version 1.0
- *
- * This file implements the FEpicUnrealMCPBlueprintGraphCommands class which handles
- * all Blueprint graph manipulation commands for the MCP server.
- */
-
 #include "Commands/EpicUnrealMCPBlueprintGraphCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "Commands/BlueprintGraph/NodeManager.h"
@@ -41,6 +30,10 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintGraphCommands::HandleCommand(cons
     else if (CommandType == TEXT("create_variable"))
     {
         return HandleCreateVariable(Params);
+    }
+    else if (CommandType == TEXT("set_blueprint_variable_properties"))
+    {
+        return HandleSetVariableProperties(Params);
     }
     else if (CommandType == TEXT("add_event_node"))
     {
@@ -167,6 +160,28 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintGraphCommands::HandleCreateVariab
     return FBPVariables::CreateVariable(Params);
 }
 
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintGraphCommands::HandleSetVariableProperties(const TSharedPtr<FJsonObject>& Params)
+{
+    // Get required parameters
+    FString BlueprintName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BlueprintName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_name' parameter"));
+    }
+
+    FString VariableName;
+    if (!Params->TryGetStringField(TEXT("variable_name"), VariableName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'variable_name' parameter"));
+    }
+
+    UE_LOG(LogTemp, Display, TEXT("FEpicUnrealMCPBlueprintGraphCommands::HandleSetVariableProperties: Modifying variable '%s' in blueprint '%s'"),
+        *VariableName, *BlueprintName);
+
+    // Use the BPVariables to set the variable properties
+    return FBPVariables::SetVariableProperties(Params);
+}
+
 TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintGraphCommands::HandleAddEventNode(const TSharedPtr<FJsonObject>& Params)
 {
     // Get required parameters
@@ -224,15 +239,31 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintGraphCommands::HandleSetNodePrope
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'node_id' parameter"));
     }
 
-    FString PropertyName;
-    if (!Params->TryGetStringField(TEXT("property_name"), PropertyName))
-    {
-        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'property_name' parameter"));
-    }
+    // Check if this is semantic mode (action parameter) or legacy mode (property_name)
+    bool bHasAction = Params->HasField(TEXT("action"));
 
-    UE_LOG(LogTemp, Display,
-        TEXT("FEpicUnrealMCPBlueprintGraphCommands::HandleSetNodeProperty: Setting '%s' on node '%s' in blueprint '%s'"),
-        *PropertyName, *NodeID, *BlueprintName);
+    if (bHasAction)
+    {
+        // Semantic mode - delegate directly to SetNodeProperty
+        FString Action;
+        Params->TryGetStringField(TEXT("action"), Action);
+        UE_LOG(LogTemp, Display,
+            TEXT("FEpicUnrealMCPBlueprintGraphCommands::HandleSetNodeProperty: Semantic mode - action '%s' on node '%s' in blueprint '%s'"),
+            *Action, *NodeID, *BlueprintName);
+    }
+    else
+    {
+        // Legacy mode - require property_name
+        FString PropertyName;
+        if (!Params->TryGetStringField(TEXT("property_name"), PropertyName))
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'property_name' parameter"));
+        }
+
+        UE_LOG(LogTemp, Display,
+            TEXT("FEpicUnrealMCPBlueprintGraphCommands::HandleSetNodeProperty: Legacy mode - Setting '%s' on node '%s' in blueprint '%s'"),
+            *PropertyName, *NodeID, *BlueprintName);
+    }
 
     return FNodePropertyManager::SetNodeProperty(Params);
 }

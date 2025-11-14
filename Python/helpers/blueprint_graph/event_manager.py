@@ -1,7 +1,5 @@
 """
 Filename: event_manager.py
-Creation Date: 2025-10-26
-Author: Zoscran
 Description: Python wrapper for Blueprint event node management
 """
 

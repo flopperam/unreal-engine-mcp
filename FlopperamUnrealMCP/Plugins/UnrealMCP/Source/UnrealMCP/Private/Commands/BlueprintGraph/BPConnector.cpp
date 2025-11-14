@@ -1,8 +1,3 @@
-// BPConnector.cpp
-// Created by: Zoscran
-// Date: 2025-10-09
-// Description: Blueprint node connection
-
 #include "Commands/BlueprintGraph/BPConnector.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "Engine/Blueprint.h"

@@ -1,8 +1,3 @@
-// Nom du fichier: NodePropertyManager.cpp
-// Date de création: 2025-10-26
-// Auteur: Zoscran
-// Description: Implementation of Blueprint node property modification
-
 #include "Commands/BlueprintGraph/NodePropertyManager.h"
 #include "Commands/BlueprintGraph/Nodes/SwitchEnumEditor.h"
 #include "Commands/BlueprintGraph/Nodes/ExecutionSequenceEditor.h"

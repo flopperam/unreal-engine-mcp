@@ -1,8 +1,3 @@
-// Nom du fichier: DataNodes.cpp
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Implémentation des nodes de données (Variable Get/Set, MakeArray)
-
 #include "BlueprintGraph/Nodes/DataNodes.h"
 #include "BlueprintGraph/Nodes/NodeCreatorUtils.h"
 #include "K2Node_VariableGet.h"

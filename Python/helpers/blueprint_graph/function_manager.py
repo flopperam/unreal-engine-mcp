@@ -1,7 +1,5 @@
 """
 Nom du fichier: function_manager.py
-Date de création: 2025-10-27
-Auteur: Zoscran
 Description: MCP tool wrappers for Blueprint function lifecycle management (create, delete, rename)
 """
 

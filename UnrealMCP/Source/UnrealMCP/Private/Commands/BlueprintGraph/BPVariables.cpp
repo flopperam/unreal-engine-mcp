@@ -1,7 +1,3 @@
-// BPVariables.cpp
-// Created by: Zoscran
-// Date: 2025-10-09
-
 #include "Commands/BlueprintGraph/BPVariables.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "Engine/Blueprint.h"
@@ -136,19 +132,21 @@ TSharedPtr<FJsonObject> FBPVariables::SetVariableProperties(const TSharedPtr<FJs
     // Track which properties were updated
     TSharedPtr<FJsonObject> UpdatedProperties = MakeShared<FJsonObject>();
 
-    // Update is_blueprint_readable (VariableGet)
-    if (Params->HasField(TEXT("is_blueprint_readable")))
+    // Update var_name (rename variable)
+    if (Params->HasField(TEXT("var_name")))
     {
-        bool bIsReadable = Params->GetBoolField(TEXT("is_blueprint_readable"));
-        if (bIsReadable)
-        {
-            VarDesc->PropertyFlags |= CPF_BlueprintVisible;
-        }
-        else
-        {
-            VarDesc->PropertyFlags &= ~CPF_BlueprintVisible;
-        }
-        UpdatedProperties->SetBoolField("is_blueprint_readable", bIsReadable);
+        FString NewVarName = Params->GetStringField(TEXT("var_name"));
+        VarDesc->VarName = FName(*NewVarName);
+        UpdatedProperties->SetStringField("var_name", NewVarName);
+    }
+
+    // Update var_type (change variable type)
+    if (Params->HasField(TEXT("var_type")))
+    {
+        FString TypeString = Params->GetStringField(TEXT("var_type"));
+        FEdGraphPinType NewType = GetPinTypeFromString(TypeString);
+        VarDesc->VarType = NewType;
+        UpdatedProperties->SetStringField("var_type", TypeString);
     }
 
     // Update is_blueprint_writable (Set node)
@@ -181,19 +179,42 @@ TSharedPtr<FJsonObject> FBPVariables::SetVariableProperties(const TSharedPtr<FJs
         UpdatedProperties->SetBoolField("is_public", bIsPublic);
     }
 
-    // Update is_editable_in_instance
+    // Update is_editable_in_instance (opposite of CPF_DisableEditOnInstance)
     if (Params->HasField(TEXT("is_editable_in_instance")))
     {
         bool bIsEditable = Params->GetBoolField(TEXT("is_editable_in_instance"));
         if (bIsEditable)
         {
-            VarDesc->PropertyFlags |= CPF_Edit;
+            VarDesc->PropertyFlags &= ~CPF_DisableEditOnInstance;
         }
         else
         {
-            VarDesc->PropertyFlags &= ~CPF_Edit;
+            VarDesc->PropertyFlags |= CPF_DisableEditOnInstance;
         }
         UpdatedProperties->SetBoolField("is_editable_in_instance", bIsEditable);
+    }
+
+    // Update is_config
+    if (Params->HasField(TEXT("is_config")))
+    {
+        bool bIsConfig = Params->GetBoolField(TEXT("is_config"));
+        if (bIsConfig)
+        {
+            VarDesc->PropertyFlags |= CPF_Config;
+        }
+        else
+        {
+            VarDesc->PropertyFlags &= ~CPF_Config;
+        }
+        UpdatedProperties->SetBoolField("is_config", bIsConfig);
+    }
+
+    // Update friendly_name
+    if (Params->HasField(TEXT("friendly_name")))
+    {
+        FString FriendlyName = Params->GetStringField(TEXT("friendly_name"));
+        VarDesc->FriendlyName = FriendlyName;
+        UpdatedProperties->SetStringField("friendly_name", FriendlyName);
     }
 
     // Update tooltip
@@ -212,6 +233,59 @@ TSharedPtr<FJsonObject> FBPVariables::SetVariableProperties(const TSharedPtr<FJs
         UpdatedProperties->SetStringField("category", Category);
     }
 
+    // Update replication_enabled (Row 15 - CPF_Net flag)
+    if (Params->HasField(TEXT("replication_enabled")))
+    {
+        bool bReplicationEnabled = Params->GetBoolField(TEXT("replication_enabled"));
+        if (bReplicationEnabled)
+        {
+            VarDesc->PropertyFlags |= CPF_Net;
+        }
+        else
+        {
+            VarDesc->PropertyFlags &= ~CPF_Net;
+        }
+        UpdatedProperties->SetBoolField("replication_enabled", bReplicationEnabled);
+    }
+
+    // Update replication_condition (Row 16 - ELifetimeCondition)
+    if (Params->HasField(TEXT("replication_condition")))
+    {
+        int32 ReplicationConditionValue = (int32)Params->GetNumberField(TEXT("replication_condition"));
+        VarDesc->ReplicationCondition = (ELifetimeCondition)ReplicationConditionValue;
+        UpdatedProperties->SetNumberField("replication_condition", ReplicationConditionValue);
+    }
+
+    // Update is_private (Row 7 - MD_AllowPrivateAccess metadata)
+    if (Params->HasField(TEXT("is_private")))
+    {
+        bool bIsPrivate = Params->GetBoolField(TEXT("is_private"));
+        if (bIsPrivate)
+        {
+            VarDesc->SetMetaData(TEXT("AllowPrivateAccess"), TEXT("true"));
+        }
+        else
+        {
+            VarDesc->RemoveMetaData(TEXT("AllowPrivateAccess"));
+        }
+        UpdatedProperties->SetBoolField("is_private", bIsPrivate);
+    }
+
+    // Update expose_on_spawn (metadata)
+    if (Params->HasField(TEXT("expose_on_spawn")))
+    {
+        bool bExposeOnSpawn = Params->GetBoolField(TEXT("expose_on_spawn"));
+        if (bExposeOnSpawn)
+        {
+            VarDesc->SetMetaData(TEXT("ExposeOnSpawn"), TEXT("true"));
+        }
+        else
+        {
+            VarDesc->RemoveMetaData(TEXT("ExposeOnSpawn"));
+        }
+        UpdatedProperties->SetBoolField("expose_on_spawn", bExposeOnSpawn);
+    }
+
     // Update default_value
     if (Params->HasField(TEXT("default_value")))
     {
@@ -219,9 +293,96 @@ TSharedPtr<FJsonObject> FBPVariables::SetVariableProperties(const TSharedPtr<FJs
         UpdatedProperties->SetStringField("default_value", "updated");
     }
 
+    // Update expose_to_cinematics (CPF_Interp)
+    if (Params->HasField(TEXT("expose_to_cinematics")))
+    {
+        bool bExposeToCinematics = Params->GetBoolField(TEXT("expose_to_cinematics"));
+        if (bExposeToCinematics)
+        {
+            VarDesc->PropertyFlags |= CPF_Interp;
+        }
+        else
+        {
+            VarDesc->PropertyFlags &= ~CPF_Interp;
+        }
+        UpdatedProperties->SetBoolField("expose_to_cinematics", bExposeToCinematics);
+    }
+
+    // Update slider_range_min (MD_UIMin)
+    if (Params->HasField(TEXT("slider_range_min")))
+    {
+        FString SliderMin = Params->GetStringField(TEXT("slider_range_min"));
+        VarDesc->SetMetaData(TEXT("UIMin"), *SliderMin);
+        UpdatedProperties->SetStringField("slider_range_min", SliderMin);
+    }
+
+    // Update slider_range_max (MD_UIMax)
+    if (Params->HasField(TEXT("slider_range_max")))
+    {
+        FString SliderMax = Params->GetStringField(TEXT("slider_range_max"));
+        VarDesc->SetMetaData(TEXT("UIMax"), *SliderMax);
+        UpdatedProperties->SetStringField("slider_range_max", SliderMax);
+    }
+
+    // Update value_range_min (MD_ClampMin)
+    if (Params->HasField(TEXT("value_range_min")))
+    {
+        FString ClampMin = Params->GetStringField(TEXT("value_range_min"));
+        VarDesc->SetMetaData(TEXT("ClampMin"), *ClampMin);
+        UpdatedProperties->SetStringField("value_range_min", ClampMin);
+    }
+
+    // Update value_range_max (MD_ClampMax)
+    if (Params->HasField(TEXT("value_range_max")))
+    {
+        FString ClampMax = Params->GetStringField(TEXT("value_range_max"));
+        VarDesc->SetMetaData(TEXT("ClampMax"), *ClampMax);
+        UpdatedProperties->SetStringField("value_range_max", ClampMax);
+    }
+
+    // Update units (MD_Units)
+    if (Params->HasField(TEXT("units")))
+    {
+        FString Units = Params->GetStringField(TEXT("units"));
+        VarDesc->SetMetaData(TEXT("Units"), *Units);
+        UpdatedProperties->SetStringField("units", Units);
+    }
+
+    // Update bitmask (MD_Bitmask)
+    if (Params->HasField(TEXT("bitmask")))
+    {
+        bool bIsBitmask = Params->GetBoolField(TEXT("bitmask"));
+        if (bIsBitmask)
+        {
+            VarDesc->SetMetaData(TEXT("Bitmask"), TEXT("true"));
+        }
+        else
+        {
+            VarDesc->RemoveMetaData(TEXT("Bitmask"));
+        }
+        UpdatedProperties->SetBoolField("bitmask", bIsBitmask);
+    }
+
+    // Update bitmask_enum (MD_BitmaskEnum)
+    if (Params->HasField(TEXT("bitmask_enum")))
+    {
+        FString BitmaskEnum = Params->GetStringField(TEXT("bitmask_enum"));
+        VarDesc->SetMetaData(TEXT("BitmaskEnum"), *BitmaskEnum);
+        UpdatedProperties->SetStringField("bitmask_enum", BitmaskEnum);
+    }
+
     // Mark Blueprint as modified and compile
     Blueprint->MarkPackageDirty();
     FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+    // Force property editor refresh for metadata changes
+    // This ensures Details Panel dropdowns (Units, etc.) synchronize with metadata
+    if (GEditor)
+    {
+        FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
+        PropertyModule.NotifyCustomizationModuleChanged();
+    }
+
     FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
     Result->SetBoolField("success", true);
@@ -275,6 +436,36 @@ FEdGraphPinType FBPVariables::GetPinTypeFromString(const FString& TypeString)
 
 void FBPVariables::SetDefaultValue(FBPVariableDescription& Variable, const TSharedPtr<FJsonValue>& Value)
 {
-    // Implémentation selon type
-    // À compléter selon besoin
+    if (!Value.IsValid())
+    {
+        return;
+    }
+
+    FString StringValue;
+
+    // Convert JSON value to string representation for default value
+    if (Value->Type == EJson::String)
+    {
+        StringValue = Value->AsString();
+    }
+    else if (Value->Type == EJson::Number)
+    {
+        StringValue = FString::Printf(TEXT("%g"), Value->AsNumber());
+    }
+    else if (Value->Type == EJson::Boolean)
+    {
+        StringValue = Value->AsBool() ? TEXT("true") : TEXT("false");
+    }
+    else if (Value->Type == EJson::Null)
+    {
+        StringValue = TEXT("");
+    }
+    else
+    {
+        // For complex types, convert to empty string
+        StringValue = TEXT("");
+    }
+
+    // Update Variable.DefaultValue for Blueprint display
+    Variable.DefaultValue = StringValue;
 }

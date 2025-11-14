@@ -1,8 +1,3 @@
-// Nom du fichier: ExecutionSequenceEditor.cpp
-// Date de création: 2025-11-03
-// Auteur: Zoscran
-// Description: Implementation of ExecutionSequenceEditor
-
 #include "Commands/BlueprintGraph/Nodes/ExecutionSequenceEditor.h"
 #include "K2Node_ExecutionSequence.h"
 #include "EdGraph/EdGraph.h"

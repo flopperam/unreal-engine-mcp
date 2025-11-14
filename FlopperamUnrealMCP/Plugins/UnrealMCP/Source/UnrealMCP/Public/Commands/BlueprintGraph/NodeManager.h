@@ -1,9 +1,4 @@
-/**
- * Filename: NodeManager.h
- * Creation Date: 2025-01-06
- * Author: Zoscran
- * Description: Manages Blueprint node creation and manipulation
- */
+// Manages Blueprint node creation and manipulation
 
 #pragma once
 
@@ -76,6 +71,23 @@ class UNREALMCP_API FBlueprintNodeManager
 		 * @return Created node or nullptr
 		 */
 		static class UK2Node* CreateCallFunctionNode(class UEdGraph* Graph, const TSharedPtr<FJsonObject>& Params);
+
+		/**
+		 * Create a Comparison node (==, >, <, >=, <=)
+		 * @param Graph - Target graph
+		 * @param Params - Node parameters (optional: comparison_type, pos_x, pos_y)
+		 * @return Created node or nullptr
+		 */
+		static class UK2Node* CreateComparisonNode(class UEdGraph* Graph, const TSharedPtr<FJsonObject>& Params);
+
+		/**
+		 * Create a Branch node (conditional flow)
+		 * @param Graph - Target graph
+		 * @param Params - Node parameters (optional: pos_x, pos_y)
+		 * @return Created node or nullptr
+		 */
+		static class UK2Node* CreateBranchNode(class UEdGraph* Graph, const TSharedPtr<FJsonObject>& Params);
+
 
 		/**
 		 * Load a Blueprint by name

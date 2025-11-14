@@ -1,6 +1,4 @@
 """
-Created by: Zoscran (integration) & GuBee33 (original implementation)
-Date: 2025-10-18
 Description: Blueprint graph inspection and analysis tools
 """
 

@@ -1,8 +1,3 @@
-// Nom du fichier: SwitchEnumEditor.cpp
-// Date de création: 2025-11-03
-// Auteur: Zoscran
-// Description: Implementation of SwitchEnumEditor
-
 #include "Commands/BlueprintGraph/Nodes/SwitchEnumEditor.h"
 #include "K2Node_SwitchEnum.h"
 #include "EdGraph/EdGraph.h"

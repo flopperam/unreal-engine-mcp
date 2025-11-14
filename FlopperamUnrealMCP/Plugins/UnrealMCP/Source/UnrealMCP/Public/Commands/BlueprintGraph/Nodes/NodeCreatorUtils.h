@@ -1,7 +1,4 @@
-// Nom du fichier: NodeCreatorUtils.h
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Utilitaires partagés pour la création de K2Nodes (AllocateDefaultPins, ReconstructNode, NotifyGraph)
+// Utility header for node creation helpers
 
 #pragma once
 

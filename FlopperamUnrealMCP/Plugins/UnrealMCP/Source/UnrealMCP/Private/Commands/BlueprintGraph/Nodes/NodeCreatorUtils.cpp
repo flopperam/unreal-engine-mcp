@@ -1,8 +1,3 @@
-// Nom du fichier: NodeCreatorUtils.cpp
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Implémentation des utilitaires partagés pour la création de K2Nodes
-
 #include "BlueprintGraph/Nodes/NodeCreatorUtils.h"
 #include "K2Node.h"
 #include "EdGraph/EdGraph.h"

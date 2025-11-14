@@ -1,7 +1,5 @@
 """
 Filename: node_properties.py
-Creation Date: 2025-10-26
-Author: Zoscran
 Description: Python wrapper for Blueprint node property modification
 Updated: 2025-11-03 - Extended to support semantic node editing (add_pin, remove_pin, type modifications, etc.)
 

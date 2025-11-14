@@ -1,8 +1,3 @@
-// Nom du fichier: FunctionManager.cpp
-// Date de création: 2025-10-27
-// Auteur: Zoscran
-// Description: Implementation of Blueprint function lifecycle management
-
 #include "Commands/BlueprintGraph/Function/FunctionManager.h"
 #include "Engine/Blueprint.h"
 #include "EdGraph/EdGraph.h"

@@ -1200,7 +1200,6 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleReadBlueprintCont
             VarObj->SetStringField(TEXT("type"), Variable.VarType.PinCategory.ToString());
             VarObj->SetStringField(TEXT("default_value"), Variable.DefaultValue);
             VarObj->SetBoolField(TEXT("is_editable"), (Variable.PropertyFlags & CPF_Edit) != 0);
-            VarObj->SetBoolField(TEXT("is_blueprint_readable"), (Variable.PropertyFlags & CPF_BlueprintReadOnly) == 0);
             VariableArray.Add(MakeShared<FJsonValueObject>(VarObj));
         }
         ResultObj->SetArrayField(TEXT("variables"), VariableArray);
@@ -1480,9 +1479,8 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleGetBlueprintVaria
 
         // Property flags
         VarObj->SetBoolField(TEXT("is_editable"), (Variable.PropertyFlags & CPF_Edit) != 0);
-        VarObj->SetBoolField(TEXT("is_blueprint_readable"), (Variable.PropertyFlags & CPF_BlueprintReadOnly) == 0);
         VarObj->SetBoolField(TEXT("is_blueprint_visible"), (Variable.PropertyFlags & CPF_BlueprintVisible) != 0);
-        VarObj->SetBoolField(TEXT("is_instance_editable"), (Variable.PropertyFlags & CPF_DisableEditOnInstance) == 0);
+        VarObj->SetBoolField(TEXT("is_editable_in_instance"), (Variable.PropertyFlags & CPF_DisableEditOnInstance) == 0);
         VarObj->SetBoolField(TEXT("is_config"), (Variable.PropertyFlags & CPF_Config) != 0);
 
         // Replication

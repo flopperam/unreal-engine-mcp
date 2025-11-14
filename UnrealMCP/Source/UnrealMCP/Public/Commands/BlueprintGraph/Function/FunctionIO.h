@@ -1,7 +1,4 @@
-// Nom du fichier: FunctionIO.h
-// Date de création: 2025-10-27
-// Auteur: Zoscran
-// Description: Blueprint function input/output parameter management
+// Manages Blueprint function input and output parameters
 
 #pragma once
 

@@ -1,7 +1,4 @@
-// BPVariables.h
-// Created by: Zoscran
-// Date: 2025-10-09
-// Description: Gestion des variables Blueprint
+// Blueprint variable creation and management utilities
 
 #pragma once
 

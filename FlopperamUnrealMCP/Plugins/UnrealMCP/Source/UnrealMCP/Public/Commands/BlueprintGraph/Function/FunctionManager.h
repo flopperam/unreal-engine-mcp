@@ -1,7 +1,4 @@
-// Nom du fichier: FunctionManager.h
-// Date de création: 2025-10-27
-// Auteur: Zoscran
-// Description: Blueprint function management (create, delete, rename)
+// Manages Blueprint function lifecycle (create, delete, rename)
 
 #pragma once
 

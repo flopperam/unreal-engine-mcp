@@ -1,7 +1,4 @@
-// Nom du fichier: MakeArrayEditor.h
-// Date de création: 2025-11-03
-// Auteur: Zoscran
-// Description: Editor for UK2Node_MakeArray - Manages array element input pins
+// Header for editing MakeArray nodes (element management)
 
 #pragma once
 

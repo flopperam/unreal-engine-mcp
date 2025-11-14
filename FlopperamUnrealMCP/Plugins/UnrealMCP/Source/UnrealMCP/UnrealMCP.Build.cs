@@ -12,13 +12,19 @@ public class UnrealMCP : ModuleRules
 
 		PublicIncludePaths.AddRange(
 			new string[] {
-				// ... add public include paths required here ...
+				System.IO.Path.Combine(ModuleDirectory, "Public"),
+				System.IO.Path.Combine(ModuleDirectory, "Public/Commands"),
+				System.IO.Path.Combine(ModuleDirectory, "Public/Commands/BlueprintGraph"),
+				System.IO.Path.Combine(ModuleDirectory, "Public/Commands/BlueprintGraph/Nodes")
 			}
 		);
-		
+
 		PrivateIncludePaths.AddRange(
 			new string[] {
-				// ... add other private include paths required here ...
+				System.IO.Path.Combine(ModuleDirectory, "Private"),
+				System.IO.Path.Combine(ModuleDirectory, "Private/Commands"),
+				System.IO.Path.Combine(ModuleDirectory, "Private/Commands/BlueprintGraph"),
+				System.IO.Path.Combine(ModuleDirectory, "Private/Commands/BlueprintGraph/Nodes")
 			}
 		);
 		

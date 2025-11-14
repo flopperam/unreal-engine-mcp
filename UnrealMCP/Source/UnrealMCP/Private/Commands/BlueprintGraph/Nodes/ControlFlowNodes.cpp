@@ -1,8 +1,3 @@
-// Nom du fichier: ControlFlowNodes.cpp
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Implémentation des nodes de contrôle de flux (Branch, Switch, Comparison, ExecutionSequence)
-
 #include "BlueprintGraph/Nodes/ControlFlowNodes.h"
 #include "BlueprintGraph/Nodes/NodeCreatorUtils.h"
 #include "K2Node_IfThenElse.h"

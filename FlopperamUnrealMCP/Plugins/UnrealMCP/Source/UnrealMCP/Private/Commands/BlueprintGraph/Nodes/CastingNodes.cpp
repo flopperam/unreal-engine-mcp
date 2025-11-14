@@ -1,8 +1,3 @@
-// Nom du fichier: CastingNodes.cpp
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Implémentation des nodes de casting (DynamicCast, ClassDynamicCast, CastByteToEnum)
-
 #include "BlueprintGraph/Nodes/CastingNodes.h"
 #include "BlueprintGraph/Nodes/NodeCreatorUtils.h"
 #include "K2Node_DynamicCast.h"

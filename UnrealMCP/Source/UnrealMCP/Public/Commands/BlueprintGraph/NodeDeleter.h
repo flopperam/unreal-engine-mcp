@@ -1,8 +1,4 @@
-// Nom du fichier: NodeDeleter.h
-// Date de création: 2025-10-26
-// Auteur: Zoscran
-// Description: Blueprint node deletion manager
-
+// Manages Blueprint node deletion
 #pragma once
 
 #include "CoreMinimal.h"

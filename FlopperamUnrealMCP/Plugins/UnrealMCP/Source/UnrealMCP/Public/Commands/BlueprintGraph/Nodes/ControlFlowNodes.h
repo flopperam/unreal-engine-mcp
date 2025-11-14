@@ -1,7 +1,4 @@
-// Nom du fichier: ControlFlowNodes.h
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Header pour création de nodes de contrôle de flux (Branch, Switch, Comparison, ExecutionSequence)
+// Header for creating control flow nodes (Branch, Switch, Comparison, ExecutionSequence)
 
 #pragma once
 

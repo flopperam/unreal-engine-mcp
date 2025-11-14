@@ -1,8 +1,3 @@
-// Nom du fichier: FunctionIO.cpp
-// Date de création: 2025-10-27
-// Auteur: Zoscran
-// Description: Implementation of Blueprint function parameter management
-
 #include "Commands/BlueprintGraph/Function/FunctionIO.h"
 #include "Engine/Blueprint.h"
 #include "EdGraph/EdGraph.h"

@@ -1,7 +1,5 @@
 """
 Nom du fichier: function_io.py
-Date de création: 2025-10-27
-Auteur: Zoscran
 Description: MCP tool wrappers for Blueprint function parameter management (input/output)
 """
 

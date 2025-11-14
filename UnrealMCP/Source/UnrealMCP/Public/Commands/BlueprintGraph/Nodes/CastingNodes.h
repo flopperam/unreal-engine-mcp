@@ -1,7 +1,4 @@
-// Nom du fichier: CastingNodes.h
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Header pour création de nodes de casting (DynamicCast, ClassDynamicCast, CastByteToEnum)
+// Header for creating casting nodes (DynamicCast, ClassDynamicCast, CastByteToEnum)
 
 #pragma once
 
@@ -11,32 +8,32 @@
 class UK2Node;
 
 /**
- * Créateur de nodes de casting Unreal Blueprint
+ * Creator for Unreal Blueprint casting nodes
  */
 class FCastingNodeCreator
 {
 public:
 	/**
-	 * Crée un nœud Dynamic Cast (K2Node_DynamicCast)
-	 * @param Graph - Le graphe dans lequel ajouter le nœud
-	 * @param Params - Paramètres JSON contenant pos_x, pos_y, target_class
-	 * @return Le nœud créé ou nullptr en cas d'erreur
+	 * Creates a Dynamic Cast node (K2Node_DynamicCast)
+	 * @param Graph - The graph to add the node to
+	 * @param Params - JSON parameters containing pos_x, pos_y, target_class
+	 * @return The created node or nullptr on error
 	 */
 	static UK2Node* CreateDynamicCastNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
 
 	/**
-	 * Crée un nœud Class Dynamic Cast (K2Node_ClassDynamicCast)
-	 * @param Graph - Le graphe dans lequel ajouter le nœud
-	 * @param Params - Paramètres JSON contenant pos_x, pos_y, target_class
-	 * @return Le nœud créé ou nullptr en cas d'erreur
+	 * Creates a Class Dynamic Cast node (K2Node_ClassDynamicCast)
+	 * @param Graph - The graph to add the node to
+	 * @param Params - JSON parameters containing pos_x, pos_y, target_class
+	 * @return The created node or nullptr on error
 	 */
 	static UK2Node* CreateClassDynamicCastNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
 
 	/**
-	 * Crée un nœud Cast Byte To Enum (K2Node_CastByteToEnum)
-	 * @param Graph - Le graphe dans lequel ajouter le nœud
-	 * @param Params - Paramètres JSON contenant pos_x, pos_y, enum_type
-	 * @return Le nœud créé ou nullptr en cas d'erreur
+	 * Creates a Cast Byte To Enum node (K2Node_CastByteToEnum)
+	 * @param Graph - The graph to add the node to
+	 * @param Params - JSON parameters containing pos_x, pos_y, enum_type
+	 * @return The created node or nullptr on error
 	 */
 	static UK2Node* CreateCastByteToEnumNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
 };

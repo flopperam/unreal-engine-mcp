@@ -1,7 +1,4 @@
-// Nom du fichier: ControlFlowNodes.h
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Header pour création de nodes de contrôle de flux (Branch, Switch, Comparison, ExecutionSequence)
+// Header for creating control flow nodes (Branch, Switch, Comparison, ExecutionSequence)
 
 #pragma once
 
@@ -11,58 +8,58 @@
 class UK2Node;
 
 /**
- * Créateur de nodes de contrôle de flux Unreal Blueprint
+ * Creator for Unreal Blueprint control flow nodes
  */
 class FControlFlowNodeCreator
 {
 public:
 	/**
-	 * Crée un nœud Branch (K2Node_IfThenElse)
-	 * @param Graph - Le graphe dans lequel ajouter le nœud
-	 * @param Params - Paramètres JSON contenant pos_x, pos_y
-	 * @return Le nœud créé ou nullptr en cas d'erreur
+	 * Creates a Branch node (K2Node_IfThenElse)
+	 * @param Graph - The graph to add the node to
+	 * @param Params - JSON parameters containing pos_x, pos_y
+	 * @return The created node or nullptr on error
 	 */
 	static UK2Node* CreateBranchNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
 
 	/**
-	 * Crée un nœud Comparison (K2Node_PromotableOperator)
-	 * @param Graph - Le graphe dans lequel ajouter le nœud
-	 * @param Params - Paramètres JSON contenant:
+	 * Creates a Comparison node (K2Node_PromotableOperator)
+	 * @param Graph - The graph to add the node to
+	 * @param Params - JSON parameters containing:
 	 *                 - pos_x, pos_y: position
-	 *                 - pin_type: type des pins (int, float, string, bool, vector, name, text)
-	 * @return Le nœud créé ou nullptr en cas d'erreur
+	 *                 - pin_type: pin types (int, float, string, bool, vector, name, text)
+	 * @return The created node or nullptr on error
 	 */
 	static UK2Node* CreateComparisonNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
 
 	/**
-	 * Crée un nœud Switch (K2Node_Switch)
-	 * @param Graph - Le graphe dans lequel ajouter le nœud
-	 * @param Params - Paramètres JSON contenant pos_x, pos_y
-	 * @return Le nœud créé ou nullptr en cas d'erreur
+	 * Creates a Switch node (K2Node_Switch)
+	 * @param Graph - The graph to add the node to
+	 * @param Params - JSON parameters containing pos_x, pos_y
+	 * @return The created node or nullptr on error
 	 */
 	static UK2Node* CreateSwitchNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
 
 	/**
-	 * Crée un nœud Switch sur Enum (K2Node_SwitchEnum)
-	 * @param Graph - Le graphe dans lequel ajouter le nœud
-	 * @param Params - Paramètres JSON contenant pos_x, pos_y, enum_type
-	 * @return Le nœud créé ou nullptr en cas d'erreur
+	 * Creates a Switch on Enum node (K2Node_SwitchEnum)
+	 * @param Graph - The graph to add the node to
+	 * @param Params - JSON parameters containing pos_x, pos_y, enum_type
+	 * @return The created node or nullptr on error
 	 */
 	static UK2Node* CreateSwitchEnumNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
 
 	/**
-	 * Crée un nœud Switch sur Integer (K2Node_SwitchInteger)
-	 * @param Graph - Le graphe dans lequel ajouter le nœud
-	 * @param Params - Paramètres JSON contenant pos_x, pos_y
-	 * @return Le nœud créé ou nullptr en cas d'erreur
+	 * Creates a Switch on Integer node (K2Node_SwitchInteger)
+	 * @param Graph - The graph to add the node to
+	 * @param Params - JSON parameters containing pos_x, pos_y
+	 * @return The created node or nullptr on error
 	 */
 	static UK2Node* CreateSwitchIntegerNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
 
 	/**
-	 * Crée un nœud Execution Sequence (K2Node_ExecutionSequence)
-	 * @param Graph - Le graphe dans lequel ajouter le nœud
-	 * @param Params - Paramètres JSON contenant pos_x, pos_y
-	 * @return Le nœud créé ou nullptr en cas d'erreur
+	 * Creates an Execution Sequence node (K2Node_ExecutionSequence)
+	 * @param Graph - The graph to add the node to
+	 * @param Params - JSON parameters containing pos_x, pos_y
+	 * @return The created node or nullptr on error
 	 */
 	static UK2Node* CreateExecutionSequenceNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
 };

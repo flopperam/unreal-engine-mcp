@@ -1,8 +1,3 @@
-// Nom du fichier: CastingNodes.h
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Header pour création de nodes de casting (DynamicCast, ClassDynamicCast, CastByteToEnum)
-
 #pragma once
 
 #include "CoreMinimal.h"

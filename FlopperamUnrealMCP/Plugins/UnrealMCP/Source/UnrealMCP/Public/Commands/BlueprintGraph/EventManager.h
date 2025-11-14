@@ -1,8 +1,4 @@
-// Nom du fichier: EventManager.h
-// Date de création: 2025-10-26
-// Auteur: Zoscran
-// Description: F18 - Blueprint event node creation manager
-
+// Manages Blueprint event node creation
 #pragma once
 
 #include "CoreMinimal.h"

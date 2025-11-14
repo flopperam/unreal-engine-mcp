@@ -1,8 +1,3 @@
-// Nom du fichier: SpecializedNodes.cpp
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Implémentation des nodes spécialisés (GetDataTableRow, AddComponentByClass, Self, ConstructObject, Knot)
-
 #include "BlueprintGraph/Nodes/SpecializedNodes.h"
 #include "BlueprintGraph/Nodes/NodeCreatorUtils.h"
 #include "K2Node_GetDataTableRow.h"

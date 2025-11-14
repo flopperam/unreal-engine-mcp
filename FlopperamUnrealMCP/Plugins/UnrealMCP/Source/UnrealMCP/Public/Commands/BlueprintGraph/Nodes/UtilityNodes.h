@@ -1,7 +1,4 @@
-// Nom du fichier: UtilityNodes.h
-// Date de création: 2025-11-02
-// Auteur: Zoscran
-// Description: Header pour création de nodes utilitaires (Print, CallFunction, Select, SpawnActor)
+// Header for creating utility nodes (Print, CallFunction, Select, SpawnActor)
 
 #pragma once
 

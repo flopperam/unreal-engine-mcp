@@ -1,8 +1,4 @@
-// BPConnector.h
-// Created by: Zoscran
-// Date: 2025-10-09
-// Description: Connecte deux nœuds Blueprint via leurs pins
-
+// Connects two Blueprint nodes via their pins
 #pragma once
 
 #include "CoreMinimal.h"

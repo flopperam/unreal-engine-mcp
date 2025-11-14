@@ -1,7 +1,5 @@
 """
 Filename: node_deleter.py
-Creation Date: 2025-10-26
-Author: Zoscran
 Description: Python wrapper for Blueprint node deletion
 """
 

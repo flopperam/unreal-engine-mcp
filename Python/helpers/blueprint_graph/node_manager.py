@@ -1,7 +1,5 @@
 """
 Filename: node_manager.py
-Creation Date: 2025-01-06
-Author: Zoscran
 Description: Python wrapper for Blueprint node management
 """
 

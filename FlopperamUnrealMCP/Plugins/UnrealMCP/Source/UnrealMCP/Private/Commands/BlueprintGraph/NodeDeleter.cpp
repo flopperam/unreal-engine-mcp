@@ -1,8 +1,3 @@
-// Nom du fichier: NodeDeleter.cpp
-// Date de création: 2025-10-26
-// Auteur: Zoscran
-// Description: Implementation of Blueprint node deletion
-
 #include "Commands/BlueprintGraph/NodeDeleter.h"
 #include "Engine/Blueprint.h"
 #include "EdGraph/EdGraph.h"

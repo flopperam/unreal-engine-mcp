@@ -1,7 +1,4 @@
-// Nom du fichier: ExecutionSequenceEditor.h
-// Date de création: 2025-11-03
-// Auteur: Zoscran
-// Description: Editor for UK2Node_ExecutionSequence - Manages "Then N" execution output pins
+// Header for editing ExecutionSequence nodes (pin management)
 
 #pragma once
 

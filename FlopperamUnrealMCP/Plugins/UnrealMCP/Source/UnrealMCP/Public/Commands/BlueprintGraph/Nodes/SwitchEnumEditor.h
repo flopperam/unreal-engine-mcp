@@ -1,7 +1,4 @@
-// Nom du fichier: SwitchEnumEditor.h
-// Date de création: 2025-11-03
-// Auteur: Zoscran
-// Description: Editor for UK2Node_SwitchEnum - Sets enum type and auto-generates execution pins
+// Header for editing SwitchEnum nodes (enum type management)
 
 #pragma once
 

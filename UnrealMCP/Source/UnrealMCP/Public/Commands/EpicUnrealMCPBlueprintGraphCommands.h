@@ -1,18 +1,4 @@
-/**
- * @file EpicUnrealMCPBlueprintGraphCommands.h
- * @brief Blueprint Graph Commands Handler
- * @author Zoscran
- * @date 2025-01-13
- * @version 1.0
- *
- * Handles all Blueprint graph manipulation commands including:
- * - add_blueprint_node
- * - connect_nodes
- * - create_variable
- * - add_event_node
- * - delete_node (F20)
- * - set_node_property (F21)
- */
+// Blueprint Graph Commands Handler
 
 #pragma once
 
@@ -42,6 +28,9 @@ private:
 
     // Create variable in Blueprint
     TSharedPtr<FJsonObject> HandleCreateVariable(const TSharedPtr<FJsonObject>& Params);
+
+    // Set variable properties in Blueprint (F19)
+    TSharedPtr<FJsonObject> HandleSetVariableProperties(const TSharedPtr<FJsonObject>& Params);
 
     // Add event node to Blueprint graph
     TSharedPtr<FJsonObject> HandleAddEventNode(const TSharedPtr<FJsonObject>& Params);
