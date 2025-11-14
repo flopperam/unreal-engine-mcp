@@ -25,6 +25,16 @@ public:
      */
     static TSharedPtr<FJsonObject> CreateVariable(const TSharedPtr<FJsonObject>& Params);
 
+    /**
+     * Modifie les propriétés d'une variable existante sans la supprimer
+     * @param Params JSON contenant blueprint_name, variable_name, et propriétés optionnelles:
+     *        is_blueprint_writable, is_public, is_editable_in_instance,
+     *        tooltip, category, default_value, is_config, expose_on_spawn,
+     *        var_name, var_type, friendly_name, replication
+     * @return JSON avec success et propriétés modifiées
+     */
+    static TSharedPtr<FJsonObject> SetVariableProperties(const TSharedPtr<FJsonObject>& Params);
+
 private:
     /**
      * Convertit un string de type en FEdGraphPinType

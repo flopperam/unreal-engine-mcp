@@ -1893,16 +1893,59 @@ def add_node(
     """
     Add a node to a Blueprint graph.
 
-    Create various types of nodes (Print, Event, VariableGet, VariableSet, CallFunction)
-    in a Blueprint's event graph or a specific function graph at specified positions.
+    Create various types of K2Nodes in a Blueprint's event graph or function graph.
+    Supports 23 node types organized by category.
 
     Args:
         blueprint_name: Name of the Blueprint to modify
-        node_type: Type of node ("Print", "Event", "VariableGet", "VariableSet", "CallFunction")
+        node_type: Type of node to create. Supported types (23 total):
+
+            CONTROL FLOW:
+                "Branch" - Conditional execution (if/then/else)
+                "Comparison" - Arithmetic/logical operators (==, !=, <, >, AND, OR, etc.)
+                    ℹ️ Types can be changed via set_node_property with action="set_pin_type"
+                "Switch" - Switch on byte/enum value with cases
+                    ℹ️ Creates 1 pin at creation; add more via set_node_property with action="add_pin"
+                "SwitchEnum" - Switch on enum type (auto-generates pins per enum value)
+                    ℹ️ Creates pins based on enum; change enum via set_node_property with action="set_enum_type"
+                "SwitchInteger" - Switch on integer value with cases
+                    ℹ️ Creates 1 pin at creation; add more via set_node_property with action="add_pin"
+                "ExecutionSequence" - Sequential execution with multiple outputs
+                    ℹ️ Creates 1 pin at creation; add/remove via set_node_property (add_pin/remove_pin)
+
+            DATA:
+                "VariableGet" - Read a variable value (⚠️ variable must exist in Blueprint)
+                "VariableSet" - Set a variable value (⚠️ variable must exist and be assignable)
+                "MakeArray" - Create array from individual inputs
+                    ℹ️ Creates 1 pin at creation; add/remove via set_node_property with action="set_num_elements"
+
+            CASTING:
+                "DynamicCast" - Cast object to specific class (⚠️ handle "Cast Failed" output)
+                "ClassDynamicCast" - Cast class reference to derived class (⚠️ handle failure cases)
+                "CastByteToEnum" - Convert byte value to enum (⚠️ byte must be valid enum range)
+
+            UTILITY:
+                "Print" - Debug output to screen/log (configurable duration and color)
+                "CallFunction" - Call any blueprint/engine function (⚠️ function must exist)
+                "Select" - Choose between two inputs based on boolean condition
+                "SpawnActor" - Spawn actor from class (⚠️ class must derive from Actor)
+
+            SPECIALIZED:
+                "Timeline" - Animation timeline playback with curve tracks
+                    ⚠️ REQUIRES MANUAL IMPLEMENTATION: Animation curves must be added in editor
+                "GetDataTableRow" - Query row from data table (⚠️ DataTable must exist)
+                "AddComponentByClass" - Dynamically add component to actor
+                "Self" - Reference to current actor/object
+                "Knot" - Invisible reroute node (wire organization only)
+
+            EVENT:
+                "Event" - Blueprint event (specify event_type: BeginPlay, Tick, etc.)
+                    ℹ️ Tick events run every frame - be mindful of performance impact
+
         pos_x: X position in graph (default: 0)
         pos_y: Y position in graph (default: 0)
         message: For Print nodes, the text to print
-        event_type: For Event nodes, the event name (BeginPlay, Tick, etc.)
+        event_type: For Event nodes, the event name (BeginPlay, Tick, Destroyed, etc.)
         variable_name: For Variable nodes, the variable name
         target_function: For CallFunction nodes, the function to call
         target_blueprint: For CallFunction nodes, optional path to target Blueprint
@@ -1910,6 +1953,11 @@ def add_node(
 
     Returns:
         Dictionary with success status, node_id, and position
+
+    Important Notes:
+        - Most nodes can have pins modified after creation via set_node_property
+        - Dynamic pin management: Switch/SwitchEnum/ExecutionSequence/MakeArray support pin operations
+        - Timeline is the ONLY node requiring manual implementation (curves must be added in editor)
     """
     unreal = get_unreal_connection()
     if not unreal:
@@ -2041,6 +2089,176 @@ def create_variable(
         return {"success": False, "message": str(e)}
 
 @mcp.tool()
+def set_blueprint_variable_properties(
+    blueprint_name: str,
+    variable_name: str,
+    var_name: Optional[str] = None,
+    var_type: Optional[str] = None,
+    is_blueprint_readable: Optional[bool] = None,
+    is_blueprint_writable: Optional[bool] = None,
+    is_public: Optional[bool] = None,
+    is_editable_in_instance: Optional[bool] = None,
+    tooltip: Optional[str] = None,
+    category: Optional[str] = None,
+    default_value: Any = None,
+    expose_on_spawn: Optional[bool] = None,
+    expose_to_cinematics: Optional[bool] = None,
+    slider_range_min: Optional[str] = None,
+    slider_range_max: Optional[str] = None,
+    value_range_min: Optional[str] = None,
+    value_range_max: Optional[str] = None,
+    units: Optional[str] = None,
+    bitmask: Optional[bool] = None,
+    bitmask_enum: Optional[str] = None,
+    replication_enabled: Optional[bool] = None,
+    replication_condition: Optional[int] = None,
+    is_private: Optional[bool] = None
+) -> Dict[str, Any]:
+    """
+    Modify properties of an existing Blueprint variable without deleting it.
+
+    Preserves all VariableGet and VariableSet nodes connected to this variable.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        variable_name: Name of the variable to modify
+
+        var_name: Rename the variable (optional)
+            ✅ PASS - VarDesc->VarName works correctly
+
+        var_type: Change variable type (optional)
+            ✅ PASS - VarDesc->VarType works correctly (int→float returns "real")
+
+        is_blueprint_readable: Allow reading in Blueprint (VariableGet) (optional)
+            ✅ PASS - CPF_BlueprintReadOnly flag (inverted logic)
+
+        is_blueprint_writable: Allow writing in Blueprint (Set) (optional)
+            ✅ PASS - CPF_BlueprintReadOnly flag (inverted logic)
+            ⚠️ NOT returned by get_variable_details()
+
+        is_public: Visible in Blueprint editor (optional)
+            ✅ PASS - Controls variable visibility
+
+        is_editable_in_instance: Modifiable on instances (optional)
+            ✅ PASS - CPF_DisableEditOnInstance flag (inverted logic)
+
+        tooltip: Variable description (optional)
+            ✅ PASS - Metadata MD_Tooltip works correctly
+
+        category: Variable category (optional)
+            ✅ PASS - Direct property Category works
+
+        default_value: New default value (optional)
+            ✅ PASS - Works but get_variable_details() returns empty string
+
+        expose_on_spawn: Show in spawn dialog (optional)
+            ✅ PASS - Metadata MD_ExposeOnSpawn works
+            ⚠️ Requires is_editable_in_instance=true to be visible
+            ⚠️ NOT returned by get_variable_details()
+
+        expose_to_cinematics: Expose to cinematics (optional)
+            ✅ PASS - CPF_Interp flag works correctly
+            ⚠️ NOT returned by get_variable_details()
+
+        slider_range_min: UI slider minimum value (optional)
+            ✅ PASS - Metadata MD_UIMin works (string value)
+            ⚠️ NOT returned by get_variable_details()
+
+        slider_range_max: UI slider maximum value (optional)
+            ✅ PASS - Metadata MD_UIMax works (string value)
+            ⚠️ NOT returned by get_variable_details()
+
+        value_range_min: Clamp minimum value (optional)
+            ✅ PASS - Metadata MD_ClampMin works (string value)
+            ⚠️ NOT returned by get_variable_details()
+
+        value_range_max: Clamp maximum value (optional)
+            ✅ PASS - Metadata MD_ClampMax works (string value)
+            ⚠️ NOT returned by get_variable_details()
+
+        units: Display units (optional)
+            ⚠️ PARTIAL - Metadata MD_Units works for value display (e.g., "0.0 cm")
+            ❌ UI dropdown stays at "None" (Unreal Editor limitation - dropdown doesn't sync with metadata)
+            ⚠️ Use long format: "Centimeters", "Meters" (not "cm", "m")
+            ⚠️ NOT returned by get_variable_details()
+
+        bitmask: Treat as bitmask (optional)
+            ✅ PASS - Metadata TEXT("Bitmask") works correctly
+            ⚠️ NOT returned by get_variable_details()
+
+        bitmask_enum: Bitmask enum type (optional)
+            ✅ PASS - Metadata TEXT("BitmaskEnum") works
+            ⚠️ REQUIRES full path format: "/Script/ModuleName.EnumName"
+            ❌ Short names generate warning and don't sync dropdown
+            ✅ Validated enums (use FULL PATHS):
+                - /Script/UniversalObjectLocator.ELocatorResolveFlags
+                - /Script/JsonObjectGraph.EJsonStringifyFlags
+                - /Script/MediaAssets.EMediaAudioCaptureDeviceFilter
+                - /Script/MediaAssets.EMediaVideoCaptureDeviceFilter
+                - /Script/MediaAssets.EMediaWebcamCaptureDeviceFilter
+                - /Script/Engine.EAnimAssetCurveFlags
+                - /Script/Engine.EHardwareDeviceSupportedFeatures
+                - /Script/EnhancedInput.EMappingQueryIssue
+                - /Script/EnhancedInput.ETriggerEvent
+            ⚠️ NOT returned by get_variable_details()
+
+        replication_enabled: Enable network replication (CPF_Net flag) (optional)
+            ✅ PASS - CPF_Net flag works - Changes "Replication" dropdown (None ↔ Replicated)
+            ⚠️ NOT returned by get_variable_details()
+
+        replication_condition: Network replication condition (ELifetimeCondition 0-7) (optional)
+            ✅ PASS - VarDesc->ReplicationCondition works
+            ✅ Changes "Replication Condition" dropdown (e.g., None → Initial Only)
+            ⚠️ Values: 0=None, 1=InitialOnly, 2=OwnerOnly, 3=SkipOwner, 4=SimulatedOnly, 5=AutonomousOnly, 6=SimulatedOrPhysics, 7=InitialOrOwner
+            ✅ Returned by get_variable_details() as "replication"
+
+        is_private: Set variable as private (optional)
+            ❌ UNRESOLVED - Property flag/metadata not yet identified
+            ⚠️ Attempted CPF_NativeAccessSpecifierPrivate flag and MD_AllowPrivateAccess metadata - neither work
+            ⚠️ The property that controls "Privé" (Private) checkbox remains unknown
+            ⚠️ Parameter exists but has no effect on UI - do NOT use until resolved
+
+    Returns:
+        Dictionary with success status and updated properties
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = variable_manager.set_blueprint_variable_properties(
+            unreal,
+            blueprint_name,
+            variable_name,
+            var_name,
+            var_type,
+            is_blueprint_readable,
+            is_blueprint_writable,
+            is_public,
+            is_editable_in_instance,
+            tooltip,
+            category,
+            default_value,
+            expose_on_spawn,
+            expose_to_cinematics,
+            slider_range_min,
+            slider_range_max,
+            value_range_min,
+            value_range_max,
+            units,
+            bitmask,
+            bitmask_enum,
+            replication_enabled,
+            replication_condition,
+            is_private
+        )
+
+        return result
+    except Exception as e:
+        logger.error(f"set_blueprint_variable_properties error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
 def add_event_node(
     blueprint_name: str,
     event_name: str,
@@ -2122,47 +2340,134 @@ def delete_node(
 def set_node_property(
     blueprint_name: str,
     node_id: str,
-    property_name: str,
-    property_value: Any,
-    function_name: Optional[str] = None
+    property_name: str = "",
+    property_value: Any = None,
+    function_name: Optional[str] = None,
+    action: Optional[str] = None,
+    pin_type: Optional[str] = None,
+    pin_name: Optional[str] = None,
+    enum_type: Optional[str] = None,
+    new_type: Optional[str] = None,
+    target_type: Optional[str] = None,
+    target_function: Optional[str] = None,
+    target_class: Optional[str] = None,
+    event_type: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Set a property on a Blueprint node.
+    Set a property on a Blueprint node or perform semantic node editing.
 
-    Modify properties of existing nodes such as Print message text,
-    variable names, node positions, or comments.
+    This function supports both simple property modifications and advanced semantic
+    node editing operations (pin management, type modifications, reference updates).
 
     Args:
         blueprint_name: Name of the Blueprint to modify
         node_id: ID of the node to modify
-        property_name: Name of the property to set (e.g., "message", "variable_name", "pos_x")
-        property_value: Value to set (type depends on property)
+        property_name: Name of property to set (legacy mode, used if action not specified)
+        property_value: Value to set (legacy mode)
         function_name: Name of function graph (optional, defaults to EventGraph)
+        action: Semantic action to perform - can be one of:
+            Phase 1 (Pin Management):
+                - "add_pin": Add a pin to a node (requires pin_type)
+                - "remove_pin": Remove a pin from a node (requires pin_name)
+                - "set_enum_type": Set enum type on a node (requires enum_type)
+            Phase 2 (Type Modification):
+                - "set_pin_type": Change pin type on comparison nodes (requires pin_name, new_type)
+                - "set_value_type": Change value type on select nodes (requires new_type)
+                - "set_cast_target": Change cast target type (requires target_type)
+            Phase 3 (Reference Updates - DESTRUCTIVE):
+                - "set_function_call": Change function being called (requires target_function)
+                - "set_event_type": Change event type (requires event_type)
+
+    Semantic action parameters:
+        pin_type: Type of pin to add ("SwitchCase", "ExecutionOutput", "ArrayElement", "EnumValue")
+        pin_name: Name of pin to remove or modify
+        enum_type: Full path to enum type (e.g., "/Game/Enums/ECardinalDirection")
+        new_type: New type for pin or value ("int", "float", "string", "bool", "vector", etc.)
+        target_type: Target class path for casting
+        target_function: Name of function to call
+        target_class: Optional class containing the function
+        event_type: Event type (e.g., "BeginPlay", "Tick", "Destroyed")
 
     Returns:
-        Dictionary with success status and updated_property name
+        Dictionary with success status and details
 
-    Supported properties by node type:
+    Supported legacy properties by node type:
         - Print nodes: "message", "duration", "text_color"
         - Variable nodes: "variable_name"
         - All nodes: "pos_x", "pos_y", "comment"
+
+    Examples:
+        Legacy mode (set simple property):
+            set_node_property(
+                blueprint_name="MyActorBlueprint",
+                node_id="K2Node_1234567890",
+                property_name="message",
+                property_value="Hello World!"
+            )
+
+        Semantic mode (add pin):
+            set_node_property(
+                blueprint_name="MyActorBlueprint",
+                node_id="K2Node_Switch_123",
+                action="add_pin",
+                pin_type="SwitchCase"
+            )
+
+        Semantic mode (set enum type):
+            set_node_property(
+                blueprint_name="MyActorBlueprint",
+                node_id="K2Node_SwitchEnum_456",
+                action="set_enum_type",
+                enum_type="ECardinalDirection"
+            )
+
+        Semantic mode (change function call):
+            set_node_property(
+                blueprint_name="MyActorBlueprint",
+                node_id="K2Node_CallFunction_789",
+                action="set_function_call",
+                target_function="BeginPlay",
+                target_class="APawn"
+            )
     """
     unreal = get_unreal_connection()
     if not unreal:
         return {"success": False, "message": "Failed to connect to Unreal Engine"}
 
     try:
+        # Build kwargs for semantic actions
+        kwargs = {}
+        if action is not None:
+            if pin_type is not None:
+                kwargs["pin_type"] = pin_type
+            if pin_name is not None:
+                kwargs["pin_name"] = pin_name
+            if enum_type is not None:
+                kwargs["enum_type"] = enum_type
+            if new_type is not None:
+                kwargs["new_type"] = new_type
+            if target_type is not None:
+                kwargs["target_type"] = target_type
+            if target_function is not None:
+                kwargs["target_function"] = target_function
+            if target_class is not None:
+                kwargs["target_class"] = target_class
+            if event_type is not None:
+                kwargs["event_type"] = event_type
+
         result = node_properties.set_node_property(
             unreal,
             blueprint_name,
             node_id,
             property_name,
             property_value,
-            function_name
+            function_name,
+            action,
+            **kwargs
         )
         return result
     except Exception as e:
-        logger.error(f"set_node_property error: {e}")
+        logger.error(f"set_node_property error: {e}", exc_info=True)
         return {"success": False, "message": str(e)}
 
 

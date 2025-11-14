@@ -99,6 +99,139 @@ TSharedPtr<FJsonObject> FBPVariables::CreateVariable(const TSharedPtr<FJsonObjec
     return Result;
 }
 
+TSharedPtr<FJsonObject> FBPVariables::SetVariableProperties(const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+
+    FString BlueprintName = Params->GetStringField(TEXT("blueprint_name"));
+    FString VariableName = Params->GetStringField(TEXT("variable_name"));
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintName);
+
+    if (!Blueprint)
+    {
+        Result->SetBoolField("success", false);
+        Result->SetStringField("error", FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
+        return Result;
+    }
+
+    // Find the variable in the Blueprint
+    FBPVariableDescription* VarDesc = nullptr;
+    for (FBPVariableDescription& Var : Blueprint->NewVariables)
+    {
+        if (Var.VarName == FName(*VariableName))
+        {
+            VarDesc = &Var;
+            break;
+        }
+    }
+
+    if (!VarDesc)
+    {
+        Result->SetBoolField("success", false);
+        Result->SetStringField("error", FString::Printf(TEXT("Variable not found: %s"), *VariableName));
+        return Result;
+    }
+
+    // Track which properties were updated
+    TSharedPtr<FJsonObject> UpdatedProperties = MakeShared<FJsonObject>();
+
+    // Update is_blueprint_readable (VariableGet)
+    if (Params->HasField(TEXT("is_blueprint_readable")))
+    {
+        bool bIsReadable = Params->GetBoolField(TEXT("is_blueprint_readable"));
+        if (bIsReadable)
+        {
+            VarDesc->PropertyFlags |= CPF_BlueprintVisible;
+        }
+        else
+        {
+            VarDesc->PropertyFlags &= ~CPF_BlueprintVisible;
+        }
+        UpdatedProperties->SetBoolField("is_blueprint_readable", bIsReadable);
+    }
+
+    // Update is_blueprint_writable (Set node)
+    if (Params->HasField(TEXT("is_blueprint_writable")))
+    {
+        bool bIsWritable = Params->GetBoolField(TEXT("is_blueprint_writable"));
+        if (bIsWritable)
+        {
+            VarDesc->PropertyFlags &= ~CPF_BlueprintReadOnly;
+        }
+        else
+        {
+            VarDesc->PropertyFlags |= CPF_BlueprintReadOnly;
+        }
+        UpdatedProperties->SetBoolField("is_blueprint_writable", bIsWritable);
+    }
+
+    // Update is_public
+    if (Params->HasField(TEXT("is_public")))
+    {
+        bool bIsPublic = Params->GetBoolField(TEXT("is_public"));
+        if (bIsPublic)
+        {
+            VarDesc->PropertyFlags |= CPF_Edit;
+        }
+        else
+        {
+            VarDesc->PropertyFlags &= ~CPF_Edit;
+        }
+        UpdatedProperties->SetBoolField("is_public", bIsPublic);
+    }
+
+    // Update is_editable_in_instance
+    if (Params->HasField(TEXT("is_editable_in_instance")))
+    {
+        bool bIsEditable = Params->GetBoolField(TEXT("is_editable_in_instance"));
+        if (bIsEditable)
+        {
+            VarDesc->PropertyFlags |= CPF_Edit;
+        }
+        else
+        {
+            VarDesc->PropertyFlags &= ~CPF_Edit;
+        }
+        UpdatedProperties->SetBoolField("is_editable_in_instance", bIsEditable);
+    }
+
+    // Update tooltip
+    if (Params->HasField(TEXT("tooltip")))
+    {
+        FString Tooltip = Params->GetStringField(TEXT("tooltip"));
+        VarDesc->SetMetaData(FBlueprintMetadata::MD_Tooltip, *Tooltip);
+        UpdatedProperties->SetStringField("tooltip", Tooltip);
+    }
+
+    // Update category
+    if (Params->HasField(TEXT("category")))
+    {
+        FString Category = Params->GetStringField(TEXT("category"));
+        VarDesc->Category = FText::FromString(Category);
+        UpdatedProperties->SetStringField("category", Category);
+    }
+
+    // Update default_value
+    if (Params->HasField(TEXT("default_value")))
+    {
+        SetDefaultValue(*VarDesc, Params->Values.FindRef("default_value"));
+        UpdatedProperties->SetStringField("default_value", "updated");
+    }
+
+    // Mark Blueprint as modified and compile
+    Blueprint->MarkPackageDirty();
+    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+    FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
+    Result->SetBoolField("success", true);
+    Result->SetStringField("variable_name", VariableName);
+    Result->SetObjectField("properties_updated", UpdatedProperties);
+    Result->SetStringField("message", "Variable properties updated successfully");
+
+    return Result;
+}
+
 FEdGraphPinType FBPVariables::GetPinTypeFromString(const FString& TypeString)
 {
     FEdGraphPinType PinType;
