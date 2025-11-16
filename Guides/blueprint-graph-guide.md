@@ -25,6 +25,7 @@ This is perfect for:
 |------|-------------|----------|
 | `add_node` | Add a node to a Blueprint graph | Create Print nodes, Events, Variable Get/Set |
 | `connect_nodes` | Connect two nodes together | Build execution flow and data connections |
+| `disconnect_nodes` | Disconnect two connected nodes | Remove connections between nodes |
 | `create_variable` | Create a new Blueprint variable | Add properties to your Blueprints |
 
 ### Inspection Tools
@@ -41,18 +42,67 @@ This is perfect for:
 
 ### `add_node`
 
-Add a node to a Blueprint's event graph.
+Add a node to a Blueprint graph (EventGraph or function graph).
+
+Create various types of K2Nodes in a Blueprint's event graph or function graph.
+Supports 23 node types organized by category.
 
 **Parameters**:
 ```python
 add_node(
-    blueprint_name: str,      # Name of the Blueprint (e.g., "BP_MyActor")
-    node_type: str,           # Type: "Print", "Event", "VariableGet", "VariableSet"
-    pos_x: float = 0,         # X position in graph
-    pos_y: float = 0,         # Y position in graph
-    message: str = "",        # For Print nodes: text to print
-    event_type: str = "",     # For Event nodes: "BeginPlay", "Tick", etc.
-    variable_name: str = ""   # For Variable nodes: name of the variable
+    blueprint_name: str,      # Name of the Blueprint to modify
+    node_type: str,           # Type of node to create. Supported types (23 total):
+
+        CONTROL FLOW:
+            "Branch" - Conditional execution (if/then/else)
+            "Comparison" - Arithmetic/logical operators (==, !=, <, >, AND, OR, etc.)
+                ℹ️ Types can be changed via set_node_property with action="set_pin_type"
+            "Switch" - Switch on byte/enum value with cases
+                ℹ️ Creates 1 pin at creation; add more via set_node_property with action="add_pin"
+            "SwitchEnum" - Switch on enum type (auto-generates pins per enum value)
+                ℹ️ Creates pins based on enum; change enum via set_node_property with action="set_enum_type"
+            "SwitchInteger" - Switch on integer value with cases
+                ℹ️ Creates 1 pin at creation; add more via set_node_property with action="add_pin"
+            "ExecutionSequence" - Sequential execution with multiple outputs
+                ℹ️ Creates 1 pin at creation; add/remove via set_node_property (add_pin/remove_pin)
+
+        DATA:
+            "VariableGet" - Read a variable value (⚠️ variable must exist in Blueprint)
+            "VariableSet" - Set a variable value (⚠️ variable must exist and be assignable)
+            "MakeArray" - Create array from individual inputs
+                ℹ️ Creates 1 pin at creation; add/remove via set_node_property with action="set_num_elements"
+
+        CASTING:
+            "DynamicCast" - Cast object to specific class (⚠️ handle "Cast Failed" output)
+            "ClassDynamicCast" - Cast class reference to derived class (⚠️ handle failure cases)
+            "CastByteToEnum" - Convert byte value to enum (⚠️ byte must be valid enum range)
+
+        UTILITY:
+            "Print" - Debug output to screen/log (configurable duration and color)
+            "CallFunction" - Call any blueprint/engine function (⚠️ function must exist)
+            "Select" - Choose between two inputs based on boolean condition
+            "SpawnActor" - Spawn actor from class (⚠️ class must derive from Actor)
+
+        SPECIALIZED:
+            "Timeline" - Animation timeline playback with curve tracks
+                ⚠️ REQUIRES MANUAL IMPLEMENTATION: Animation curves must be added in editor
+            "GetDataTableRow" - Query row from data table (⚠️ DataTable must exist)
+            "AddComponentByClass" - Dynamically add component to actor
+            "Self" - Reference to current actor/object
+            "Knot" - Invisible reroute node (wire organization only)
+
+        EVENT:
+            "Event" - Blueprint event (specify event_type: BeginPlay, Tick, etc.)
+                ℹ️ Tick events run every frame - be mindful of performance impact
+
+    pos_x: float = 0,         # X position in graph (default: 0)
+    pos_y: float = 0,         # Y position in graph (default: 0)
+    message: str = "",        # For Print nodes, the text to print
+    event_type: str = "",     # For Event nodes, the event name (BeginPlay, Tick, Destroyed, etc.)
+    variable_name: str = "",  # For Variable nodes, the variable name
+    target_function: str = "", # For CallFunction nodes, the function to call
+    target_blueprint: str = "", # For CallFunction nodes, optional path to target Blueprint
+    function_name: str = ""   # Optional name of function graph to add node to (if None, uses EventGraph)
 )
 ```
 
@@ -67,13 +117,27 @@ add_node(
 }
 ```
 
-**Example**:
+**Important Notes**:
+- Most nodes can have pins modified after creation via set_node_property
+- Dynamic pin management: Switch/SwitchEnum/ExecutionSequence/MakeArray support pin operations
+- Timeline is the ONLY node requiring manual implementation (curves must be added in editor)
+
+**Examples**:
 ```bash
 > "Add a BeginPlay event node to BP_MyActor"
 → add_node("BP_MyActor", "Event", event_type="BeginPlay", pos_x=0, pos_y=0)
 
 > "Add a Print node that says 'Hello World' to BP_MyActor"
 → add_node("BP_MyActor", "Print", message="Hello World", pos_x=300, pos_y=0)
+
+> "Add a Branch node (if/then/else) to BP_MyActor"
+→ add_node("BP_MyActor", "Branch", pos_x=400, pos_y=0)
+
+> "Add a Get Variable node for 'Speed' to BP_MyActor"
+→ add_node("BP_MyActor", "VariableGet", variable_name="Speed", pos_x=200, pos_y=100)
+
+> "Add a Spawn Actor node to BP_MyActor"
+→ add_node("BP_MyActor", "SpawnActor", pos_x=600, pos_y=0)
 ```
 
 ---
@@ -115,6 +179,48 @@ connect_nodes(
 ```bash
 > "Connect the BeginPlay event to the Print node in BP_MyActor"
 → connect_nodes("BP_MyActor", "K2Node_Event_0", "then", "K2Node_CallFunction_1", "execute")
+```
+
+---
+
+### `disconnect_nodes`
+
+Disconnect two previously connected nodes by breaking the link between their pins.
+
+**Parameters**:
+```python
+disconnect_nodes(
+    blueprint_name: str,      # Name of the Blueprint
+    source_node_id: str,      # ID of the source node
+    source_pin_name: str,     # Output pin name (e.g., "then", "execute")
+    target_node_id: str,      # ID of the target node
+    target_pin_name: str      # Input pin name (e.g., "execute")
+)
+```
+
+**Returns**:
+```json
+{
+  "success": true,
+  "result": {
+    "message": "Connection removed successfully"
+  }
+}
+```
+
+**Example**:
+```bash
+> "Disconnect the BeginPlay event from the Print node in BP_MyActor"
+→ disconnect_nodes("BP_MyActor", "K2Node_Event_0", "then", "K2Node_CallFunction_1", "execute")
+```
+
+**Error Handling**:
+If the connection doesn't exist:
+```json
+{
+  "success": false,
+  "error": "Connection does not exist between specified pins"
+}
 ```
 
 ---
@@ -327,7 +433,7 @@ Blueprint Graph tools are implemented in native C++ for maximum performance:
 
 **Python Wrapper**:
 - `node_manager.py` - MCP tool wrapper for add_node
-- `connector_manager.py` - MCP tool wrapper for connect_nodes
+- `connector_manager.py` - MCP tool wrapper for connect_nodes and disconnect_nodes
 - `variable_manager.py` - MCP tool wrapper for create_variable
 
 ### Extending the System
