@@ -154,20 +154,7 @@ UBlueprint* FEpicUnrealMCPCommonUtils::FindBlueprint(const FString& BlueprintNam
 UBlueprint* FEpicUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintName)
 {
     // The correct object path for a Blueprint asset is /Game/Path/AssetName.AssetName
-    FString ObjectPath;
-
-    // Check if BlueprintName is already a full path (starts with /)
-    if (BlueprintName.StartsWith(TEXT("/")))
-    {
-        // It's already a full path, use it directly with the class suffix
-        FString AssetName = FPaths::GetBaseFilename(BlueprintName);
-        ObjectPath = FString::Printf(TEXT("%s.%s"), *BlueprintName, *AssetName);
-    }
-    else
-    {
-        // It's just a name, add the default /Game/Blueprints/ prefix
-        ObjectPath = FString::Printf(TEXT("/Game/Blueprints/%s.%s"), *BlueprintName, *BlueprintName);
-    }
+    FString ObjectPath = FString::Printf(TEXT("/Game/Blueprints/%s.%s"), *BlueprintName, *BlueprintName);
 
     // First, try to load the object directly, as it's the fastest method.
     UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *ObjectPath);
@@ -194,7 +181,7 @@ UBlueprint* FEpicUnrealMCPCommonUtils::FindBlueprintByName(const FString& Bluepr
     // where it might be found via its package path.
     FString PackagePath = TEXT("/Game/Blueprints/") + BlueprintName;
     Blueprint = FindObject<UBlueprint>(nullptr, *PackagePath);
-
+    
     if (!Blueprint)
     {
          UE_LOG(LogTemp, Error, TEXT("FindBlueprintByName: Failed to find or load blueprint: %s"), *BlueprintName);
