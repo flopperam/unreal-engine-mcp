@@ -257,7 +257,6 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
 # Initialize server
 mcp = FastMCP(
     "UnrealMCP_Advanced",
-    description="Unreal Engine Advanced Tools - Streamlined MCP server for advanced composition and building tools",
     lifespan=server_lifespan
 )
 
