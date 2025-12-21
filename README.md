@@ -1,3 +1,14 @@
+## Update 12/20/2025
+
+We’ve advanced the Unreal Engine MCP into a fully autonomous agent — capable of **far more dynamic building** and smarter, end-to-end execution.
+
+We’re also bringing over all the best building workflows from here (like the **medieval castle** and **city builder**) into the agent, so you’ll be able to generate the same kinds of results **the exact same way**, just directly through the agent experience.
+
+The agent now works with a clean UI so you can clearly see what’s happening as it works.
+
+**Try it out today:** [https://flopperam.com/](https://flopperam.com/)
+
+
 # The Most Advanced MCP Server for Unreal Engine
 
 [![Unreal Engine](https://img.shields.io/badge/Unreal%20Engine-5.5%2B-orange.svg)](https://www.unrealengine.com/)
