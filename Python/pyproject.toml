@@ -3,7 +3,7 @@ name = "unreal-engine-mcp"
 version = "0.1.0"
 description = "Unreal MCP Advanced Server: A streamlined server for advanced Unreal Engine composition and building tools via MCP."
 readme = "README_advanced.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 dependencies = [
   "mcp[cli]>=1.4.1",
   "fastmcp>=0.2.0",

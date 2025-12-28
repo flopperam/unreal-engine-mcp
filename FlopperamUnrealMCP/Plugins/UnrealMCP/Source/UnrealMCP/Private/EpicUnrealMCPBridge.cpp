@@ -53,6 +53,7 @@
 // Include our new command handler classes
 #include "Commands/EpicUnrealMCPEditorCommands.h"
 #include "Commands/EpicUnrealMCPBlueprintCommands.h"
+#include "Commands/EpicUnrealMCPBlueprintGraphCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 
 // Default settings
@@ -63,12 +64,14 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
 {
     EditorCommands = MakeShared<FEpicUnrealMCPEditorCommands>();
     BlueprintCommands = MakeShared<FEpicUnrealMCPBlueprintCommands>();
+    BlueprintGraphCommands = MakeShared<FEpicUnrealMCPBlueprintGraphCommands>();
 }
 
 UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
 {
     EditorCommands.Reset();
     BlueprintCommands.Reset();
+    BlueprintGraphCommands.Reset();
 }
 
 // Initialize subsystem
@@ -238,6 +241,22 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                      CommandType == TEXT("get_blueprint_material_info"))
             {
                 ResultJson = BlueprintCommands->HandleCommand(CommandType, Params);
+            }
+            // Blueprint Graph Commands (nodes, connections, variables, functions)
+            else if (CommandType == TEXT("add_blueprint_node") ||
+                     CommandType == TEXT("connect_nodes") ||
+                     CommandType == TEXT("create_variable") ||
+                     CommandType == TEXT("set_blueprint_variable_properties") ||
+                     CommandType == TEXT("add_event_node") ||
+                     CommandType == TEXT("delete_node") ||
+                     CommandType == TEXT("set_node_property") ||
+                     CommandType == TEXT("create_function") ||
+                     CommandType == TEXT("add_function_input") ||
+                     CommandType == TEXT("add_function_output") ||
+                     CommandType == TEXT("delete_function") ||
+                     CommandType == TEXT("rename_function"))
+            {
+                ResultJson = BlueprintGraphCommands->HandleCommand(CommandType, Params);
             }
 
             else
