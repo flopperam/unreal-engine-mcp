@@ -79,7 +79,7 @@ UK2Node* FUtilityNodeCreator::CreateCallFunctionNode(UEdGraph* Graph, const TSha
 	FString ClassName;
 	if (Params->TryGetStringField(TEXT("target_class"), ClassName))
 	{
-		UClass* TargetClass = Cast<UClass>(StaticFindObject(UClass::StaticClass(), ANY_PACKAGE, *ClassName));
+		UClass* TargetClass = Cast<UClass>(StaticFindObject(UClass::StaticClass(), nullptr, *ClassName));
 		if (TargetClass)
 		{
 			TargetFunc = TargetClass->FindFunctionByName(FName(*TargetFunction));

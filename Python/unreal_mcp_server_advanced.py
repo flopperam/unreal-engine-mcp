@@ -9,6 +9,9 @@ import logging
 import socket
 import json
 import math
+import struct
+import time
+import threading
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict, Any, Optional, List
 from mcp.server.fastmcp import FastMCP
@@ -68,237 +71,373 @@ UNREAL_HOST = "127.0.0.1"
 UNREAL_PORT = 55557
 
 class UnrealConnection:
-    """Connection to an Unreal Engine instance."""
+    """
+    Robust connection to Unreal Engine with automatic retry and reconnection.
+    
+    Features:
+    - Exponential backoff retry for connection attempts
+    - Automatic reconnection on failure
+    - Configurable timeouts per command type
+    - Thread-safe operations
+    - Detailed logging for debugging
+    """
+    
+    # Configuration constants
+    MAX_RETRIES = 3
+    BASE_RETRY_DELAY = 0.5  # seconds
+    MAX_RETRY_DELAY = 5.0   # seconds
+    CONNECT_TIMEOUT = 10    # seconds
+    DEFAULT_RECV_TIMEOUT = 30  # seconds
+    LARGE_OP_RECV_TIMEOUT = 300  # seconds for large operations
+    BUFFER_SIZE = 8192
+    
+    # Commands that need longer timeouts
+    LARGE_OPERATION_COMMANDS = {
+        "get_available_materials",
+        "create_town",
+        "create_castle_fortress", 
+        "construct_mansion",
+        "create_suspension_bridge",
+        "create_aqueduct",
+        "create_maze"
+    }
     
     def __init__(self):
         """Initialize the connection."""
         self.socket = None
         self.connected = False
+        self._lock = threading.RLock()  # RLock allows reentrant acquisition for retry logic
+        self._last_error = None
+    
+    def _create_socket(self) -> socket.socket:
+        """Create and configure a new socket."""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(self.CONNECT_TIMEOUT)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 131072)  # 128KB
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 131072)  # 128KB
+        
+        # Set linger to ensure clean socket closure (l_onoff=1, l_linger=0)
+        # struct linger is two 16-bit integers: l_onoff and l_linger
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('hh', 1, 0))
+        except OSError:
+            pass
+        
+        return sock
     
     def connect(self) -> bool:
-        """Connect to the Unreal Engine instance."""
-        try:
-            # Close any existing socket
-            if self.socket:
+        """
+        Connect to Unreal Engine with retry logic.
+        
+        Uses exponential backoff for retries. Sleep occurs outside the lock
+        to avoid blocking other threads during retry delays.
+            
+        Returns:
+            True if connected successfully, False otherwise
+        """
+        for attempt in range(self.MAX_RETRIES + 1):
+            # Hold lock only during connection attempt, not during sleep
+            with self._lock:
+                # Clean up any existing connection
+                self._close_socket_unsafe()
+                
                 try:
-                    self.socket.close()
-                except:
-                    pass
-                self.socket = None
+                    logger.info(f"Connecting to Unreal at {UNREAL_HOST}:{UNREAL_PORT} (attempt {attempt + 1}/{self.MAX_RETRIES + 1})...")
+                    
+                    self.socket = self._create_socket()
+                    self.socket.connect((UNREAL_HOST, UNREAL_PORT))
+                    self.connected = True
+                    self._last_error = None
+                    
+                    logger.info("Successfully connected to Unreal Engine")
+                    return True
+                    
+                except socket.timeout as e:
+                    self._last_error = f"Connection timeout: {e}"
+                    logger.warning(f"Connection timeout (attempt {attempt + 1})")
+                except ConnectionRefusedError as e:
+                    self._last_error = f"Connection refused: {e}"
+                    logger.warning(f"Connection refused - is Unreal Engine running? (attempt {attempt + 1})")
+                except OSError as e:
+                    self._last_error = f"OS error: {e}"
+                    logger.warning(f"OS error during connection: {e} (attempt {attempt + 1})")
+                except Exception as e:
+                    self._last_error = f"Unexpected error: {e}"
+                    logger.error(f"Unexpected connection error: {e} (attempt {attempt + 1})")
+                
+                self._close_socket_unsafe()
+                self.connected = False
             
-            logger.info(f"Connecting to Unreal at {UNREAL_HOST}:{UNREAL_PORT}...")
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.settimeout(30)
-            
-            # Set socket options for better stability
-            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
-            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 65536)
-            
-            self.socket.connect((UNREAL_HOST, UNREAL_PORT))
-            self.connected = True
-            logger.info("Connected to Unreal Engine")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to connect to Unreal: {e}")
-            self.connected = False
-            return False
+            # Sleep OUTSIDE the lock to allow other threads to proceed
+            if attempt < self.MAX_RETRIES:
+                delay = min(self.BASE_RETRY_DELAY * (2 ** attempt), self.MAX_RETRY_DELAY)
+                logger.info(f"Retrying connection in {delay:.1f}s...")
+                time.sleep(delay)
+        
+        logger.error(f"Failed to connect after {self.MAX_RETRIES + 1} attempts. Last error: {self._last_error}")
+        return False
     
-    def disconnect(self):
-        """Disconnect from the Unreal Engine instance."""
+    def _close_socket_unsafe(self):
+        """Close socket without lock (internal use only)."""
         if self.socket:
+            try:
+                self.socket.shutdown(socket.SHUT_RDWR)
+            except:
+                pass
             try:
                 self.socket.close()
             except:
                 pass
-        self.socket = None
+            self.socket = None
         self.connected = False
+    
+    def disconnect(self):
+        """Safely disconnect from Unreal Engine."""
+        with self._lock:
+            self._close_socket_unsafe()
+            logger.debug("Disconnected from Unreal Engine")
 
-    def receive_full_response(self, sock, buffer_size=4096, command_type="") -> bytes:
-        """Receive a complete response from Unreal, handling chunked data."""
+    def _get_timeout_for_command(self, command_type: str) -> int:
+        """Get appropriate timeout for command type."""
+        if any(large_cmd in command_type for large_cmd in self.LARGE_OPERATION_COMMANDS):
+            return self.LARGE_OP_RECV_TIMEOUT
+        return self.DEFAULT_RECV_TIMEOUT
+
+    def _receive_response(self, command_type: str) -> bytes:
+        """
+        Receive complete JSON response from Unreal.
+        
+        Args:
+            command_type: Type of command (used for timeout selection)
+            
+        Returns:
+            Raw response bytes
+            
+        Raises:
+            Exception: On timeout or connection error
+        """
+        timeout = self._get_timeout_for_command(command_type)
+        self.socket.settimeout(timeout)
+        
         chunks = []
-        # Adaptive timeout based on command complexity
-        if "get_available_materials" in command_type:
-            sock.settimeout(90)   # 1.5 minutes for large material lists
-        else:
-            sock.settimeout(60)   # 1 minute for standard operations
+        total_bytes = 0
+        start_time = time.time()
+        
         try:
             while True:
-                chunk = sock.recv(buffer_size)
-                if not chunk:
-                    if not chunks:
-                        raise Exception("Connection closed before receiving data")
-                    break
-                chunks.append(chunk)
-
-                # Process the data received so far
-                data = b''.join(chunks)
-                decoded_data = data.decode('utf-8')
-
-                # Try to parse as JSON to check if complete
+                # Check for overall timeout
+                elapsed = time.time() - start_time
+                if elapsed > timeout:
+                    raise socket.timeout(f"Overall timeout after {elapsed:.1f}s")
+                
                 try:
-                    json.loads(decoded_data)
-                    logger.info(f"Received complete response ({len(data)} bytes) for {command_type}")
+                    chunk = self.socket.recv(self.BUFFER_SIZE)
+                except socket.timeout:
+                    # Check if we have a complete response
+                    if chunks:
+                        data = b''.join(chunks)
+                        try:
+                            json.loads(data.decode('utf-8'))
+                            logger.info(f"Got complete response after recv timeout ({total_bytes} bytes)")
+                            return data
+                        except json.JSONDecodeError:
+                            pass
+                    raise
+                
+                if not chunk:
+                    # Connection closed by remote
+                    if not chunks:
+                        raise ConnectionError("Connection closed before receiving any data")
+                    break
+                
+                chunks.append(chunk)
+                total_bytes += len(chunk)
+                
+                # Try to parse accumulated data as JSON
+                data = b''.join(chunks)
+                try:
+                    decoded = data.decode('utf-8')
+                    json.loads(decoded)
+                    # Successfully parsed - we have complete response
+                    logger.info(f"Received complete response ({total_bytes} bytes) for {command_type}")
                     return data
                 except json.JSONDecodeError:
-                    # Not complete JSON yet, continue reading
-                    logger.debug(f"Received partial response, waiting for more data...")
+                    # Incomplete JSON, continue reading
                     continue
-                except Exception as e:
-                    logger.warning(f"Error processing response chunk: {str(e)}")
+                except UnicodeDecodeError:
+                    # Incomplete UTF-8, continue reading
                     continue
+                    
         except socket.timeout:
-            logger.warning(f"Socket timeout during receive for {command_type}")
+            elapsed = time.time() - start_time
             if chunks:
                 data = b''.join(chunks)
                 try:
                     json.loads(data.decode('utf-8'))
-                    logger.info(f"Using partial response after timeout ({len(data)} bytes) for {command_type}")
+                    logger.warning(f"Using response received before timeout ({total_bytes} bytes)")
                     return data
                 except:
                     pass
-            raise Exception(f"Timeout receiving Unreal response for {command_type}")
-        except Exception as e:
-            logger.error(f"Error during receive for {command_type}: {str(e)}")
-            raise
-    
-    def send_command(self, command: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
-        """Send a command to Unreal Engine and get the response."""
-        # CRITICAL ARCHITECTURAL DECISION: Persistent Connection vs Reconnection
-        #
-        # Previous implementation (commented below) used systematic reconnection for each command.
-        # This was causing performance issues and timeouts, especially during Blueprint operations.
-        #
-        # New implementation uses persistent connection with automatic recovery.
-        # Benefits:
-        # - Eliminates reconnection latency (~50-100ms per command)
-        # - Prevents timeouts during Unreal Engine busy periods
-        # - Improves reliability for complex operations (Blueprint graph functions)
-        # - Reduces network overhead and socket churn
-        #
-        # Risks mitigated:
-        # - Connection drops handled by automatic reconnection logic
-        # - Memory overhead minimal (single TCP socket)
-        # - Port conflicts prevented by dedicated port assignment
-        #
-        # Team Review Required: This change affects core networking architecture.
-        # Please validate performance improvements vs stability concerns before merge.
-
-        # OLD CODE (commented for review - DO NOT DELETE):
-        # # Always reconnect for each command
-        # if self.socket:
-        #     try:
-        #         self.socket.close()
-        #     except:
-        #         pass
-        #     self.socket = None
-        #     self.connected = False
-        #
-        # if not self.connect():
-        #     logger.error("Failed to connect to Unreal Engine for command")
-        #     return None
-
-        # NEW CODE: Persistent connection with recovery
-        if not self.connected or not self.socket:
-            if not self.connect():
-                logger.error("Failed to connect to Unreal Engine for command")
-                return None
+            raise TimeoutError(f"Timeout after {elapsed:.1f}s waiting for response to {command_type} (received {total_bytes} bytes)")
         
-        try:
-            command_obj = {
-                "type": command,
-                "params": params or {}
-            }
-            
-            command_json = json.dumps(command_obj)
-            logger.info(f"Sending command: {command_json}")
-            self.socket.sendall(command_json.encode('utf-8'))
-            
-            response_data = self.receive_full_response(self.socket, command_type=command)
-            if response_data is None:
-                return {"status": "error", "error": "No response data received"}
+        # If we get here, connection was closed
+        if chunks:
+            data = b''.join(chunks)
             try:
-                response = json.loads(response_data.decode('utf-8'))
-            except json.JSONDecodeError as e:
-                logger.error(f"JSON decode error: {e}, data: {response_data[:200]}...")
-                return {"status": "error", "error": f"Invalid JSON response: {str(e)}"}
+                json.loads(data.decode('utf-8'))
+                return data
+            except:
+                raise ConnectionError(f"Connection closed with incomplete data ({total_bytes} bytes)")
+        
+        raise ConnectionError("Connection closed without response")
+
+    def send_command(self, command: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
+        """
+        Send a command to Unreal Engine with automatic retry.
+        
+        Args:
+            command: Command type string
+            params: Command parameters dictionary
             
-            logger.info(f"Complete response from Unreal: {response}")
+        Returns:
+            Response dictionary or error dictionary
+        """
+        last_error = None
+        
+        for attempt in range(self.MAX_RETRIES + 1):
+            try:
+                return self._send_command_once(command, params, attempt)
+            except (ConnectionError, TimeoutError, socket.error, OSError) as e:
+                last_error = str(e)
+                logger.warning(f"Command failed (attempt {attempt + 1}/{self.MAX_RETRIES + 1}): {e}")
+                
+                # Clean up and prepare for retry
+                self.disconnect()
+                
+                if attempt < self.MAX_RETRIES:
+                    delay = min(self.BASE_RETRY_DELAY * (2 ** attempt), self.MAX_RETRY_DELAY)
+                    logger.info(f"Retrying command in {delay:.1f}s...")
+                    time.sleep(delay)
+            except Exception as e:
+                # Unexpected error - don't retry
+                logger.error(f"Unexpected error sending command: {e}")
+                self.disconnect()
+                return {"status": "error", "error": str(e)}
+        
+        return {"status": "error", "error": f"Command failed after {self.MAX_RETRIES + 1} attempts: {last_error}"}
+
+    def _send_command_once(self, command: str, params: Dict[str, Any], attempt: int) -> Dict[str, Any]:
+        """
+        Send command once (internal method).
+        
+        Args:
+            command: Command type
+            params: Command parameters
+            attempt: Current attempt number
             
-            # Handle error responses
-            if response.get("status") == "error":
-                error_message = response.get("error") or response.get("message", "Unknown Unreal error")
-                logger.error(f"Unreal error (status=error): {error_message}")
-                if "error" not in response:
-                    response["error"] = error_message
-            elif response.get("success") is False:
-                error_message = response.get("error") or response.get("message", "Unknown Unreal error")
-                logger.error(f"Unreal error (success=false): {error_message}")
-                response = {
-                    "status": "error",
-                    "error": error_message
+        Returns:
+            Response dictionary
+            
+        Raises:
+            Various exceptions on failure
+        """
+        # Hold lock for entire send-receive cycle to prevent race conditions
+        # where another thread could close/reconnect the socket mid-operation.
+        # RLock allows nested acquisition from connect()/disconnect() calls.
+        with self._lock:
+            # Connect (or reconnect)
+            if not self.connect():
+                raise ConnectionError(f"Failed to connect to Unreal Engine: {self._last_error}")
+            
+            try:
+                # Build and send command
+                command_obj = {
+                    "type": command,
+                    "params": params or {}
                 }
-            
-            # Always close the connection after command
-            try:
-                self.socket.close()
-            except:
-                pass
-            self.socket = None
-            self.connected = False
-            
-            return response
-            
-        except Exception as e:
-            logger.error(f"Error sending command: {e}")
-            self.connected = False
-            try:
-                self.socket.close()
-            except:
-                pass
-            self.socket = None
-            return {
-                "status": "error",
-                "error": str(e)
-            }
+                command_json = json.dumps(command_obj)
+                
+                logger.info(f"Sending command (attempt {attempt + 1}): {command}")
+                logger.debug(f"Command payload: {command_json[:500]}...")
+                
+                # Send with timeout
+                self.socket.settimeout(10)  # 10 second send timeout
+                self.socket.sendall(command_json.encode('utf-8'))
+                
+                # Receive response
+                response_data = self._receive_response(command)
+                
+                # Parse response
+                try:
+                    response = json.loads(response_data.decode('utf-8'))
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON decode error: {e}")
+                    logger.debug(f"Raw response: {response_data[:500]}")
+                    raise ValueError(f"Invalid JSON response: {e}")
+                
+                logger.info(f"Command {command} completed successfully")
+                
+                # Normalize error responses
+                if response.get("status") == "error":
+                    error_msg = response.get("error") or response.get("message", "Unknown error")
+                    logger.warning(f"Unreal returned error: {error_msg}")
+                elif response.get("success") is False:
+                    error_msg = response.get("error") or response.get("message", "Unknown error")
+                    response = {"status": "error", "error": error_msg}
+                    logger.warning(f"Unreal returned failure: {error_msg}")
+                
+                return response
+                
+            finally:
+                # Always clean up connection after command
+                self._close_socket_unsafe()
 
-# Global connection state
-_unreal_connection: UnrealConnection = None
+# Global connection instance (singleton pattern)
+_unreal_connection: Optional[UnrealConnection] = None
+_connection_lock = threading.Lock()
 
-def get_unreal_connection() -> Optional[UnrealConnection]:
-    """Get the connection to Unreal Engine."""
+def get_unreal_connection() -> UnrealConnection:
+    """
+    Get the global Unreal connection instance.
+    
+    Uses lazy initialization - connection is created on first access.
+    The connection handles its own retry logic, so we don't need to
+    pre-connect here.
+    
+    Returns:
+        UnrealConnection instance (always returns an instance, never None)
+    """
     global _unreal_connection
-    try:
+    
+    with _connection_lock:
         if _unreal_connection is None:
+            logger.info("Creating new UnrealConnection instance")
             _unreal_connection = UnrealConnection()
-            if not _unreal_connection.connect():
-                logger.warning("Could not connect to Unreal Engine")
-                _unreal_connection = None
         return _unreal_connection
-    except Exception as e:
-        logger.error(f"Error getting Unreal connection: {e}")
-        return None
+
+
+def reset_unreal_connection():
+    """Reset the global connection (useful for error recovery)."""
+    global _unreal_connection
+    
+    with _connection_lock:
+        if _unreal_connection:
+            _unreal_connection.disconnect()
+            _unreal_connection = None
+        logger.info("Unreal connection reset")
 
 @asynccontextmanager
 async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
     """Handle server startup and shutdown."""
-    global _unreal_connection
     logger.info("UnrealMCP Advanced server starting up")
-
-    # FIX: Don't connect to Unreal at startup (blocking call in async context)
-    # Connection will be established lazily on first tool call via get_unreal_connection()
-    # This prevents "RuntimeError: Received request before initialization was complete"
-    _unreal_connection = None
-    logger.info("Unreal connection will be established on first tool call (lazy connection)")
+    logger.info("Connection will be established lazily on first tool call")
 
     try:
         yield {}
     finally:
-        if _unreal_connection:
-            _unreal_connection.disconnect()
-            _unreal_connection = None
+        reset_unreal_connection()
         logger.info("Unreal MCP Advanced server shut down")
 
 # Initialize server

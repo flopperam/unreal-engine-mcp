@@ -22,7 +22,7 @@ UK2Node* FCastingNodeCreator::CreateDynamicCastNode(UEdGraph* Graph, const TShar
 	FString TargetClass;
 	if (Params->TryGetStringField(TEXT("target_class"), TargetClass))
 	{
-		UClass* CastClass = Cast<UClass>(StaticFindObject(UClass::StaticClass(), ANY_PACKAGE, *TargetClass));
+		UClass* CastClass = Cast<UClass>(StaticFindObject(UClass::StaticClass(), nullptr, *TargetClass));
 		if (CastClass)
 		{
 			DynamicCastNode->TargetType = CastClass;
@@ -57,7 +57,7 @@ UK2Node* FCastingNodeCreator::CreateClassDynamicCastNode(UEdGraph* Graph, const 
 	FString TargetClass;
 	if (Params->TryGetStringField(TEXT("target_class"), TargetClass))
 	{
-		UClass* CastClass = Cast<UClass>(StaticFindObject(UClass::StaticClass(), ANY_PACKAGE, *TargetClass));
+		UClass* CastClass = Cast<UClass>(StaticFindObject(UClass::StaticClass(), nullptr, *TargetClass));
 		if (CastClass)
 		{
 			ClassDynamicCastNode->TargetType = CastClass;
@@ -92,7 +92,7 @@ UK2Node* FCastingNodeCreator::CreateCastByteToEnumNode(UEdGraph* Graph, const TS
 	FString EnumType;
 	if (Params->TryGetStringField(TEXT("enum_type"), EnumType))
 	{
-		UEnum* TargetEnum = Cast<UEnum>(StaticFindObject(UEnum::StaticClass(), ANY_PACKAGE, *EnumType));
+		UEnum* TargetEnum = Cast<UEnum>(StaticFindObject(UEnum::StaticClass(), nullptr, *EnumType));
 		if (TargetEnum)
 		{
 			CastByteNode->Enum = TargetEnum;
