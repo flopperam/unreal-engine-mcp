@@ -1,4 +1,4 @@
-// Blueprint Graph Commands Handler - All Blueprint graph manipulation commands
+// Blueprint Graph Commands Handler
 
 #pragma once
 

@@ -18,7 +18,7 @@ public class UnrealMCP : ModuleRules
 				System.IO.Path.Combine(ModuleDirectory, "Public/Commands/BlueprintGraph/Nodes")
 			}
 		);
-		
+
 		PrivateIncludePaths.AddRange(
 			new string[] {
 				System.IO.Path.Combine(ModuleDirectory, "Private"),
@@ -41,21 +41,21 @@ public class UnrealMCP : ModuleRules
 				"Json",
 				"JsonUtilities",
 				"DeveloperSettings",
-				"PhysicsCore"
+				"PhysicsCore",
+				"UnrealEd",           // For Blueprint editing
+				"BlueprintGraph",     // For K2Node classes (F15-F22)
+				"KismetCompiler"      // For Blueprint compilation (F15-F22)
 			}
 		);
 		
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"UnrealEd",
 				"EditorScriptingUtilities",
 				"EditorSubsystem",
 				"Slate",
 				"SlateCore",
 				"Kismet",
-				"KismetCompiler",
-				"BlueprintGraph",
 				"Projects",
 				"AssetRegistry"
 			}

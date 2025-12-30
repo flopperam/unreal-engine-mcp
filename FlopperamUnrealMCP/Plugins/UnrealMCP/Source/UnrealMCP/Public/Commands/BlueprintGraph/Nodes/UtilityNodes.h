@@ -8,40 +8,40 @@
 class UK2Node;
 
 /**
- * Créateur de nodes utilitaires Unreal Blueprint
+ * Creator for Unreal Blueprint utility nodes
  */
 class FUtilityNodeCreator
 {
 public:
 	/**
-	 * Crée un nœud Print (K2Node_CallFunction pour PrintString)
-	 * @param Graph - Le graphe dans lequel ajouter le nœud
-	 * @param Params - Paramètres JSON contenant pos_x, pos_y, message
-	 * @return Le nœud créé ou nullptr en cas d'erreur
+	 * Creates a Print node (K2Node_CallFunction for PrintString)
+	 * @param Graph - The graph to add the node to
+	 * @param Params - JSON parameters containing pos_x, pos_y, message
+	 * @return The created node or nullptr on error
 	 */
 	static UK2Node* CreatePrintNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
 
 	/**
-	 * Crée un nœud Call Function (K2Node_CallFunction)
-	 * @param Graph - Le graphe dans lequel ajouter le nœud
-	 * @param Params - Paramètres JSON contenant pos_x, pos_y, function_name, target_object
-	 * @return Le nœud créé ou nullptr en cas d'erreur
+	 * Creates a Call Function node (K2Node_CallFunction)
+	 * @param Graph - The graph to add the node to
+	 * @param Params - JSON parameters containing pos_x, pos_y, function_name, target_object
+	 * @return The created node or nullptr on error
 	 */
 	static UK2Node* CreateCallFunctionNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
 
 	/**
-	 * Crée un nœud Select (K2Node_Select)
-	 * @param Graph - Le graphe dans lequel ajouter le nœud
-	 * @param Params - Paramètres JSON contenant pos_x, pos_y, pin_type
-	 * @return Le nœud créé ou nullptr en cas d'erreur
+	 * Creates a Select node (K2Node_Select)
+	 * @param Graph - The graph to add the node to
+	 * @param Params - JSON parameters containing pos_x, pos_y, pin_type
+	 * @return The created node or nullptr on error
 	 */
 	static UK2Node* CreateSelectNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
 
 	/**
-	 * Crée un nœud Spawn Actor From Class (K2Node_SpawnActorFromClass)
-	 * @param Graph - Le graphe dans lequel ajouter le nœud
-	 * @param Params - Paramètres JSON contenant pos_x, pos_y, actor_class
-	 * @return Le nœud créé ou nullptr en cas d'erreur
+	 * Creates a Spawn Actor From Class node (K2Node_SpawnActorFromClass)
+	 * @param Graph - The graph to add the node to
+	 * @param Params - JSON parameters containing pos_x, pos_y, actor_class
+	 * @return The created node or nullptr on error
 	 */
 	static UK2Node* CreateSpawnActorNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
 };

@@ -228,8 +228,8 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 ResultJson = EditorCommands->HandleCommand(CommandType, Params);
             }
             // Blueprint Commands
-            else if (CommandType == TEXT("create_blueprint") || 
-                     CommandType == TEXT("add_component_to_blueprint") || 
+            else if (CommandType == TEXT("create_blueprint") ||
+                     CommandType == TEXT("add_component_to_blueprint") ||
                      CommandType == TEXT("set_physics_properties") ||
                      CommandType == TEXT("compile_blueprint") ||
                      CommandType == TEXT("set_static_mesh_properties") ||
@@ -238,11 +238,15 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                      CommandType == TEXT("apply_material_to_actor") ||
                      CommandType == TEXT("apply_material_to_blueprint") ||
                      CommandType == TEXT("get_actor_material_info") ||
-                     CommandType == TEXT("get_blueprint_material_info"))
+                     CommandType == TEXT("get_blueprint_material_info") ||
+                     CommandType == TEXT("read_blueprint_content") ||
+                     CommandType == TEXT("analyze_blueprint_graph") ||
+                     CommandType == TEXT("get_blueprint_variable_details") ||
+                     CommandType == TEXT("get_blueprint_function_details"))
             {
                 ResultJson = BlueprintCommands->HandleCommand(CommandType, Params);
             }
-            // Blueprint Graph Commands (nodes, connections, variables, functions)
+            // Blueprint Graph Commands
             else if (CommandType == TEXT("add_blueprint_node") ||
                      CommandType == TEXT("connect_nodes") ||
                      CommandType == TEXT("create_variable") ||
@@ -258,7 +262,6 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
             {
                 ResultJson = BlueprintGraphCommands->HandleCommand(CommandType, Params);
             }
-
             else
             {
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));

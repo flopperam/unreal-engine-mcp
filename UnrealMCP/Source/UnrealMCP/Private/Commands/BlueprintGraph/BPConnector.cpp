@@ -59,7 +59,7 @@ TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>
         return Result;
     }
 
-    // Obtenir graphe
+    // Get graph
     UEdGraph* Graph = nullptr;
 
     if (!FunctionName.IsEmpty())
@@ -115,7 +115,7 @@ TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>
         return Result;
     }
 
-    // Trouver nœuds
+    // Find nodes
     UK2Node* SourceNode = FindNodeById(Graph, SourceNodeId);
     UK2Node* TargetNode = FindNodeById(Graph, TargetNodeId);
 
@@ -137,7 +137,7 @@ TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>
         return Result;
     }
 
-    // Valider compatibilité
+    // Validate compatibility
     if (!ArePinsCompatible(SourcePin, TargetPin))
     {
         Result->SetBoolField("success", false);
@@ -145,14 +145,14 @@ TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>
         return Result;
     }
 
-    // Créer connexion
+    // Create connection
     SourcePin->MakeLinkTo(TargetPin);
 
-    // Recompiler
+    // Recompile
     Blueprint->MarkPackageDirty();
     FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
-    // Retour
+    // Return
     Result->SetBoolField("success", true);
 
     TSharedPtr<FJsonObject> ConnectionInfo = MakeShared<FJsonObject>();

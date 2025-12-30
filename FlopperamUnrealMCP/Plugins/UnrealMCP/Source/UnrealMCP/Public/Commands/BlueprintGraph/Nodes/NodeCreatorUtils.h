@@ -8,48 +8,48 @@
 class UK2Node;
 
 /**
- * Utilitaires partagés pour la création et l'initialisation de K2Nodes
+ * Shared utilities for K2Node creation and initialization
  *
- * Cette classe fournit des fonctions mutualisées pour éviter la duplication
- * de code dans tous les créateurs de nodes (ControlFlowNodes, DataNodes, etc.)
+ * This class provides shared functions to avoid code duplication
+ * in all node creators (ControlFlowNodes, DataNodes, etc.)
  */
 class FNodeCreatorUtils
 {
 public:
 	/**
-	 * Initialise complètement un nœud K2Node après sa création
+	 * Fully initializes a K2Node after creation
 	 *
-	 * Effectue les étapes suivantes dans l'ordre :
-	 * 1. AllocateDefaultPins() - Crée les pins par défaut
-	 * 2. ReconstructNode() - Reconstruit le nœud (notifie Unreal des modifications)
-	 * 3. NotifyGraphChanged() - Notifie le graph que quelque chose a changé
+	 * Performs the following steps in order:
+	 * 1. AllocateDefaultPins() - Creates default pins
+	 * 2. ReconstructNode() - Reconstructs the node (notifies Unreal of changes)
+	 * 3. NotifyGraphChanged() - Notifies the graph that something changed
 	 *
-	 * @param Node - Le nœud à initialiser (doit être non-null)
-	 * @param Graph - Le graphe contenant le nœud (doit être non-null)
+	 * @param Node - The node to initialize (must be non-null)
+	 * @param Graph - The graph containing the node (must be non-null)
 	 *
-	 * @return true si l'initialisation a réussi, false sinon
+	 * @return true if initialization succeeded, false otherwise
 	 *
-	 * @note Cette fonction DOIT être appelée après :
+	 * @note This function MUST be called after:
 	 *       - NewObject<NodeType>(Graph)
 	 *       - Graph->AddNode(Node, ...)
-	 *       - Toute configuration spécifique au type (SetExternalMember, StructType, etc.)
+	 *       - Any type-specific configuration (SetExternalMember, StructType, etc.)
 	 *
 	 * @example
 	 * UK2Node_CallFunction* Node = NewObject<UK2Node_CallFunction>(Graph);
 	 * Graph->AddNode(Node, true, false);
-	 * Node->FunctionReference.SetExternalMember(FunctionName, TargetClass);  // Configuration AVANT
-	 * FNodeCreatorUtils::InitializeK2Node(Node, Graph);  // Initialisation APRÈS
+	 * Node->FunctionReference.SetExternalMember(FunctionName, TargetClass);  // Configuration BEFORE
+	 * FNodeCreatorUtils::InitializeK2Node(Node, Graph);  // Initialization AFTER
 	 */
 	static bool InitializeK2Node(UK2Node* Node, UEdGraph* Graph);
 
 	/**
-	 * Extrait les coordonnées X/Y d'un objet JSON
+	 * Extracts X/Y coordinates from a JSON object
 	 *
-	 * @param Params - Objet JSON contenant "pos_x" et "pos_y"
-	 * @param OutX - Référence pour stocker la position X (défaut: 0.0)
-	 * @param OutY - Référence pour stocker la position Y (défaut: 0.0)
+	 * @param Params - JSON object containing "pos_x" and "pos_y"
+	 * @param OutX - Reference to store X position (default: 0.0)
+	 * @param OutY - Reference to store Y position (default: 0.0)
 	 *
-	 * @note Valide l'existence des champs avant d'essayer de les lire
+	 * @note Validates field existence before attempting to read them
 	 */
 	static void ExtractNodePosition(const TSharedPtr<class FJsonObject>& Params, double& OutX, double& OutY);
 };
