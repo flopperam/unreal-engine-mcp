@@ -1,5 +1,3 @@
-// Manages Blueprint node property modification
-
 #pragma once
 
 #include "CoreMinimal.h"
