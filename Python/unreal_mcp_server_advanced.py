@@ -9,6 +9,7 @@ import logging
 import socket
 import json
 import math
+import struct
 import time
 import threading
 from contextlib import asynccontextmanager
@@ -105,7 +106,7 @@ class UnrealConnection:
         """Initialize the connection."""
         self.socket = None
         self.connected = False
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # RLock allows reentrant acquisition for retry logic
         self._last_error = None
     
     def _create_socket(self) -> socket.socket:
@@ -117,64 +118,66 @@ class UnrealConnection:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 131072)  # 128KB
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 131072)  # 128KB
         
-        # Windows-specific: Set linger to ensure clean socket closure
+        # Set linger to ensure clean socket closure (l_onoff=1, l_linger=0)
+        # struct linger is two 16-bit integers: l_onoff and l_linger
         try:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, b'\x01\x00\x00\x00\x00\x00\x00\x00')
-        except:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('hh', 1, 0))
+        except OSError:
             pass
         
         return sock
     
-    def connect(self, retry_count: int = 0) -> bool:
+    def connect(self) -> bool:
         """
         Connect to Unreal Engine with retry logic.
         
-        Args:
-            retry_count: Current retry attempt (used internally)
+        Uses exponential backoff for retries. Sleep occurs outside the lock
+        to avoid blocking other threads during retry delays.
             
         Returns:
             True if connected successfully, False otherwise
         """
-        with self._lock:
-            # Clean up any existing connection
-            self._close_socket_unsafe()
-            
-            try:
-                logger.info(f"Connecting to Unreal at {UNREAL_HOST}:{UNREAL_PORT} (attempt {retry_count + 1}/{self.MAX_RETRIES + 1})...")
+        for attempt in range(self.MAX_RETRIES + 1):
+            # Hold lock only during connection attempt, not during sleep
+            with self._lock:
+                # Clean up any existing connection
+                self._close_socket_unsafe()
                 
-                self.socket = self._create_socket()
-                self.socket.connect((UNREAL_HOST, UNREAL_PORT))
-                self.connected = True
-                self._last_error = None
+                try:
+                    logger.info(f"Connecting to Unreal at {UNREAL_HOST}:{UNREAL_PORT} (attempt {attempt + 1}/{self.MAX_RETRIES + 1})...")
+                    
+                    self.socket = self._create_socket()
+                    self.socket.connect((UNREAL_HOST, UNREAL_PORT))
+                    self.connected = True
+                    self._last_error = None
+                    
+                    logger.info("Successfully connected to Unreal Engine")
+                    return True
+                    
+                except socket.timeout as e:
+                    self._last_error = f"Connection timeout: {e}"
+                    logger.warning(f"Connection timeout (attempt {attempt + 1})")
+                except ConnectionRefusedError as e:
+                    self._last_error = f"Connection refused: {e}"
+                    logger.warning(f"Connection refused - is Unreal Engine running? (attempt {attempt + 1})")
+                except OSError as e:
+                    self._last_error = f"OS error: {e}"
+                    logger.warning(f"OS error during connection: {e} (attempt {attempt + 1})")
+                except Exception as e:
+                    self._last_error = f"Unexpected error: {e}"
+                    logger.error(f"Unexpected connection error: {e} (attempt {attempt + 1})")
                 
-                logger.info("Successfully connected to Unreal Engine")
-                return True
-                
-            except socket.timeout as e:
-                self._last_error = f"Connection timeout: {e}"
-                logger.warning(f"Connection timeout (attempt {retry_count + 1})")
-            except ConnectionRefusedError as e:
-                self._last_error = f"Connection refused: {e}"
-                logger.warning(f"Connection refused - is Unreal Engine running? (attempt {retry_count + 1})")
-            except OSError as e:
-                self._last_error = f"OS error: {e}"
-                logger.warning(f"OS error during connection: {e} (attempt {retry_count + 1})")
-            except Exception as e:
-                self._last_error = f"Unexpected error: {e}"
-                logger.error(f"Unexpected connection error: {e} (attempt {retry_count + 1})")
+                self._close_socket_unsafe()
+                self.connected = False
             
-            self._close_socket_unsafe()
-            self.connected = False
-            
-            # Retry with exponential backoff
-            if retry_count < self.MAX_RETRIES:
-                delay = min(self.BASE_RETRY_DELAY * (2 ** retry_count), self.MAX_RETRY_DELAY)
+            # Sleep OUTSIDE the lock to allow other threads to proceed
+            if attempt < self.MAX_RETRIES:
+                delay = min(self.BASE_RETRY_DELAY * (2 ** attempt), self.MAX_RETRY_DELAY)
                 logger.info(f"Retrying connection in {delay:.1f}s...")
                 time.sleep(delay)
-                return self.connect(retry_count + 1)
-            
-            logger.error(f"Failed to connect after {self.MAX_RETRIES + 1} attempts. Last error: {self._last_error}")
-            return False
+        
+        logger.error(f"Failed to connect after {self.MAX_RETRIES + 1} attempts. Last error: {self._last_error}")
+        return False
     
     def _close_socket_unsafe(self):
         """Close socket without lock (internal use only)."""
@@ -340,52 +343,56 @@ class UnrealConnection:
         Raises:
             Various exceptions on failure
         """
-        # Connect (or reconnect)
-        if not self.connect():
-            raise ConnectionError(f"Failed to connect to Unreal Engine: {self._last_error}")
-        
-        try:
-            # Build and send command
-            command_obj = {
-                "type": command,
-                "params": params or {}
-            }
-            command_json = json.dumps(command_obj)
+        # Hold lock for entire send-receive cycle to prevent race conditions
+        # where another thread could close/reconnect the socket mid-operation.
+        # RLock allows nested acquisition from connect()/disconnect() calls.
+        with self._lock:
+            # Connect (or reconnect)
+            if not self.connect():
+                raise ConnectionError(f"Failed to connect to Unreal Engine: {self._last_error}")
             
-            logger.info(f"Sending command (attempt {attempt + 1}): {command}")
-            logger.debug(f"Command payload: {command_json[:500]}...")
-            
-            # Send with timeout
-            self.socket.settimeout(10)  # 10 second send timeout
-            self.socket.sendall(command_json.encode('utf-8'))
-            
-            # Receive response
-            response_data = self._receive_response(command)
-            
-            # Parse response
             try:
-                response = json.loads(response_data.decode('utf-8'))
-            except json.JSONDecodeError as e:
-                logger.error(f"JSON decode error: {e}")
-                logger.debug(f"Raw response: {response_data[:500]}")
-                raise ValueError(f"Invalid JSON response: {e}")
-            
-            logger.info(f"Command {command} completed successfully")
-            
-            # Normalize error responses
-            if response.get("status") == "error":
-                error_msg = response.get("error") or response.get("message", "Unknown error")
-                logger.warning(f"Unreal returned error: {error_msg}")
-            elif response.get("success") is False:
-                error_msg = response.get("error") or response.get("message", "Unknown error")
-                response = {"status": "error", "error": error_msg}
-                logger.warning(f"Unreal returned failure: {error_msg}")
-            
-            return response
-            
-        finally:
-            # Always clean up connection after command
-            self.disconnect()
+                # Build and send command
+                command_obj = {
+                    "type": command,
+                    "params": params or {}
+                }
+                command_json = json.dumps(command_obj)
+                
+                logger.info(f"Sending command (attempt {attempt + 1}): {command}")
+                logger.debug(f"Command payload: {command_json[:500]}...")
+                
+                # Send with timeout
+                self.socket.settimeout(10)  # 10 second send timeout
+                self.socket.sendall(command_json.encode('utf-8'))
+                
+                # Receive response
+                response_data = self._receive_response(command)
+                
+                # Parse response
+                try:
+                    response = json.loads(response_data.decode('utf-8'))
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON decode error: {e}")
+                    logger.debug(f"Raw response: {response_data[:500]}")
+                    raise ValueError(f"Invalid JSON response: {e}")
+                
+                logger.info(f"Command {command} completed successfully")
+                
+                # Normalize error responses
+                if response.get("status") == "error":
+                    error_msg = response.get("error") or response.get("message", "Unknown error")
+                    logger.warning(f"Unreal returned error: {error_msg}")
+                elif response.get("success") is False:
+                    error_msg = response.get("error") or response.get("message", "Unknown error")
+                    response = {"status": "error", "error": error_msg}
+                    logger.warning(f"Unreal returned failure: {error_msg}")
+                
+                return response
+                
+            finally:
+                # Always clean up connection after command
+                self._close_socket_unsafe()
 
 # Global connection instance (singleton pattern)
 _unreal_connection: Optional[UnrealConnection] = None

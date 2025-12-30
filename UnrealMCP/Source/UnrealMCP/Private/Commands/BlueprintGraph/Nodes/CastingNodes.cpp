@@ -22,7 +22,7 @@ UK2Node* FCastingNodeCreator::CreateDynamicCastNode(UEdGraph* Graph, const TShar
 	FString TargetClass;
 	if (Params->TryGetStringField(TEXT("target_class"), TargetClass))
 	{
-		UClass* CastClass = Cast<UClass>(StaticFindObject(UClass::StaticClass(), ANY_PACKAGE, *TargetClass));
+		UClass* CastClass = Cast<UClass>(StaticFindObject(UClass::StaticClass(), nullptr, *TargetClass));
 		if (CastClass)
 		{
 			DynamicCastNode->TargetType = CastClass;
