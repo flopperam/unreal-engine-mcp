@@ -1,27 +1,32 @@
-# The Flopperam Agent for Unreal Engine
+## Update 12/30/2025
 
-**The world's first fully autonomous AI agent for Unreal Engine** — capable of building anything from complete 3D scenes to complex architectural structures, now with integrated **Microsoft Trellis** support for generating custom 3D assets on demand.
+This repository contains the **MCP (Model Context Protocol) server** for Unreal Engine — a powerful tool for controlling Unreal through AI clients like Claude, Cursor, and Windsurf.
 
-## Create Any 3D Asset with Microsoft Trellis Integration
+However, we've now built something significantly more advanced: **The Flop Agent** — a fully autonomous AI agent specifically designed for Unreal Engine. The agent is far more capable than the MCP server, offering:
 
-The agent now seamlessly integrates with **Microsoft Trellis** to generate custom 3D models from text or images. Simply describe what you need, and the agent will generate the asset and place it directly in your Unreal scene.
+- **True Autonomy**: The agent reasons through complex tasks end-to-end without manual tool selection
+- **Microsoft Trellis Integration**: Generate any 3D asset on-demand from text or images
+- **Advanced Building**: Create massive structures with intelligent material and physics decisions
+- **Clean Interface**: Watch the agent work in real-time with clear reasoning visualization
 
-![Custom 3D Assets](assets/3dAsset.png)
-*Generate photorealistic animals, vehicles, or any object you can imagine — the agent creates the 3D model and imports it into your scene automatically*
+**We recommend using the agent for the best experience:** [https://flopperam.com/](https://flopperam.com/)
 
-### What Makes This Revolutionary
-
-- **Fully Autonomous**: The agent reasons through complex building tasks end-to-end
-- **Custom 3D Assets**: Generate any 3D model on-demand using Microsoft Trellis
-- **Smart Architecture**: Automatically determines materials, physics, and spatial relationships  
-- **Clean Agent UI**: Watch the agent work in real-time with clear reasoning steps
-- **All Building Workflows**: Cities, mansions, bridges, and more
-
-**Try the agent today:** [https://flopperam.com/](https://flopperam.com/)
+The MCP server in this repository remains a powerful option for those who want direct control through their preferred AI client.
 
 ---
 
 # The Most Advanced MCP Server for Unreal Engine
+
+**Control Unreal Engine 5.5+ through AI with natural language** — This MCP server enables AI clients to build incredible 3D worlds and architectural masterpieces. Create entire towns, medieval castles, modern mansions, challenging mazes, and complex structures with AI-powered commands.
+
+## Create Any 3D Asset with Microsoft Trellis Integration
+
+**Note:** The Flopperam Agent features seamless Microsoft Trellis integration for generating custom 3D models from text or images.
+
+![Custom 3D Assets](assets/3dAsset.png)
+*The agent generates photorealistic animals, vehicles, or any object you can imagine and imports them into your Unreal scene automatically*
+
+---
 
 [![Unreal Engine](https://img.shields.io/badge/Unreal%20Engine-5.5%2B-orange.svg)](https://www.unrealengine.com/)
 [![YouTube](https://img.shields.io/badge/YouTube-@flopperam-red.svg?logo=youtube)](https://youtube.com/@flopperam)
@@ -29,9 +34,13 @@ The agent now seamlessly integrates with **Microsoft Trellis** to generate custo
 [![Twitter](https://img.shields.io/badge/X-@Flopperam-1DA1F2.svg?logo=x&logoColor=white)](https://twitter.com/Flopperam)
 [![TikTok](https://img.shields.io/badge/TikTok-@flopperam-000000.svg?logo=tiktok&logoColor=white)](https://tiktok.com/@flopperam)
 
-**Control Unreal Engine 5.5+ through AI with natural language. Build incredible 3D worlds and architectural masterpieces using MCP. Create entire towns, medieval castles, modern mansions, challenging mazes, and complex structures with AI-powered commands.**
+[![Unreal Engine](https://img.shields.io/badge/Unreal%20Engine-5.5%2B-orange.svg)](https://www.unrealengine.com/)
+[![YouTube](https://img.shields.io/badge/YouTube-@flopperam-red.svg?logo=youtube)](https://youtube.com/@flopperam)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2.svg?logo=discord&logoColor=white)](https://discord.gg/3KNkke3rnH)
+[![Twitter](https://img.shields.io/badge/X-@Flopperam-1DA1F2.svg?logo=x&logoColor=white)](https://twitter.com/Flopperam)
+[![TikTok](https://img.shields.io/badge/TikTok-@flopperam-000000.svg?logo=tiktok&logoColor=white)](https://tiktok.com/@flopperam)
 
-> **Active Development**: This project is under very active development with consistent updates, new features, and improvements being added regularly. Join our [Discord](https://discord.gg/3KNkke3rnH) to stay updated on the latest releases!
+> **Active Development**: This MCP server is under active development with regular updates and improvements. Join our [Discord](https://discord.gg/3KNkke3rnH) to stay updated on the latest releases!
 
 ## See It In Action
 Watch our comprehensive tutorial for complete setup and usage:
