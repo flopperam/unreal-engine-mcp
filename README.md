@@ -1,13 +1,25 @@
-## Update 12/20/2025
+# The Flopperam Agent for Unreal Engine
 
-We’ve advanced the Unreal Engine MCP into a fully autonomous agent — capable of **far more dynamic building** and smarter, end-to-end execution.
+**The world's first fully autonomous AI agent for Unreal Engine** — capable of building anything from complete 3D scenes to complex architectural structures, now with integrated **Microsoft Trellis** support for generating custom 3D assets on demand.
 
-We’re also bringing over all the best building workflows from here (like the **medieval castle** and **city builder**) into the agent, so you’ll be able to generate the same kinds of results **the exact same way**, just directly through the agent experience.
+## Create Any 3D Asset with Microsoft Trellis Integration
 
-The agent now works with a clean UI so you can clearly see what’s happening as it works.
+The agent now seamlessly integrates with **Microsoft Trellis** to generate custom 3D models from text or images. Simply describe what you need, and the agent will generate the asset and place it directly in your Unreal scene.
 
-**Try it out today:** [https://flopperam.com/](https://flopperam.com/)
+![Custom 3D Assets](assets/3dAsset.png)
+*Generate photorealistic animals, vehicles, or any object you can imagine — the agent creates the 3D model and imports it into your scene automatically*
 
+### What Makes This Revolutionary
+
+- **Fully Autonomous**: The agent reasons through complex building tasks end-to-end
+- **Custom 3D Assets**: Generate any 3D model on-demand using Microsoft Trellis
+- **Smart Architecture**: Automatically determines materials, physics, and spatial relationships  
+- **Clean Agent UI**: Watch the agent work in real-time with clear reasoning steps
+- **All Building Workflows**: Cities, mansions, bridges, and more
+
+**Try the agent today:** [https://flopperam.com/](https://flopperam.com/)
+
+---
 
 # The Most Advanced MCP Server for Unreal Engine
 
@@ -21,7 +33,7 @@ The agent now works with a clean UI so you can clearly see what’s happening as
 
 > **Active Development**: This project is under very active development with consistent updates, new features, and improvements being added regularly. Join our [Discord](https://discord.gg/3KNkke3rnH) to stay updated on the latest releases!
 
-## 🎬 See It In Action
+## See It In Action
 Watch our comprehensive tutorial for complete setup and usage:
 - **[Complete MCP Tutorial & Installation Guide](https://youtu.be/ct5dNJC-Hx4)** - Full walkthrough of installation, setup, and advanced usage
 
@@ -32,14 +44,37 @@ Check out these examples of the MCP server in action on our channel:
 
 ## Featured Capabilities
 
+### Complete Blueprint Visual Scripting
+
+**Program Blueprints entirely through AI** with comprehensive node creation, graph management, and variable systems.
+
 ```bash
-# Create a massive futuristic city with skyscrapers, flying cars, and advanced infrastructure
-> "Build a massive futuristic city with towering skyscrapers"
-→ create_town(town_size="massive", architectural_style="futuristic", building_density=0.95, include_advanced_features=true)
+# Create complex Blueprint logic with control flow, variables, and functions
+> "Create a Blueprint with a health system that tracks damage and triggers a death event"
+→ create_blueprint() + create_variable() + add_node() + connect_nodes()
+
+# Support for 23+ node types across 6 categories:
+# Control Flow: Branch, Comparison, Switch (Byte/Enum/Integer), ExecutionSequence
+# Data: VariableGet, VariableSet, MakeArray
+# Casting: DynamicCast, ClassDynamicCast, CastByteToEnum
+# Utility: Print, CallFunction, Select, SpawnActor
+# Specialized: Timeline, GetDataTableRow, AddComponentByClass, Self, Knot
+# Animation: PlayAnimation, StopAnimation, Timeline nodes
 ```
 
-### Advanced Structures  
+**Advanced Blueprint Features:**
+- **Function Management**: Create custom functions with inputs/outputs, rename, and delete
+- **Variable System**: Full property control (public/private, replication, tooltips, ranges, units)
+- **Node Properties**: Dynamic pin management, type modification, semantic editing
+- **Graph Analysis**: Read complete Blueprint content, analyze execution flow, inspect variables
+- **Connection System**: Wire nodes together with automatic type validation
+
+### World Building & Architecture  
 ```bash
+# Create massive futuristic cities with skyscrapers, flying cars, and advanced infrastructure
+> "Build a massive futuristic city with towering skyscrapers"
+→ create_town(town_size="massive", architectural_style="futuristic", building_density=0.95)
+
 # Build complex multi-room houses with windows, doors, and roofs
 > "Create a Victorian mansion complex with east and west wing houses."
 → construct_house(house_style="mansion", width=1500, height=900)
@@ -58,17 +93,18 @@ Check out these examples of the MCP server in action on our channel:
 
 | **Category** | **Tools** | **Description** |
 |--------------|-----------|-----------------|
+| **Blueprint Visual Scripting** | `add_node`, `connect_nodes`, `delete_node`, `set_node_property`, `create_variable`, `set_blueprint_variable_properties`, `create_function`, `add_function_input`, `add_function_output`, `delete_function`, `rename_function` | Complete Blueprint programming with 23+ node types, variables with full property control, custom functions, and dynamic graph management |
+| **Blueprint Analysis** | `read_blueprint_content`, `analyze_blueprint_graph`, `get_blueprint_variable_details`, `get_blueprint_function_details` | Deep inspection of Blueprint structure, event graphs, execution flow, variables, and functions |
 | **World Building** | `create_town`, `construct_house`, `construct_mansion`, `create_tower`, `create_arch`, `create_staircase` | Build complex architectural structures and entire settlements |
 | **Epic Structures** | `create_castle_fortress`, `create_suspension_bridge`, `create_aqueduct` | Massive engineering marvels and medieval fortresses |
 | **Level Design** | `create_maze`, `create_pyramid`, `create_wall` | Design challenging game levels and puzzles |
 | **Physics & Materials** | `spawn_physics_blueprint_actor`, `set_physics_properties`, `get_available_materials`, `apply_material_to_actor`, `apply_material_to_blueprint`, `set_mesh_material_color` | Create realistic physics simulations and material systems |
 | **Blueprint System** | `create_blueprint`, `compile_blueprint`, `add_component_to_blueprint`, `set_static_mesh_properties` | Visual scripting and custom actor creation |
-| **Blueprint Graph** | `add_node`, `connect_nodes`, `create_variable`, `read_blueprint_content`, `analyze_blueprint_graph`, `get_blueprint_variable_details`, `get_blueprint_function_details` | Create and inspect Blueprint logic with nodes, connections, variables, and graph analysis |
 | **Actor Management** | `get_actors_in_level`, `find_actors_by_name`, `delete_actor`, `set_actor_transform`, `get_actor_material_info` | Precise control over scene objects and inspection |
 
 ---
 
-## ⚡ Lightning-Fast Setup
+## Lightning-Fast Setup
 
 ### Prerequisites
 - **Unreal Engine 5.5+** 
@@ -139,25 +175,9 @@ Add this to your MCP configuration:
 }
 ```
 
-> **⚠️ Having issues with setup?** Check our [Debugging & Troubleshooting Guide](DEBUGGING.md) for solutions to common problems like MCP installation errors and configuration issues.
+> **Having issues with setup?** Check our [Debugging & Troubleshooting Guide](DEBUGGING.md) for solutions to common problems like MCP installation errors and configuration issues.
 >
-> **🎯 Want to program Blueprints with AI?** Check our [Blueprint Graph Programming Guide](Guides/blueprint-graph-guide.md) to learn how to create nodes, connections, and variables programmatically.
-
-### Recommended AI Model
-
-**We strongly recommend using Claude for the best experience.**
-
-Claude has proven to be the most effective AI model for:
-- Understanding complex 3D spatial relationships
-- Generating accurate MCP tool calls
-- Following architectural and physics constraints
-- Creating coherent multi-step building processes
-
-### Enhanced Accuracy with Rules
-
-For improved results, especially when creating specific types of objects, provide the AI with our curated rules:
-
-- **`.cursor/rules/`** - Contains specialized guides for different creation tasks
+> **Want to program Blueprints with AI?** Check our [Blueprint Graph Programming Guide](Guides/blueprint-graph-guide.md) to learn how to create nodes, connections, and variables programmatically.
 
 ### 4. Start Building!
 
