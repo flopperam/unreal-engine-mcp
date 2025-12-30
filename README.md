@@ -9,30 +9,16 @@ However, we've now built something significantly more advanced: **The Flop Agent
 - **Advanced Building**: Create massive structures with intelligent material and physics decisions
 - **Clean Interface**: Watch the agent work in real-time with clear reasoning visualization
 
-**We recommend using the agent for the best experience:** [https://flopperam.com/](https://flopperam.com/)
+![Custom 3D Assets](assets/3dAsset.png)
+*The agent generates photorealistic animals, vehicles, or any object you can imagine and imports them into your Unreal scene automatically*
 
-The MCP server in this repository remains a powerful option for those who want direct control through their preferred AI client.
+**We recommend using the agent for the best experience:** [https://flopperam.com/](https://flopperam.com/)
 
 ---
 
 # The Most Advanced MCP Server for Unreal Engine
 
 **Control Unreal Engine 5.5+ through AI with natural language** — This MCP server enables AI clients to build incredible 3D worlds and architectural masterpieces. Create entire towns, medieval castles, modern mansions, challenging mazes, and complex structures with AI-powered commands.
-
-## Create Any 3D Asset with Microsoft Trellis Integration
-
-**Note:** The Flopperam Agent features seamless Microsoft Trellis integration for generating custom 3D models from text or images.
-
-![Custom 3D Assets](assets/3dAsset.png)
-*The agent generates photorealistic animals, vehicles, or any object you can imagine and imports them into your Unreal scene automatically*
-
----
-
-[![Unreal Engine](https://img.shields.io/badge/Unreal%20Engine-5.5%2B-orange.svg)](https://www.unrealengine.com/)
-[![YouTube](https://img.shields.io/badge/YouTube-@flopperam-red.svg?logo=youtube)](https://youtube.com/@flopperam)
-[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2.svg?logo=discord&logoColor=white)](https://discord.gg/3KNkke3rnH)
-[![Twitter](https://img.shields.io/badge/X-@Flopperam-1DA1F2.svg?logo=x&logoColor=white)](https://twitter.com/Flopperam)
-[![TikTok](https://img.shields.io/badge/TikTok-@flopperam-000000.svg?logo=tiktok&logoColor=white)](https://tiktok.com/@flopperam)
 
 [![Unreal Engine](https://img.shields.io/badge/Unreal%20Engine-5.5%2B-orange.svg)](https://www.unrealengine.com/)
 [![YouTube](https://img.shields.io/badge/YouTube-@flopperam-red.svg?logo=youtube)](https://youtube.com/@flopperam)
