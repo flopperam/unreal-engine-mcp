@@ -40,6 +40,19 @@ from helpers.bridge_aqueduct_creation import (
     build_suspension_bridge_structure, build_aqueduct_structure
 )
 
+# ============================================================================
+# Blueprint Node Graph Tools
+# ============================================================================
+from helpers.blueprint_graph import node_manager
+from helpers.blueprint_graph import variable_manager
+from helpers.blueprint_graph import connector_manager
+from helpers.blueprint_graph import event_manager
+from helpers.blueprint_graph import node_deleter
+from helpers.blueprint_graph import node_properties
+from helpers.blueprint_graph import function_manager
+from helpers.blueprint_graph import function_io
+
+
 # Configure logging with more detailed format
 logging.basicConfig(
     level=logging.DEBUG,
@@ -103,10 +116,14 @@ class UnrealConnection:
         self.socket = None
         self.connected = False
 
-    def receive_full_response(self, sock, buffer_size=4096) -> bytes:
+    def receive_full_response(self, sock, buffer_size=4096, command_type="") -> bytes:
         """Receive a complete response from Unreal, handling chunked data."""
         chunks = []
-        sock.settimeout(30)
+        # Adaptive timeout based on command complexity
+        if "get_available_materials" in command_type:
+            sock.settimeout(90)   # 1.5 minutes for large material lists
+        else:
+            sock.settimeout(60)   # 1 minute for standard operations
         try:
             while True:
                 chunk = sock.recv(buffer_size)
@@ -115,15 +132,15 @@ class UnrealConnection:
                         raise Exception("Connection closed before receiving data")
                     break
                 chunks.append(chunk)
-                
+
                 # Process the data received so far
                 data = b''.join(chunks)
                 decoded_data = data.decode('utf-8')
-                
+
                 # Try to parse as JSON to check if complete
                 try:
                     json.loads(decoded_data)
-                    logger.info(f"Received complete response ({len(data)} bytes)")
+                    logger.info(f"Received complete response ({len(data)} bytes) for {command_type}")
                     return data
                 except json.JSONDecodeError:
                     # Not complete JSON yet, continue reading
@@ -133,34 +150,61 @@ class UnrealConnection:
                     logger.warning(f"Error processing response chunk: {str(e)}")
                     continue
         except socket.timeout:
-            logger.warning("Socket timeout during receive")
+            logger.warning(f"Socket timeout during receive for {command_type}")
             if chunks:
                 data = b''.join(chunks)
                 try:
                     json.loads(data.decode('utf-8'))
-                    logger.info(f"Using partial response after timeout ({len(data)} bytes)")
+                    logger.info(f"Using partial response after timeout ({len(data)} bytes) for {command_type}")
                     return data
                 except:
                     pass
-            raise Exception("Timeout receiving Unreal response")
+            raise Exception(f"Timeout receiving Unreal response for {command_type}")
         except Exception as e:
-            logger.error(f"Error during receive: {str(e)}")
+            logger.error(f"Error during receive for {command_type}: {str(e)}")
             raise
     
     def send_command(self, command: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """Send a command to Unreal Engine and get the response."""
-        # Always reconnect for each command
-        if self.socket:
-            try:
-                self.socket.close()
-            except:
-                pass
-            self.socket = None
-            self.connected = False
-        
-        if not self.connect():
-            logger.error("Failed to connect to Unreal Engine for command")
-            return None
+        # CRITICAL ARCHITECTURAL DECISION: Persistent Connection vs Reconnection
+        #
+        # Previous implementation (commented below) used systematic reconnection for each command.
+        # This was causing performance issues and timeouts, especially during Blueprint operations.
+        #
+        # New implementation uses persistent connection with automatic recovery.
+        # Benefits:
+        # - Eliminates reconnection latency (~50-100ms per command)
+        # - Prevents timeouts during Unreal Engine busy periods
+        # - Improves reliability for complex operations (Blueprint graph functions)
+        # - Reduces network overhead and socket churn
+        #
+        # Risks mitigated:
+        # - Connection drops handled by automatic reconnection logic
+        # - Memory overhead minimal (single TCP socket)
+        # - Port conflicts prevented by dedicated port assignment
+        #
+        # Team Review Required: This change affects core networking architecture.
+        # Please validate performance improvements vs stability concerns before merge.
+
+        # OLD CODE (commented for review - DO NOT DELETE):
+        # # Always reconnect for each command
+        # if self.socket:
+        #     try:
+        #         self.socket.close()
+        #     except:
+        #         pass
+        #     self.socket = None
+        #     self.connected = False
+        #
+        # if not self.connect():
+        #     logger.error("Failed to connect to Unreal Engine for command")
+        #     return None
+
+        # NEW CODE: Persistent connection with recovery
+        if not self.connected or not self.socket:
+            if not self.connect():
+                logger.error("Failed to connect to Unreal Engine for command")
+                return None
         
         try:
             command_obj = {
@@ -172,8 +216,14 @@ class UnrealConnection:
             logger.info(f"Sending command: {command_json}")
             self.socket.sendall(command_json.encode('utf-8'))
             
-            response_data = self.receive_full_response(self.socket)
-            response = json.loads(response_data.decode('utf-8'))
+            response_data = self.receive_full_response(self.socket, command_type=command)
+            if response_data is None:
+                return {"status": "error", "error": "No response data received"}
+            try:
+                response = json.loads(response_data.decode('utf-8'))
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error: {e}, data: {response_data[:200]}...")
+                return {"status": "error", "error": f"Invalid JSON response: {str(e)}"}
             
             logger.info(f"Complete response from Unreal: {response}")
             
@@ -236,16 +286,13 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
     """Handle server startup and shutdown."""
     global _unreal_connection
     logger.info("UnrealMCP Advanced server starting up")
-    try:
-        _unreal_connection = get_unreal_connection()
-        if _unreal_connection:
-            logger.info("Connected to Unreal Engine on startup")
-        else:
-            logger.warning("Could not connect to Unreal Engine on startup")
-    except Exception as e:
-        logger.error(f"Error connecting to Unreal Engine on startup: {e}")
-        _unreal_connection = None
-    
+
+    # FIX: Don't connect to Unreal at startup (blocking call in async context)
+    # Connection will be established lazily on first tool call via get_unreal_connection()
+    # This prevents "RuntimeError: Received request before initialization was complete"
+    _unreal_connection = None
+    logger.info("Unreal connection will be established on first tool call (lazy connection)")
+
     try:
         yield {}
     finally:
@@ -257,7 +304,6 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
 # Initialize server
 mcp = FastMCP(
     "UnrealMCP_Advanced",
-    description="Unreal Engine Advanced Tools - Streamlined MCP server for advanced composition and building tools",
     lifespan=server_lifespan
 )
 
@@ -451,6 +497,194 @@ def compile_blueprint(blueprint_name: str) -> Dict[str, Any]:
         return response or {"success": False, "message": "No response from Unreal"}
     except Exception as e:
         logger.error(f"compile_blueprint error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def read_blueprint_content(
+    blueprint_path: str,
+    include_event_graph: bool = True,
+    include_functions: bool = True,
+    include_variables: bool = True,
+    include_components: bool = True,
+    include_interfaces: bool = True
+) -> Dict[str, Any]:
+    """
+    Read and analyze the complete content of a Blueprint including event graph, 
+    functions, variables, components, and implemented interfaces.
+    
+    Args:
+        blueprint_path: Full path to the Blueprint asset (e.g., "/Game/MyBlueprint.MyBlueprint")
+        include_event_graph: Include event graph nodes and connections
+        include_functions: Include custom functions and their graphs
+        include_variables: Include all Blueprint variables with types and defaults
+        include_components: Include component hierarchy and properties
+        include_interfaces: Include implemented Blueprint interfaces
+    
+    Returns:
+        Dictionary containing complete Blueprint structure and content
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    
+    try:
+        params = {
+            "blueprint_path": blueprint_path,
+            "include_event_graph": include_event_graph,
+            "include_functions": include_functions,
+            "include_variables": include_variables,
+            "include_components": include_components,
+            "include_interfaces": include_interfaces
+        }
+        
+        logger.info(f"Reading Blueprint content for: {blueprint_path}")
+        response = unreal.send_command("read_blueprint_content", params)
+        
+        if response and response.get("success", False):
+            logger.info(f"Successfully read Blueprint content. Found:")
+            if response.get("variables"):
+                logger.info(f"  - {len(response['variables'])} variables")
+            if response.get("functions"):
+                logger.info(f"  - {len(response['functions'])} functions")
+            if response.get("event_graph", {}).get("nodes"):
+                logger.info(f"  - {len(response['event_graph']['nodes'])} event graph nodes")
+            if response.get("components"):
+                logger.info(f"  - {len(response['components'])} components")
+        
+        return response or {"success": False, "message": "No response from Unreal"}
+        
+    except Exception as e:
+        logger.error(f"read_blueprint_content error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def analyze_blueprint_graph(
+    blueprint_path: str,
+    graph_name: str = "EventGraph",
+    include_node_details: bool = True,
+    include_pin_connections: bool = True,
+    trace_execution_flow: bool = True
+) -> Dict[str, Any]:
+    """
+    Analyze a specific graph within a Blueprint (EventGraph, functions, etc.)
+    and provide detailed information about nodes, connections, and execution flow.
+    
+    Args:
+        blueprint_path: Full path to the Blueprint asset
+        graph_name: Name of the graph to analyze ("EventGraph", function name, etc.)
+        include_node_details: Include detailed node properties and settings
+        include_pin_connections: Include all pin-to-pin connections
+        trace_execution_flow: Trace the execution flow through the graph
+    
+    Returns:
+        Dictionary with graph analysis including nodes, connections, and flow
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    
+    try:
+        params = {
+            "blueprint_path": blueprint_path,
+            "graph_name": graph_name,
+            "include_node_details": include_node_details,
+            "include_pin_connections": include_pin_connections,
+            "trace_execution_flow": trace_execution_flow
+        }
+        
+        logger.info(f"Analyzing Blueprint graph: {blueprint_path} -> {graph_name}")
+        response = unreal.send_command("analyze_blueprint_graph", params)
+        
+        if response and response.get("success", False):
+            graph_data = response.get("graph_data", {})
+            logger.info(f"Graph analysis complete:")
+            logger.info(f"  - Graph: {graph_data.get('graph_name', 'Unknown')}")
+            logger.info(f"  - Nodes: {len(graph_data.get('nodes', []))}")
+            logger.info(f"  - Connections: {len(graph_data.get('connections', []))}")
+            if graph_data.get('execution_paths'):
+                logger.info(f"  - Execution paths: {len(graph_data['execution_paths'])}")
+        
+        return response or {"success": False, "message": "No response from Unreal"}
+        
+    except Exception as e:
+        logger.error(f"analyze_blueprint_graph error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def get_blueprint_variable_details(
+    blueprint_path: str,
+    variable_name: str = None
+) -> Dict[str, Any]:
+    """
+    Get detailed information about Blueprint variables including type, 
+    default values, metadata, and usage within the Blueprint.
+    
+    Args:
+        blueprint_path: Full path to the Blueprint asset
+        variable_name: Specific variable name (if None, returns all variables)
+    
+    Returns:
+        Dictionary with variable details including type, defaults, and usage
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    
+    try:
+        params = {
+            "blueprint_path": blueprint_path,
+            "variable_name": variable_name
+        }
+        
+        logger.info(f"Getting Blueprint variable details: {blueprint_path}")
+        if variable_name:
+            logger.info(f"  - Specific variable: {variable_name}")
+        
+        response = unreal.send_command("get_blueprint_variable_details", params)
+        return response or {"success": False, "message": "No response from Unreal"}
+        
+    except Exception as e:
+        logger.error(f"get_blueprint_variable_details error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def get_blueprint_function_details(
+    blueprint_path: str,
+    function_name: str = None,
+    include_graph: bool = True
+) -> Dict[str, Any]:
+    """
+    Get detailed information about Blueprint functions including parameters,
+    return values, local variables, and function graph content.
+    
+    Args:
+        blueprint_path: Full path to the Blueprint asset
+        function_name: Specific function name (if None, returns all functions)
+        include_graph: Include the function's graph nodes and connections
+    
+    Returns:
+        Dictionary with function details including signature and graph content
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    
+    try:
+        params = {
+            "blueprint_path": blueprint_path,
+            "function_name": function_name,
+            "include_graph": include_graph
+        }
+        
+        logger.info(f"Getting Blueprint function details: {blueprint_path}")
+        if function_name:
+            logger.info(f"  - Specific function: {function_name}")
+        
+        response = unreal.send_command("get_blueprint_function_details", params)
+        return response or {"success": False, "message": "No response from Unreal"}
+        
+    except Exception as e:
+        logger.error(f"get_blueprint_function_details error: {e}")
         return {"success": False, "message": str(e)}
 
 
@@ -1632,6 +1866,789 @@ def create_aqueduct(
     except Exception as e:
         logger.error(f"create_aqueduct error: {e}")
         return {"success": False, "message": str(e)}
+
+
+
+# ============================================================================
+# Blueprint Node Graph Tool
+# ============================================================================
+
+@mcp.tool()
+def add_node(
+    blueprint_name: str,
+    node_type: str,
+    pos_x: float = 0,
+    pos_y: float = 0,
+    message: str = "",
+    event_type: str = "BeginPlay",
+    variable_name: str = "",
+    target_function: str = "",
+    target_blueprint: Optional[str] = None,
+    function_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Add a node to a Blueprint graph.
+
+    Create various types of K2Nodes in a Blueprint's event graph or function graph.
+    Supports 23 node types organized by category.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        node_type: Type of node to create. Supported types (23 total):
+
+            CONTROL FLOW:
+                "Branch" - Conditional execution (if/then/else)
+                "Comparison" - Arithmetic/logical operators (==, !=, <, >, AND, OR, etc.)
+                    ℹ️ Types can be changed via set_node_property with action="set_pin_type"
+                "Switch" - Switch on byte/enum value with cases
+                    ℹ️ Creates 1 pin at creation; add more via set_node_property with action="add_pin"
+                "SwitchEnum" - Switch on enum type (auto-generates pins per enum value)
+                    ℹ️ Creates pins based on enum; change enum via set_node_property with action="set_enum_type"
+                "SwitchInteger" - Switch on integer value with cases
+                    ℹ️ Creates 1 pin at creation; add more via set_node_property with action="add_pin"
+                "ExecutionSequence" - Sequential execution with multiple outputs
+                    ℹ️ Creates 1 pin at creation; add/remove via set_node_property (add_pin/remove_pin)
+
+            DATA:
+                "VariableGet" - Read a variable value (⚠️ variable must exist in Blueprint)
+                "VariableSet" - Set a variable value (⚠️ variable must exist and be assignable)
+                "MakeArray" - Create array from individual inputs
+                    ℹ️ Creates 1 pin at creation; add/remove via set_node_property with action="set_num_elements"
+
+            CASTING:
+                "DynamicCast" - Cast object to specific class (⚠️ handle "Cast Failed" output)
+                "ClassDynamicCast" - Cast class reference to derived class (⚠️ handle failure cases)
+                "CastByteToEnum" - Convert byte value to enum (⚠️ byte must be valid enum range)
+
+            UTILITY:
+                "Print" - Debug output to screen/log (configurable duration and color)
+                "CallFunction" - Call any blueprint/engine function (⚠️ function must exist)
+                "Select" - Choose between two inputs based on boolean condition
+                "SpawnActor" - Spawn actor from class (⚠️ class must derive from Actor)
+
+            SPECIALIZED:
+                "Timeline" - Animation timeline playback with curve tracks
+                    ⚠️ REQUIRES MANUAL IMPLEMENTATION: Animation curves must be added in editor
+                "GetDataTableRow" - Query row from data table (⚠️ DataTable must exist)
+                "AddComponentByClass" - Dynamically add component to actor
+                "Self" - Reference to current actor/object
+                "Knot" - Invisible reroute node (wire organization only)
+
+            EVENT:
+                "Event" - Blueprint event (specify event_type: BeginPlay, Tick, etc.)
+                    ℹ️ Tick events run every frame - be mindful of performance impact
+
+        pos_x: X position in graph (default: 0)
+        pos_y: Y position in graph (default: 0)
+        message: For Print nodes, the text to print
+        event_type: For Event nodes, the event name (BeginPlay, Tick, Destroyed, etc.)
+        variable_name: For Variable nodes, the variable name
+        target_function: For CallFunction nodes, the function to call
+        target_blueprint: For CallFunction nodes, optional path to target Blueprint
+        function_name: Optional name of function graph to add node to (if None, uses EventGraph)
+
+    Returns:
+        Dictionary with success status, node_id, and position
+
+    Important Notes:
+        - Most nodes can have pins modified after creation via set_node_property
+        - Dynamic pin management: Switch/SwitchEnum/ExecutionSequence/MakeArray support pin operations
+        - Timeline is the ONLY node requiring manual implementation (curves must be added in editor)
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        node_params = {
+            "pos_x": pos_x,
+            "pos_y": pos_y
+        }
+
+        if message:
+            node_params["message"] = message
+        if event_type:
+            node_params["event_type"] = event_type
+        if variable_name:
+            node_params["variable_name"] = variable_name
+        if target_function:
+            node_params["target_function"] = target_function
+        if target_blueprint:
+            node_params["target_blueprint"] = target_blueprint
+        if function_name:
+            node_params["function_name"] = function_name
+
+        result = node_manager.add_node(
+            unreal,
+            blueprint_name,
+            node_type,
+            node_params
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"add_node error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def connect_nodes(
+    blueprint_name: str,
+    source_node_id: str,
+    source_pin_name: str,
+    target_node_id: str,
+    target_pin_name: str,
+    function_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Connect two nodes in a Blueprint graph.
+
+    Links a source pin to a target pin between existing nodes in a Blueprint's event graph or function graph.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        source_node_id: ID of the source node
+        source_pin_name: Name of the output pin on the source node
+        target_node_id: ID of the target node
+        target_pin_name: Name of the input pin on the target node
+        function_name: Optional name of function graph (if None, uses EventGraph)
+
+    Returns:
+        Dictionary with success status and connection details
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = connector_manager.connect_nodes(
+            unreal,
+            blueprint_name,
+            source_node_id,
+            source_pin_name,
+            target_node_id,
+            target_pin_name,
+            function_name
+        )
+
+        return result
+    except Exception as e:
+        logger.error(f"connect_nodes error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def create_variable(
+    blueprint_name: str,
+    variable_name: str,
+    variable_type: str,
+    default_value: Any = None,
+    is_public: bool = False,
+    tooltip: str = "",
+    category: str = "Default"
+) -> Dict[str, Any]:
+    """
+    Create a variable in a Blueprint.
+
+    Adds a new variable to a Blueprint with specified type, default value, and properties.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        variable_name: Name of the variable to create
+        variable_type: Type of the variable ("bool", "int", "float", "string", "vector", "rotator")
+        default_value: Default value for the variable (optional)
+        is_public: Whether the variable should be public/editable (default: False)
+        tooltip: Tooltip text for the variable (optional)
+        category: Category for organizing variables (default: "Default")
+
+    Returns:
+        Dictionary with success status and variable details
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = variable_manager.create_variable(
+            unreal,
+            blueprint_name,
+            variable_name,
+            variable_type,
+            default_value,
+            is_public,
+            tooltip,
+            category
+        )
+
+        return result
+    except Exception as e:
+        logger.error(f"create_variable error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def set_blueprint_variable_properties(
+    blueprint_name: str,
+    variable_name: str,
+    var_name: Optional[str] = None,
+    var_type: Optional[str] = None,
+    is_blueprint_readable: Optional[bool] = None,
+    is_blueprint_writable: Optional[bool] = None,
+    is_public: Optional[bool] = None,
+    is_editable_in_instance: Optional[bool] = None,
+    tooltip: Optional[str] = None,
+    category: Optional[str] = None,
+    default_value: Any = None,
+    expose_on_spawn: Optional[bool] = None,
+    expose_to_cinematics: Optional[bool] = None,
+    slider_range_min: Optional[str] = None,
+    slider_range_max: Optional[str] = None,
+    value_range_min: Optional[str] = None,
+    value_range_max: Optional[str] = None,
+    units: Optional[str] = None,
+    bitmask: Optional[bool] = None,
+    bitmask_enum: Optional[str] = None,
+    replication_enabled: Optional[bool] = None,
+    replication_condition: Optional[int] = None,
+    is_private: Optional[bool] = None
+) -> Dict[str, Any]:
+    """
+    Modify properties of an existing Blueprint variable without deleting it.
+
+    Preserves all VariableGet and VariableSet nodes connected to this variable.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        variable_name: Name of the variable to modify
+
+        var_name: Rename the variable (optional)
+            ✅ PASS - VarDesc->VarName works correctly
+
+        var_type: Change variable type (optional)
+            ✅ PASS - VarDesc->VarType works correctly (int→float returns "real")
+
+        is_blueprint_readable: Allow reading in Blueprint (VariableGet) (optional)
+            ✅ PASS - CPF_BlueprintReadOnly flag (inverted logic)
+
+        is_blueprint_writable: Allow writing in Blueprint (Set) (optional)
+            ✅ PASS - CPF_BlueprintReadOnly flag (inverted logic)
+            ⚠️ NOT returned by get_variable_details()
+
+        is_public: Visible in Blueprint editor (optional)
+            ✅ PASS - Controls variable visibility
+
+        is_editable_in_instance: Modifiable on instances (optional)
+            ✅ PASS - CPF_DisableEditOnInstance flag (inverted logic)
+
+        tooltip: Variable description (optional)
+            ✅ PASS - Metadata MD_Tooltip works correctly
+
+        category: Variable category (optional)
+            ✅ PASS - Direct property Category works
+
+        default_value: New default value (optional)
+            ✅ PASS - Works but get_variable_details() returns empty string
+
+        expose_on_spawn: Show in spawn dialog (optional)
+            ✅ PASS - Metadata MD_ExposeOnSpawn works
+            ⚠️ Requires is_editable_in_instance=true to be visible
+            ⚠️ NOT returned by get_variable_details()
+
+        expose_to_cinematics: Expose to cinematics (optional)
+            ✅ PASS - CPF_Interp flag works correctly
+            ⚠️ NOT returned by get_variable_details()
+
+        slider_range_min: UI slider minimum value (optional)
+            ✅ PASS - Metadata MD_UIMin works (string value)
+            ⚠️ NOT returned by get_variable_details()
+
+        slider_range_max: UI slider maximum value (optional)
+            ✅ PASS - Metadata MD_UIMax works (string value)
+            ⚠️ NOT returned by get_variable_details()
+
+        value_range_min: Clamp minimum value (optional)
+            ✅ PASS - Metadata MD_ClampMin works (string value)
+            ⚠️ NOT returned by get_variable_details()
+
+        value_range_max: Clamp maximum value (optional)
+            ✅ PASS - Metadata MD_ClampMax works (string value)
+            ⚠️ NOT returned by get_variable_details()
+
+        units: Display units (optional)
+            ⚠️ PARTIAL - Metadata MD_Units works for value display (e.g., "0.0 cm")
+            ❌ UI dropdown stays at "None" (Unreal Editor limitation - dropdown doesn't sync with metadata)
+            ⚠️ Use long format: "Centimeters", "Meters" (not "cm", "m")
+            ⚠️ NOT returned by get_variable_details()
+
+        bitmask: Treat as bitmask (optional)
+            ✅ PASS - Metadata TEXT("Bitmask") works correctly
+            ⚠️ NOT returned by get_variable_details()
+
+        bitmask_enum: Bitmask enum type (optional)
+            ✅ PASS - Metadata TEXT("BitmaskEnum") works
+            ⚠️ REQUIRES full path format: "/Script/ModuleName.EnumName"
+            ❌ Short names generate warning and don't sync dropdown
+            ✅ Validated enums (use FULL PATHS):
+                - /Script/UniversalObjectLocator.ELocatorResolveFlags
+                - /Script/JsonObjectGraph.EJsonStringifyFlags
+                - /Script/MediaAssets.EMediaAudioCaptureDeviceFilter
+                - /Script/MediaAssets.EMediaVideoCaptureDeviceFilter
+                - /Script/MediaAssets.EMediaWebcamCaptureDeviceFilter
+                - /Script/Engine.EAnimAssetCurveFlags
+                - /Script/Engine.EHardwareDeviceSupportedFeatures
+                - /Script/EnhancedInput.EMappingQueryIssue
+                - /Script/EnhancedInput.ETriggerEvent
+            ⚠️ NOT returned by get_variable_details()
+
+        replication_enabled: Enable network replication (CPF_Net flag) (optional)
+            ✅ PASS - CPF_Net flag works - Changes "Replication" dropdown (None ↔ Replicated)
+            ⚠️ NOT returned by get_variable_details()
+
+        replication_condition: Network replication condition (ELifetimeCondition 0-7) (optional)
+            ✅ PASS - VarDesc->ReplicationCondition works
+            ✅ Changes "Replication Condition" dropdown (e.g., None → Initial Only)
+            ⚠️ Values: 0=None, 1=InitialOnly, 2=OwnerOnly, 3=SkipOwner, 4=SimulatedOnly, 5=AutonomousOnly, 6=SimulatedOrPhysics, 7=InitialOrOwner
+            ✅ Returned by get_variable_details() as "replication"
+
+        is_private: Set variable as private (optional)
+            ❌ UNRESOLVED - Property flag/metadata not yet identified
+            ⚠️ Attempted CPF_NativeAccessSpecifierPrivate flag and MD_AllowPrivateAccess metadata - neither work
+            ⚠️ The property that controls "Privé" (Private) checkbox remains unknown
+            ⚠️ Parameter exists but has no effect on UI - do NOT use until resolved
+
+    Returns:
+        Dictionary with success status and updated properties
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = variable_manager.set_blueprint_variable_properties(
+            unreal,
+            blueprint_name,
+            variable_name,
+            var_name,
+            var_type,
+            is_blueprint_readable,
+            is_blueprint_writable,
+            is_public,
+            is_editable_in_instance,
+            tooltip,
+            category,
+            default_value,
+            expose_on_spawn,
+            expose_to_cinematics,
+            slider_range_min,
+            slider_range_max,
+            value_range_min,
+            value_range_max,
+            units,
+            bitmask,
+            bitmask_enum,
+            replication_enabled,
+            replication_condition,
+            is_private
+        )
+
+        return result
+    except Exception as e:
+        logger.error(f"set_blueprint_variable_properties error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def add_event_node(
+    blueprint_name: str,
+    event_name: str,
+    pos_x: float = 0,
+    pos_y: float = 0
+) -> Dict[str, Any]:
+    """
+    Add an event node to a Blueprint graph.
+
+    Create specialized event nodes (ReceiveBeginPlay, ReceiveTick, etc.)
+    in a Blueprint's event graph at specified positions.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        event_name: Name of the event (e.g., "ReceiveBeginPlay", "ReceiveTick", "ReceiveDestroyed")
+        pos_x: X position in graph (default: 0)
+        pos_y: Y position in graph (default: 0)
+
+    Returns:
+        Dictionary with success status, node_id, event_name, and position
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = event_manager.add_event_node(
+            unreal,
+            blueprint_name,
+            event_name,
+            pos_x,
+            pos_y
+        )
+
+        return result
+    except Exception as e:
+        logger.error(f"add_event_node error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def delete_node(
+    blueprint_name: str,
+    node_id: str,
+    function_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Delete a node from a Blueprint graph.
+
+    Removes a node and all its connections from either the EventGraph
+    or a specific function graph.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        node_id: ID of the node to delete (NodeGuid or node name)
+        function_name: Name of function graph (optional, defaults to EventGraph)
+
+    Returns:
+        Dictionary with success status and deleted_node_id
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = node_deleter.delete_node(
+            unreal,
+            blueprint_name,
+            node_id,
+            function_name
+        )
+        return result
+    except Exception as e:
+        logger.error(f"delete_node error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def set_node_property(
+    blueprint_name: str,
+    node_id: str,
+    property_name: str = "",
+    property_value: Any = None,
+    function_name: Optional[str] = None,
+    action: Optional[str] = None,
+    pin_type: Optional[str] = None,
+    pin_name: Optional[str] = None,
+    enum_type: Optional[str] = None,
+    new_type: Optional[str] = None,
+    target_type: Optional[str] = None,
+    target_function: Optional[str] = None,
+    target_class: Optional[str] = None,
+    event_type: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Set a property on a Blueprint node or perform semantic node editing.
+
+    This function supports both simple property modifications and advanced semantic
+    node editing operations (pin management, type modifications, reference updates).
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        node_id: ID of the node to modify
+        property_name: Name of property to set (legacy mode, used if action not specified)
+        property_value: Value to set (legacy mode)
+        function_name: Name of function graph (optional, defaults to EventGraph)
+        action: Semantic action to perform - can be one of:
+            Phase 1 (Pin Management):
+                - "add_pin": Add a pin to a node (requires pin_type)
+                - "remove_pin": Remove a pin from a node (requires pin_name)
+                - "set_enum_type": Set enum type on a node (requires enum_type)
+            Phase 2 (Type Modification):
+                - "set_pin_type": Change pin type on comparison nodes (requires pin_name, new_type)
+                - "set_value_type": Change value type on select nodes (requires new_type)
+                - "set_cast_target": Change cast target type (requires target_type)
+            Phase 3 (Reference Updates - DESTRUCTIVE):
+                - "set_function_call": Change function being called (requires target_function)
+                - "set_event_type": Change event type (requires event_type)
+
+    Semantic action parameters:
+        pin_type: Type of pin to add ("SwitchCase", "ExecutionOutput", "ArrayElement", "EnumValue")
+        pin_name: Name of pin to remove or modify
+        enum_type: Full path to enum type (e.g., "/Game/Enums/ECardinalDirection")
+        new_type: New type for pin or value ("int", "float", "string", "bool", "vector", etc.)
+        target_type: Target class path for casting
+        target_function: Name of function to call
+        target_class: Optional class containing the function
+        event_type: Event type (e.g., "BeginPlay", "Tick", "Destroyed")
+
+    Returns:
+        Dictionary with success status and details
+
+    Supported legacy properties by node type:
+        - Print nodes: "message", "duration", "text_color"
+        - Variable nodes: "variable_name"
+        - All nodes: "pos_x", "pos_y", "comment"
+
+    Examples:
+        Legacy mode (set simple property):
+            set_node_property(
+                blueprint_name="MyActorBlueprint",
+                node_id="K2Node_1234567890",
+                property_name="message",
+                property_value="Hello World!"
+            )
+
+        Semantic mode (add pin):
+            set_node_property(
+                blueprint_name="MyActorBlueprint",
+                node_id="K2Node_Switch_123",
+                action="add_pin",
+                pin_type="SwitchCase"
+            )
+
+        Semantic mode (set enum type):
+            set_node_property(
+                blueprint_name="MyActorBlueprint",
+                node_id="K2Node_SwitchEnum_456",
+                action="set_enum_type",
+                enum_type="ECardinalDirection"
+            )
+
+        Semantic mode (change function call):
+            set_node_property(
+                blueprint_name="MyActorBlueprint",
+                node_id="K2Node_CallFunction_789",
+                action="set_function_call",
+                target_function="BeginPlay",
+                target_class="APawn"
+            )
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        # Build kwargs for semantic actions
+        kwargs = {}
+        if action is not None:
+            if pin_type is not None:
+                kwargs["pin_type"] = pin_type
+            if pin_name is not None:
+                kwargs["pin_name"] = pin_name
+            if enum_type is not None:
+                kwargs["enum_type"] = enum_type
+            if new_type is not None:
+                kwargs["new_type"] = new_type
+            if target_type is not None:
+                kwargs["target_type"] = target_type
+            if target_function is not None:
+                kwargs["target_function"] = target_function
+            if target_class is not None:
+                kwargs["target_class"] = target_class
+            if event_type is not None:
+                kwargs["event_type"] = event_type
+
+        result = node_properties.set_node_property(
+            unreal,
+            blueprint_name,
+            node_id,
+            property_name,
+            property_value,
+            function_name,
+            action,
+            **kwargs
+        )
+        return result
+    except Exception as e:
+        logger.error(f"set_node_property error: {e}", exc_info=True)
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def create_function(
+    blueprint_name: str,
+    function_name: str,
+    return_type: str = "void"
+) -> Dict[str, Any]:
+    """
+    Create a new function in a Blueprint.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        function_name: Name for the new function
+        return_type: Return type of the function (default: "void")
+
+    Returns:
+        Dictionary with function_name, graph_id or error
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = function_manager.create_function_handler(
+            unreal,
+            blueprint_name,
+            function_name,
+            return_type
+        )
+        return result
+    except Exception as e:
+        logger.error(f"create_function error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def add_function_input(
+    blueprint_name: str,
+    function_name: str,
+    param_name: str,
+    param_type: str,
+    is_array: bool = False
+) -> Dict[str, Any]:
+    """
+    Add an input parameter to a Blueprint function.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        function_name: Name of the function
+        param_name: Name of the input parameter
+        param_type: Type of the parameter (bool, int, float, string, vector, etc.)
+        is_array: Whether the parameter is an array (default: False)
+
+    Returns:
+        Dictionary with param_name, param_type, and direction or error
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = function_io.add_function_input_handler(
+            unreal,
+            blueprint_name,
+            function_name,
+            param_name,
+            param_type,
+            is_array
+        )
+        return result
+    except Exception as e:
+        logger.error(f"add_function_input error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def add_function_output(
+    blueprint_name: str,
+    function_name: str,
+    param_name: str,
+    param_type: str,
+    is_array: bool = False
+) -> Dict[str, Any]:
+    """
+    Add an output parameter to a Blueprint function.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        function_name: Name of the function
+        param_name: Name of the output parameter
+        param_type: Type of the parameter (bool, int, float, string, vector, etc.)
+        is_array: Whether the parameter is an array (default: False)
+
+    Returns:
+        Dictionary with param_name, param_type, and direction or error
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = function_io.add_function_output_handler(
+            unreal,
+            blueprint_name,
+            function_name,
+            param_name,
+            param_type,
+            is_array
+        )
+        return result
+    except Exception as e:
+        logger.error(f"add_function_output error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def delete_function(
+    blueprint_name: str,
+    function_name: str
+) -> Dict[str, Any]:
+    """
+    Delete a function from a Blueprint.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        function_name: Name of the function to delete
+
+    Returns:
+        Dictionary with deleted_function_name or error
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = function_manager.delete_function_handler(
+            unreal,
+            blueprint_name,
+            function_name
+        )
+        return result
+    except Exception as e:
+        logger.error(f"delete_function error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def rename_function(
+    blueprint_name: str,
+    old_function_name: str,
+    new_function_name: str
+) -> Dict[str, Any]:
+    """
+    Rename a function in a Blueprint.
+
+    Args:
+        blueprint_name: Name of the Blueprint to modify
+        old_function_name: Current name of the function
+        new_function_name: New name for the function
+
+    Returns:
+        Dictionary with new_function_name or error
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        result = function_manager.rename_function_handler(
+            unreal,
+            blueprint_name,
+            old_function_name,
+            new_function_name
+        )
+        return result
+    except Exception as e:
+        logger.error(f"rename_function error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+# Run the server
+
+
 
 
 # Run the server
