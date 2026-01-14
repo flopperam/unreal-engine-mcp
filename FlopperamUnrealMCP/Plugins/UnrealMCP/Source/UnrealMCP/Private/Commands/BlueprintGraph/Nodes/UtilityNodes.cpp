@@ -1,5 +1,5 @@
-#include "BlueprintGraph/Nodes/UtilityNodes.h"
-#include "BlueprintGraph/Nodes/NodeCreatorUtils.h"
+#include "Commands/BlueprintGraph/Nodes/UtilityNodes.h"
+#include "Commands/BlueprintGraph/Nodes/NodeCreatorUtils.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_Select.h"
 #include "K2Node_SpawnActorFromClass.h"

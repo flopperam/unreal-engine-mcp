@@ -1,4 +1,4 @@
-#include "BlueprintGraph/Nodes/NodeCreatorUtils.h"
+#include "Commands/BlueprintGraph/Nodes/NodeCreatorUtils.h"
 #include "K2Node.h"
 #include "EdGraph/EdGraph.h"
 #include "Json.h"

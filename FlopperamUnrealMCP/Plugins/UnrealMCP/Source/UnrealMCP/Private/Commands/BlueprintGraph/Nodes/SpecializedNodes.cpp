@@ -1,5 +1,5 @@
-#include "BlueprintGraph/Nodes/SpecializedNodes.h"
-#include "BlueprintGraph/Nodes/NodeCreatorUtils.h"
+#include "Commands/BlueprintGraph/Nodes/SpecializedNodes.h"
+#include "Commands/BlueprintGraph/Nodes/NodeCreatorUtils.h"
 #include "K2Node_GetDataTableRow.h"
 #include "K2Node_AddComponentByClass.h"
 #include "K2Node_Self.h"

@@ -1,5 +1,5 @@
-#include "BlueprintGraph/Nodes/CastingNodes.h"
-#include "BlueprintGraph/Nodes/NodeCreatorUtils.h"
+#include "Commands/BlueprintGraph/Nodes/CastingNodes.h"
+#include "Commands/BlueprintGraph/Nodes/NodeCreatorUtils.h"
 #include "Json.h"
 #include "K2Node_CastByteToEnum.h"
 #include "K2Node_ClassDynamicCast.h"
