@@ -139,6 +139,71 @@ cp -r UnrealMCP/ "C:/Program Files/Epic Games/UE_5.5/Engine/Plugins/"
 Edit → Plugins → Search "UnrealMCP" → Enable
 ```
 
+#### Extra steps for Mac
+If you're on macOS and Unreal Engine fails to open the project due to compilation errors, you'll need to manually compile the C++ plugin first. To do so, follow these steps:
+
+##### Step 1: Check Your Xcode Version
+
+```bash
+xcodebuild -version
+xcrun --show-sdk-version
+```
+
+Note your Xcode version number (e.g., `26.0.1`, `16.0`, `15.2`, etc.). If your version is newer than 16.0, you'll need to patch the Unreal Engine SDK configuration.
+
+##### Step 2: Patch Unreal Engine SDK Configuration
+
+Edit the file at your Unreal Engine installation (replace `UE_5.X` with your version):
+
+```bash
+# Path to edit:
+/Users/Shared/Epic Games/UE_5.X/Engine/Config/Apple/Apple_SDK.json
+```
+
+Update the following values:
+
+**Change 1:** Update `MaxVersion` to support your Xcode version
+```json
+{
+  "MaxVersion": "YOUR_XCODE_VERSION.9.0",  // e.g., "26.9.0" if you have Xcode 26.x
+}
+```
+Replace `YOUR_XCODE_VERSION` with your major Xcode version from Step 1.
+
+**Change 2:** Add LLVM version mapping for your Xcode version (add to the `AppleVersionToLLVMVersions` array)
+```json
+{
+  "AppleVersionToLLVMVersions": [
+    "14.0.0-14.0.0",
+    "14.0.3-15.0.0",
+    "15.0.0-16.0.0",
+    "16.0.0-17.0.6",
+    "16.3.0-19.1.4",
+    "YOUR_XCODE_VERSION.0.0-19.1.4"  // e.g., "26.0.0-19.1.4" for Xcode 26.x
+  ]
+}
+```
+Replace `YOUR_XCODE_VERSION` with your major Xcode version from Step 1.
+
+##### Step 3: Compile the Plugin
+
+Run the Unreal Build Tool to compile the project:
+
+```bash
+"/Users/Shared/Epic Games/UE_5.X/Engine/Build/BatchFiles/Mac/Build.sh" \
+  UnrealEditor Mac Development \
+  -Project="/path/to/unreal-engine-mcp/FlopperamUnrealMCP/FlopperamUnrealMCP.uproject" \
+  -WaitMutex
+```
+
+Replace:
+- `UE_5.X` with your Unreal Engine version (e.g., `UE_5.5`)
+- `/path/to/unreal-engine-mcp/` with the actual path to your cloned repository
+
+##### Step 4: Open the Project
+
+Once compilation succeeds, you can open `FlopperamUnrealMCP.uproject` in Unreal Engine.
+
 ### 2. Launch the MCP Server
 
 ```bash
@@ -169,6 +234,10 @@ Add this to your MCP configuration:
   }
 }
 ```
+
+Note that on Mac, and sometimes on Windows, you may have to replace the "uv" string passed as the value to "command" in the above `mcp.json` file with the exact absolute path to the uv executable. To get that path, run one of these commands:
+- Mac: `which uv`
+- Windows: `where uv`
 
 > **Having issues with setup?** Check our [Debugging & Troubleshooting Guide](DEBUGGING.md) for solutions to common problems like MCP installation errors and configuration issues.
 >
