@@ -1,18 +1,28 @@
-## Update 12/30/2025
+## Update 01/14/2026
 
-This repository contains the **MCP (Model Context Protocol) server** for Unreal Engine — a powerful tool for controlling Unreal through AI clients like Claude, Cursor, and Windsurf.
+---
 
-However, we've now built something significantly more advanced: **The Flop Agent** — a fully autonomous AI agent specifically designed for Unreal Engine. The agent is far more capable than the MCP server, offering:
+This repository contains the **MCP (Model Context Protocol) server** for Unreal Engine, a powerful tool for controlling Unreal through AI clients like Claude, Cursor, and other MCP Hosts.
 
-- **True Autonomy**: The agent reasons through complex tasks end-to-end without manual tool selection
-- **Microsoft Trellis Integration**: Generate any 3D asset on-demand from text or images
+However, we've now built something significantly more advanced: **The Flop Agent**, a fully autonomous AI agent specifically designed for Unreal Engine.
+
+### Current Capabilities
+- **True Autonomy**: Reasons through complex tasks end-to-end without manual tool selection
 - **Advanced Building**: Create massive structures with intelligent material and physics decisions
-- **Clean Interface**: Watch the agent work in real-time with clear reasoning visualization
+- **AI 3D Generation**: Generate custom 3D models from text or images using Microsoft Trellis
+- **Scene Understanding**: Query actors, transforms, bounds, and spatial relationships in your level
+- **Smart Asset Search**: Find any asset by name, class, path, or explore dependencies
+- **Material System**: Create and apply PBR materials with full parameter control
 
-![Custom 3D Assets](assets/3dAsset.png)
-*The agent generates photorealistic animals, vehicles, or any object you can imagine and imports them into your Unreal scene automatically*
+### Coming in v0.6 (Jan 23) -  [https://flopperam.com/](https://flopperam.com/)
+- **Blueprint Analysis**: Inspect Blueprint graphs, nodes, connections, pins, and execution flow
+- **In-Editor Access**: Chat with Flop directly inside Unreal Editor
+<img width="1706" height="1309" alt="Screenshot 2026-01-14 220636" src="https://github.com/user-attachments/assets/6e3e7439-3055-467a-9fe0-63c85dd7a0ad" />
 
-**We recommend using the agent for the best experience:** [https://flopperam.com/](https://flopperam.com/)
+### On the Roadmap
+- **Full Blueprint Modifications**: Add nodes, create events, and wire pin connections programmatically
+
+**Try the agent for the best experience:** [https://flopperam.com/](https://flopperam.com/)
 
 ---
 
