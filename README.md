@@ -1,4 +1,4 @@
-## Update 01/14/2026
+## Update 01/24/2026
 
 ---
 
@@ -6,23 +6,41 @@ This repository contains the **MCP (Model Context Protocol) server** for Unreal 
 
 However, we've now built something significantly more advanced: **The Flop Agent**, a fully autonomous AI agent specifically designed for Unreal Engine.
 
-### Current Capabilities
-- **True Autonomy**: Reasons through complex tasks end-to-end without manual tool selection
-- **Advanced Building**: Create massive structures with intelligent material and physics decisions
-- **AI 3D Generation**: Generate custom 3D models from text or images using Microsoft Trellis
-- **Scene Understanding**: Query actors, transforms, bounds, and spatial relationships in your level
-- **Smart Asset Search**: Find any asset by name, class, path, or explore dependencies
-- **Material System**: Create and apply PBR materials with full parameter control
+## v0.6 Now Released - [https://flopperam.com/](https://flopperam.com/)
 
-### Coming in v0.6 (Jan 23) -  [https://flopperam.com/](https://flopperam.com/)
-- **Blueprint Analysis**: Inspect Blueprint graphs, nodes, connections, pins, and execution flow
-- **In-Editor Access**: Chat with Flop directly inside Unreal Editor
+### CHAT RIGHT INSIDE UNREAL
+The agent now runs in an embedded browser directly in the Unreal Editor. No more switching windows. Open the FlopAI panel and chat with the agent while you are looking at your scene.
+
 <img width="1706" height="1309" alt="Screenshot 2026-01-14 220636" src="https://github.com/user-attachments/assets/6e3e7439-3055-467a-9fe0-63c85dd7a0ad" />
 
-### On the Roadmap
-- **Full Blueprint Modifications**: Add nodes, create events, and wire pin connections programmatically
+### UNREAL VERSION SUPPORT
+v0.6 now supports Unreal Engine 5.5 and 5.6, in addition to 5.7.
 
-**Try the agent for the best experience:** [https://flopperam.com/](https://flopperam.com/)
+### BLUEPRINT ANALYSIS TOOL
+We added a new Blueprint Analysis tool that lets the agent deeply inspect your Blueprints, including:
+- Variables, functions, event dispatchers, interfaces
+- Component hierarchies with key properties
+- Graph nodes and connections for execution and data flow
+- Selected nodes in the active editor
+- Full graph analysis
+
+Ask it to explain how a Blueprint works and it can actually read the graph structure and talk through what is happening.
+
+**Important note:** Blueprint Analysis is focused on reading and understanding right now. It cannot perform complex Blueprint modifications yet. That is coming in the next release in early February.
+
+### PREMIUM MODEL SUPPORT
+We added support for top-tier reasoning models like Claude Opus 4.5. These are much better at complex multi-step builds that used to be hit or miss. Think full environments from a single prompt.
+
+The agent will execute dozens of tools in sequence, creating materials, placing actors, and verifying its work as it goes.
+
+### 3D GENERATION QUALITY TIERS
+Text and image to 3D now has three quality levels:
+- **Good**: Fast iteration, lower detail
+- **High Quality**: Balanced quality
+- **Very High Quality**: Maximum detail, longer generation
+
+### DOCUMENTATION
+Full docs are live at [flopperam.com/docs](https://flopperam.com/docs) covering installation, agent modes, 3D generation, Blueprint analysis, and examples.
 
 ---
 
