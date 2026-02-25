@@ -558,11 +558,14 @@ def add_component_to_blueprint(
             "blueprint_name": blueprint_name,
             "component_type": component_type,
             "component_name": component_name,
-            "location": location,
-            "rotation": rotation,
-            "scale": scale,
             "component_properties": component_properties
         }
+        if location:
+            params["location"] = location
+        if rotation:
+            params["rotation"] = rotation
+        if scale:
+            params["scale"] = scale
         response = unreal.send_command("add_component_to_blueprint", params)
         return response or {"success": False, "message": "No response from Unreal"}
     except Exception as e:
@@ -636,6 +639,31 @@ def compile_blueprint(blueprint_name: str) -> Dict[str, Any]:
         return response or {"success": False, "message": "No response from Unreal"}
     except Exception as e:
         logger.error(f"compile_blueprint error: {e}")
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def spawn_blueprint_in_level(
+    blueprint_name: str,
+    actor_name: str,
+    location: List[float] = [0, 0, 0],
+    rotation: List[float] = [0, 0, 0]
+) -> Dict[str, Any]:
+    """Spawn an existing Blueprint as an actor in the current level."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        params = {
+            "blueprint_name": blueprint_name,
+            "actor_name": actor_name,
+            "location": location,
+            "rotation": rotation
+        }
+        response = unreal.send_command("spawn_blueprint_actor", params)
+        return response or {"success": False, "message": "No response from Unreal"}
+    except Exception as e:
+        logger.error(f"spawn_blueprint_in_level error: {e}")
         return {"success": False, "message": str(e)}
 
 @mcp.tool()
