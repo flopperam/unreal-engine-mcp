@@ -25,4 +25,8 @@ private:
 
     // Blueprint actor spawning
     TSharedPtr<FJsonObject> HandleSpawnBlueprintActor(const TSharedPtr<FJsonObject>& Params);
-}; 
+
+    // Editor lifecycle commands
+    TSharedPtr<FJsonObject> HandleRequestEditorExit(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleRestartEditor(const TSharedPtr<FJsonObject>& Params);
+};

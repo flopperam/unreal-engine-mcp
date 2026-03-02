@@ -22,6 +22,9 @@
 #include "Engine/BlueprintGeneratedClass.h"
 #include "EditorAssetLibrary.h"
 #include "Commands/EpicUnrealMCPBlueprintCommands.h"
+#include "Misc/Paths.h"
+#include "HAL/PlatformProcess.h"
+#include "HAL/PlatformMisc.h"
 
 FEpicUnrealMCPEditorCommands::FEpicUnrealMCPEditorCommands()
 {
@@ -54,6 +57,14 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCommand(const FStrin
     else if (CommandType == TEXT("spawn_blueprint_actor"))
     {
         return HandleSpawnBlueprintActor(Params);
+    }
+    else if (CommandType == TEXT("request_editor_exit"))
+    {
+        return HandleRequestEditorExit(Params);
+    }
+    else if (CommandType == TEXT("restart_editor"))
+    {
+        return HandleRestartEditor(Params);
     }
     
     return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown editor command: %s"), *CommandType));
@@ -305,4 +316,79 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleSpawnBlueprintActor(
     // This function will now correctly call the implementation in BlueprintCommands
     FEpicUnrealMCPBlueprintCommands BlueprintCommands;
     return BlueprintCommands.HandleCommand(TEXT("spawn_blueprint_actor"), Params);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleRequestEditorExit(const TSharedPtr<FJsonObject>& Params)
+{
+    bool bForce = false;
+    if (Params.IsValid())
+    {
+        Params->TryGetBoolField(TEXT("force"), bForce);
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("accepted"), true);
+    ResultObj->SetBoolField(TEXT("force"), bForce);
+    ResultObj->SetStringField(TEXT("message"), TEXT("Editor exit requested"));
+
+    // Graceful termination unless force=true is explicitly requested.
+    FPlatformMisc::RequestExit(bForce);
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleRestartEditor(const TSharedPtr<FJsonObject>& Params)
+{
+    FString AdditionalArgs;
+    if (Params.IsValid())
+    {
+        Params->TryGetStringField(TEXT("additional_args"), AdditionalArgs);
+    }
+
+    const FString ExecutablePath = FPlatformProcess::ExecutablePath();
+    const FString ProjectPath = FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
+
+    if (ExecutablePath.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to determine Unreal Editor executable path"));
+    }
+
+    if (ProjectPath.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to determine current project path"));
+    }
+
+    FString LaunchArgs = FString::Printf(TEXT("\"%s\""), *ProjectPath);
+    if (!AdditionalArgs.IsEmpty())
+    {
+        LaunchArgs += TEXT(" ");
+        LaunchArgs += AdditionalArgs;
+    }
+
+    FProcHandle NewEditorProcess = FPlatformProcess::CreateProc(
+        *ExecutablePath,
+        *LaunchArgs,
+        true,
+        false,
+        false,
+        nullptr,
+        0,
+        nullptr,
+        nullptr
+    );
+
+    if (!NewEditorProcess.IsValid())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to launch replacement Unreal Editor process"));
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("accepted"), true);
+    ResultObj->SetStringField(TEXT("message"), TEXT("Editor restart requested"));
+    ResultObj->SetStringField(TEXT("executable_path"), ExecutablePath);
+    ResultObj->SetStringField(TEXT("project_path"), ProjectPath);
+    ResultObj->SetStringField(TEXT("launch_args"), LaunchArgs);
+
+    // Ask current editor instance to exit after spawning replacement.
+    FPlatformMisc::RequestExit(false);
+    return ResultObj;
 }

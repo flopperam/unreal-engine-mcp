@@ -519,6 +519,103 @@ def set_actor_transform(
         logger.error(f"set_actor_transform error: {e}")
         return {"success": False, "message": str(e)}
 
+@mcp.tool()
+def request_editor_exit(force: bool = False) -> Dict[str, Any]:
+    """Request Unreal Editor to exit gracefully (MCP-native alternative to process kill)."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        response = unreal.send_command("request_editor_exit", {"force": force})
+        # Editor process is expected to terminate, so clear cached socket state.
+        reset_unreal_connection()
+
+        if response and response.get("status") == "success":
+            return {
+                "success": True,
+                "message": "Editor exit request accepted",
+                "response": response
+            }
+
+        return {
+            "success": False,
+            "message": f"Failed to request editor exit: {response.get('error', 'No response') if response else 'No response'}",
+            "response": response
+        }
+    except Exception as e:
+        logger.error(f"request_editor_exit error: {e}")
+        reset_unreal_connection()
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def restart_editor(
+    additional_args: str = "",
+    wait_for_reconnect_seconds: int = 120,
+    poll_interval_seconds: float = 2.0
+) -> Dict[str, Any]:
+    """
+    Restart Unreal Editor through MCP and wait for socket reconnection.
+
+    This is the preferred workflow over force-killing the process.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        command_response = unreal.send_command(
+            "restart_editor",
+            {"additional_args": additional_args}
+        )
+
+        # If Unreal explicitly rejected the command, fail fast.
+        if command_response and command_response.get("status") == "error":
+            error_text = str(command_response.get("error", "Unknown error"))
+            is_transport_error = any(token in error_text.lower() for token in [
+                "connection",
+                "timeout",
+                "failed to connect",
+                "command failed after"
+            ])
+            if not is_transport_error:
+                return {
+                    "success": False,
+                    "message": f"Restart command rejected by Unreal: {error_text}",
+                    "response": command_response
+                }
+
+        # Restart invalidates existing socket state; reconnect loop starts fresh.
+        reset_unreal_connection()
+
+        timeout_s = max(0, int(wait_for_reconnect_seconds))
+        poll_s = max(0.2, float(poll_interval_seconds))
+        deadline = time.time() + timeout_s
+        last_ping_response = None
+
+        while time.time() < deadline:
+            conn = get_unreal_connection()
+            last_ping_response = conn.send_command("ping", {})
+            if last_ping_response and last_ping_response.get("status") == "success":
+                return {
+                    "success": True,
+                    "message": "Editor restarted and MCP reconnected",
+                    "restart_response": command_response,
+                    "ping_response": last_ping_response
+                }
+            time.sleep(poll_s)
+
+        return {
+            "success": False,
+            "message": f"Restart request sent, but reconnect timed out after {timeout_s}s",
+            "restart_response": command_response,
+            "last_ping_response": last_ping_response
+        }
+    except Exception as e:
+        logger.error(f"restart_editor error: {e}")
+        reset_unreal_connection()
+        return {"success": False, "message": str(e)}
+
 # Essential Blueprint Tools for Physics Actors
 @mcp.tool()
 def create_blueprint(name: str, parent_class: str) -> Dict[str, Any]:
@@ -2793,4 +2890,4 @@ def rename_function(
 # Run the server
 if __name__ == "__main__":
     logger.info("Starting Advanced MCP server with stdio transport")
-    mcp.run(transport='stdio') 
+    mcp.run(transport='stdio')
