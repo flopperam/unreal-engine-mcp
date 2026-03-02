@@ -225,7 +225,10 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                      CommandType == TEXT("set_actor_transform") ||
                      CommandType == TEXT("spawn_blueprint_actor") ||
                      CommandType == TEXT("request_editor_exit") ||
-                     CommandType == TEXT("restart_editor"))
+                     CommandType == TEXT("restart_editor") ||
+                     CommandType == TEXT("get_object_properties") ||
+                     CommandType == TEXT("set_object_properties") ||
+                     CommandType == TEXT("call_uobject_function"))
             {
                 ResultJson = EditorCommands->HandleCommand(CommandType, Params);
             }

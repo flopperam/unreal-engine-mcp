@@ -70,6 +70,14 @@ private:
 		const TSharedPtr<FJsonValue>& Value);
 
 	/**
+	 * Set property on specialized nodes (DataTable, ConstructObject)
+	 */
+	static bool SetSpecializedNodeProperty(
+		UK2Node* Node,
+		const FString& PropertyName,
+		const TSharedPtr<FJsonValue>& Value);
+
+	/**
 	 * Set generic property (position, comment, etc.)
 	 */
 	static bool SetGenericNodeProperty(

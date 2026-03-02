@@ -29,4 +29,10 @@ private:
     // Editor lifecycle commands
     TSharedPtr<FJsonObject> HandleRequestEditorExit(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleRestartEditor(const TSharedPtr<FJsonObject>& Params);
+
+    // Generic object reflection commands
+    TSharedPtr<FJsonObject> HandleGetObjectProperties(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSetObjectProperties(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCallUObjectFunction(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleBuildNavMesh(const TSharedPtr<FJsonObject>& Params);
 };

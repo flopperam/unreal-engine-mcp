@@ -35,6 +35,21 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPCommonUtils::CreateErrorResponse(const FSt
     return ResponseObject;
 }
 
+TSharedPtr<FJsonObject> FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+    const FString& ErrorCode, const FString& Message,
+    const TSharedPtr<FJsonObject>& Details)
+{
+    TSharedPtr<FJsonObject> ResponseObject = MakeShared<FJsonObject>();
+    ResponseObject->SetBoolField(TEXT("success"), false);
+    ResponseObject->SetStringField(TEXT("error"), Message);
+    ResponseObject->SetStringField(TEXT("error_code"), ErrorCode);
+    if (Details.IsValid())
+    {
+        ResponseObject->SetObjectField(TEXT("error_details"), Details);
+    }
+    return ResponseObject;
+}
+
 TSharedPtr<FJsonObject> FEpicUnrealMCPCommonUtils::CreateSuccessResponse(const TSharedPtr<FJsonObject>& Data)
 {
     TSharedPtr<FJsonObject> ResponseObject = MakeShared<FJsonObject>();

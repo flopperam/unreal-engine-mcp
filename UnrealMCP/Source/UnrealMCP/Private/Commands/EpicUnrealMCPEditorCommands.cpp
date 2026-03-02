@@ -25,6 +25,555 @@
 #include "Misc/Paths.h"
 #include "HAL/PlatformProcess.h"
 #include "HAL/PlatformMisc.h"
+#include "UObject/UnrealType.h"
+
+namespace
+{
+    static bool JsonValueToVector(const TSharedPtr<FJsonValue>& JsonValue, FVector& OutVector)
+    {
+        if (!JsonValue.IsValid())
+        {
+            return false;
+        }
+
+        if (JsonValue->Type == EJson::Array)
+        {
+            const TArray<TSharedPtr<FJsonValue>>& Values = JsonValue->AsArray();
+            if (Values.Num() < 3)
+            {
+                return false;
+            }
+
+            OutVector = FVector(
+                static_cast<float>(Values[0]->AsNumber()),
+                static_cast<float>(Values[1]->AsNumber()),
+                static_cast<float>(Values[2]->AsNumber())
+            );
+            return true;
+        }
+
+        if (JsonValue->Type == EJson::Object)
+        {
+            TSharedPtr<FJsonObject> Obj = JsonValue->AsObject();
+            if (!Obj.IsValid())
+            {
+                return false;
+            }
+
+            double X = 0.0;
+            double Y = 0.0;
+            double Z = 0.0;
+            bool bHasXYZ = Obj->TryGetNumberField(TEXT("x"), X) &&
+                           Obj->TryGetNumberField(TEXT("y"), Y) &&
+                           Obj->TryGetNumberField(TEXT("z"), Z);
+            if (!bHasXYZ)
+            {
+                bHasXYZ = Obj->TryGetNumberField(TEXT("X"), X) &&
+                          Obj->TryGetNumberField(TEXT("Y"), Y) &&
+                          Obj->TryGetNumberField(TEXT("Z"), Z);
+            }
+
+            if (bHasXYZ)
+            {
+                OutVector = FVector(static_cast<float>(X), static_cast<float>(Y), static_cast<float>(Z));
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static bool JsonValueToRotator(const TSharedPtr<FJsonValue>& JsonValue, FRotator& OutRotator)
+    {
+        if (!JsonValue.IsValid())
+        {
+            return false;
+        }
+
+        if (JsonValue->Type == EJson::Array)
+        {
+            const TArray<TSharedPtr<FJsonValue>>& Values = JsonValue->AsArray();
+            if (Values.Num() < 3)
+            {
+                return false;
+            }
+
+            OutRotator = FRotator(
+                static_cast<float>(Values[0]->AsNumber()),
+                static_cast<float>(Values[1]->AsNumber()),
+                static_cast<float>(Values[2]->AsNumber())
+            );
+            return true;
+        }
+
+        if (JsonValue->Type == EJson::Object)
+        {
+            TSharedPtr<FJsonObject> Obj = JsonValue->AsObject();
+            if (!Obj.IsValid())
+            {
+                return false;
+            }
+
+            double Pitch = 0.0;
+            double Yaw = 0.0;
+            double Roll = 0.0;
+            bool bHasPYR = Obj->TryGetNumberField(TEXT("pitch"), Pitch) &&
+                           Obj->TryGetNumberField(TEXT("yaw"), Yaw) &&
+                           Obj->TryGetNumberField(TEXT("roll"), Roll);
+            if (!bHasPYR)
+            {
+                bHasPYR = Obj->TryGetNumberField(TEXT("Pitch"), Pitch) &&
+                          Obj->TryGetNumberField(TEXT("Yaw"), Yaw) &&
+                          Obj->TryGetNumberField(TEXT("Roll"), Roll);
+            }
+
+            if (bHasPYR)
+            {
+                OutRotator = FRotator(static_cast<float>(Pitch), static_cast<float>(Yaw), static_cast<float>(Roll));
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static UObject* ResolveTargetObject(const TSharedPtr<FJsonObject>& Params, FString& OutError)
+    {
+        if (!Params.IsValid())
+        {
+            OutError = TEXT("Missing params object");
+            return nullptr;
+        }
+
+        FString ObjectPath;
+        if (Params->TryGetStringField(TEXT("object_path"), ObjectPath))
+        {
+            UObject* TargetObject = StaticFindObject(UObject::StaticClass(), nullptr, *ObjectPath);
+            if (!TargetObject)
+            {
+                TargetObject = LoadObject<UObject>(nullptr, *ObjectPath);
+            }
+            if (!TargetObject && ObjectPath.StartsWith(TEXT("/")) && !ObjectPath.Contains(TEXT(".")))
+            {
+                FString AssetName = FPaths::GetBaseFilename(ObjectPath);
+                FString ExpandedPath = FString::Printf(TEXT("%s.%s"), *ObjectPath, *AssetName);
+                TargetObject = StaticFindObject(UObject::StaticClass(), nullptr, *ExpandedPath);
+                if (!TargetObject)
+                {
+                    TargetObject = LoadObject<UObject>(nullptr, *ExpandedPath);
+                }
+            }
+
+            if (TargetObject)
+            {
+                return TargetObject;
+            }
+
+            OutError = FString::Printf(TEXT("Failed to resolve object_path: %s"), *ObjectPath);
+            return nullptr;
+        }
+
+        FString ActorName;
+        if (Params->TryGetStringField(TEXT("actor_name"), ActorName))
+        {
+            UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : GWorld;
+            if (!World)
+            {
+                OutError = TEXT("Failed to resolve editor world for actor lookup");
+                return nullptr;
+            }
+
+            TArray<AActor*> AllActors;
+            UGameplayStatics::GetAllActorsOfClass(World, AActor::StaticClass(), AllActors);
+            for (AActor* Actor : AllActors)
+            {
+                if (Actor && Actor->GetName() == ActorName)
+                {
+                    return Actor;
+                }
+            }
+
+            OutError = FString::Printf(TEXT("Actor not found: %s"), *ActorName);
+            return nullptr;
+        }
+
+        OutError = TEXT("Missing target object. Provide 'object_path' or 'actor_name'");
+        return nullptr;
+    }
+
+    static bool SetPropertyFromJsonValue(FProperty* Property, void* ValuePtr, const TSharedPtr<FJsonValue>& JsonValue, FString& OutError)
+    {
+        if (!Property || !ValuePtr || !JsonValue.IsValid())
+        {
+            OutError = TEXT("Invalid property/value input");
+            return false;
+        }
+
+        if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+        {
+            if (JsonValue->Type == EJson::Boolean)
+            {
+                BoolProp->SetPropertyValue(ValuePtr, JsonValue->AsBool());
+                return true;
+            }
+            if (JsonValue->Type == EJson::Number)
+            {
+                BoolProp->SetPropertyValue(ValuePtr, JsonValue->AsNumber() != 0.0);
+                return true;
+            }
+
+            OutError = TEXT("Expected bool or number");
+            return false;
+        }
+
+        if (FIntProperty* IntProp = CastField<FIntProperty>(Property))
+        {
+            IntProp->SetPropertyValue(ValuePtr, static_cast<int32>(JsonValue->AsNumber()));
+            return true;
+        }
+
+        if (FInt64Property* Int64Prop = CastField<FInt64Property>(Property))
+        {
+            Int64Prop->SetPropertyValue(ValuePtr, static_cast<int64>(JsonValue->AsNumber()));
+            return true;
+        }
+
+        if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
+        {
+            FloatProp->SetPropertyValue(ValuePtr, static_cast<float>(JsonValue->AsNumber()));
+            return true;
+        }
+
+        if (FDoubleProperty* DoubleProp = CastField<FDoubleProperty>(Property))
+        {
+            DoubleProp->SetPropertyValue(ValuePtr, JsonValue->AsNumber());
+            return true;
+        }
+
+        if (FStrProperty* StrProp = CastField<FStrProperty>(Property))
+        {
+            StrProp->SetPropertyValue(ValuePtr, JsonValue->AsString());
+            return true;
+        }
+
+        if (FNameProperty* NameProp = CastField<FNameProperty>(Property))
+        {
+            NameProp->SetPropertyValue(ValuePtr, FName(*JsonValue->AsString()));
+            return true;
+        }
+
+        if (FTextProperty* TextProp = CastField<FTextProperty>(Property))
+        {
+            TextProp->SetPropertyValue(ValuePtr, FText::FromString(JsonValue->AsString()));
+            return true;
+        }
+
+        if (FByteProperty* ByteProp = CastField<FByteProperty>(Property))
+        {
+            UEnum* EnumDef = ByteProp->GetIntPropertyEnum();
+            if (EnumDef && JsonValue->Type == EJson::String)
+            {
+                FString EnumValueName = JsonValue->AsString();
+                if (EnumValueName.Contains(TEXT("::")))
+                {
+                    EnumValueName.Split(TEXT("::"), nullptr, &EnumValueName);
+                }
+
+                int64 EnumValue = EnumDef->GetValueByNameString(EnumValueName);
+                if (EnumValue == INDEX_NONE)
+                {
+                    OutError = FString::Printf(TEXT("Enum value not found: %s"), *EnumValueName);
+                    return false;
+                }
+
+                ByteProp->SetPropertyValue(ValuePtr, static_cast<uint8>(EnumValue));
+                return true;
+            }
+
+            ByteProp->SetPropertyValue(ValuePtr, static_cast<uint8>(JsonValue->AsNumber()));
+            return true;
+        }
+
+        if (FEnumProperty* EnumProp = CastField<FEnumProperty>(Property))
+        {
+            UEnum* EnumDef = EnumProp->GetEnum();
+            FNumericProperty* Underlying = EnumProp->GetUnderlyingProperty();
+            if (!EnumDef || !Underlying)
+            {
+                OutError = TEXT("Invalid enum property");
+                return false;
+            }
+
+            if (JsonValue->Type == EJson::String)
+            {
+                FString EnumValueName = JsonValue->AsString();
+                if (EnumValueName.Contains(TEXT("::")))
+                {
+                    EnumValueName.Split(TEXT("::"), nullptr, &EnumValueName);
+                }
+
+                int64 EnumValue = EnumDef->GetValueByNameString(EnumValueName);
+                if (EnumValue == INDEX_NONE)
+                {
+                    OutError = FString::Printf(TEXT("Enum value not found: %s"), *EnumValueName);
+                    return false;
+                }
+
+                Underlying->SetIntPropertyValue(ValuePtr, EnumValue);
+                return true;
+            }
+
+            Underlying->SetIntPropertyValue(ValuePtr, static_cast<int64>(JsonValue->AsNumber()));
+            return true;
+        }
+
+        if (FObjectPropertyBase* ObjectProp = CastField<FObjectPropertyBase>(Property))
+        {
+            if (JsonValue->Type == EJson::Null)
+            {
+                ObjectProp->SetObjectPropertyValue(ValuePtr, nullptr);
+                return true;
+            }
+
+            FString ObjectPath = JsonValue->AsString();
+            UClass* ExpectedClass = ObjectProp->PropertyClass ? ObjectProp->PropertyClass : UObject::StaticClass();
+            UObject* ReferencedObject = StaticFindObject(ExpectedClass, nullptr, *ObjectPath);
+            if (!ReferencedObject)
+            {
+                ReferencedObject = LoadObject<UObject>(nullptr, *ObjectPath);
+            }
+            if (!ReferencedObject && ObjectPath.StartsWith(TEXT("/")) && !ObjectPath.Contains(TEXT(".")))
+            {
+                FString AssetName = FPaths::GetBaseFilename(ObjectPath);
+                FString ExpandedPath = FString::Printf(TEXT("%s.%s"), *ObjectPath, *AssetName);
+                ReferencedObject = StaticFindObject(ExpectedClass, nullptr, *ExpandedPath);
+                if (!ReferencedObject)
+                {
+                    ReferencedObject = LoadObject<UObject>(nullptr, *ExpandedPath);
+                }
+            }
+
+            if (!ReferencedObject)
+            {
+                OutError = FString::Printf(TEXT("Failed to resolve object reference: %s"), *ObjectPath);
+                return false;
+            }
+
+            if (!ReferencedObject->IsA(ExpectedClass))
+            {
+                OutError = FString::Printf(TEXT("Object '%s' is not of expected class '%s'"), *ObjectPath, *ExpectedClass->GetName());
+                return false;
+            }
+
+            ObjectProp->SetObjectPropertyValue(ValuePtr, ReferencedObject);
+            return true;
+        }
+
+        if (FStructProperty* StructProp = CastField<FStructProperty>(Property))
+        {
+            if (StructProp->Struct == TBaseStructure<FVector>::Get())
+            {
+                FVector ParsedVector;
+                if (!JsonValueToVector(JsonValue, ParsedVector))
+                {
+                    OutError = TEXT("Invalid FVector value");
+                    return false;
+                }
+                *reinterpret_cast<FVector*>(ValuePtr) = ParsedVector;
+                return true;
+            }
+
+            if (StructProp->Struct == TBaseStructure<FRotator>::Get())
+            {
+                FRotator ParsedRotator;
+                if (!JsonValueToRotator(JsonValue, ParsedRotator))
+                {
+                    OutError = TEXT("Invalid FRotator value");
+                    return false;
+                }
+                *reinterpret_cast<FRotator*>(ValuePtr) = ParsedRotator;
+                return true;
+            }
+
+            if (StructProp->Struct == TBaseStructure<FTransform>::Get())
+            {
+                if (JsonValue->Type != EJson::Object)
+                {
+                    OutError = TEXT("FTransform expects object with location/rotation/scale");
+                    return false;
+                }
+
+                TSharedPtr<FJsonObject> TransformObj = JsonValue->AsObject();
+                if (!TransformObj.IsValid())
+                {
+                    OutError = TEXT("Invalid FTransform object");
+                    return false;
+                }
+
+                FTransform ParsedTransform = *reinterpret_cast<FTransform*>(ValuePtr);
+
+                if (TransformObj->HasField(TEXT("location")))
+                {
+                    FVector ParsedLocation;
+                    if (!JsonValueToVector(TransformObj->TryGetField(TEXT("location")), ParsedLocation))
+                    {
+                        OutError = TEXT("Invalid transform.location");
+                        return false;
+                    }
+                    ParsedTransform.SetLocation(ParsedLocation);
+                }
+
+                if (TransformObj->HasField(TEXT("rotation")))
+                {
+                    FRotator ParsedRotation;
+                    if (!JsonValueToRotator(TransformObj->TryGetField(TEXT("rotation")), ParsedRotation))
+                    {
+                        OutError = TEXT("Invalid transform.rotation");
+                        return false;
+                    }
+                    ParsedTransform.SetRotation(ParsedRotation.Quaternion());
+                }
+
+                if (TransformObj->HasField(TEXT("scale")))
+                {
+                    FVector ParsedScale;
+                    if (!JsonValueToVector(TransformObj->TryGetField(TEXT("scale")), ParsedScale))
+                    {
+                        OutError = TEXT("Invalid transform.scale");
+                        return false;
+                    }
+                    ParsedTransform.SetScale3D(ParsedScale);
+                }
+
+                *reinterpret_cast<FTransform*>(ValuePtr) = ParsedTransform;
+                return true;
+            }
+        }
+
+        OutError = FString::Printf(TEXT("Unsupported property type: %s"), *Property->GetClass()->GetName());
+        return false;
+    }
+
+    static TSharedPtr<FJsonValue> PropertyValueToJson(FProperty* Property, const void* ValuePtr)
+    {
+        if (!Property || !ValuePtr)
+        {
+            return MakeShared<FJsonValueNull>();
+        }
+
+        if (const FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+        {
+            return MakeShared<FJsonValueBoolean>(BoolProp->GetPropertyValue(ValuePtr));
+        }
+        if (const FIntProperty* IntProp = CastField<FIntProperty>(Property))
+        {
+            return MakeShared<FJsonValueNumber>(IntProp->GetPropertyValue(ValuePtr));
+        }
+        if (const FInt64Property* Int64Prop = CastField<FInt64Property>(Property))
+        {
+            return MakeShared<FJsonValueNumber>(static_cast<double>(Int64Prop->GetPropertyValue(ValuePtr)));
+        }
+        if (const FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
+        {
+            return MakeShared<FJsonValueNumber>(FloatProp->GetPropertyValue(ValuePtr));
+        }
+        if (const FDoubleProperty* DoubleProp = CastField<FDoubleProperty>(Property))
+        {
+            return MakeShared<FJsonValueNumber>(DoubleProp->GetPropertyValue(ValuePtr));
+        }
+        if (const FStrProperty* StrProp = CastField<FStrProperty>(Property))
+        {
+            return MakeShared<FJsonValueString>(StrProp->GetPropertyValue(ValuePtr));
+        }
+        if (const FNameProperty* NameProp = CastField<FNameProperty>(Property))
+        {
+            return MakeShared<FJsonValueString>(NameProp->GetPropertyValue(ValuePtr).ToString());
+        }
+        if (const FTextProperty* TextProp = CastField<FTextProperty>(Property))
+        {
+            return MakeShared<FJsonValueString>(TextProp->GetPropertyValue(ValuePtr).ToString());
+        }
+        if (const FByteProperty* ByteProp = CastField<FByteProperty>(Property))
+        {
+            uint8 ByteValue = ByteProp->GetPropertyValue(ValuePtr);
+            if (UEnum* EnumDef = ByteProp->GetIntPropertyEnum())
+            {
+                return MakeShared<FJsonValueString>(EnumDef->GetNameStringByValue(ByteValue));
+            }
+            return MakeShared<FJsonValueNumber>(ByteValue);
+        }
+        if (const FEnumProperty* EnumProp = CastField<FEnumProperty>(Property))
+        {
+            const FNumericProperty* Underlying = EnumProp->GetUnderlyingProperty();
+            int64 EnumValue = Underlying ? Underlying->GetSignedIntPropertyValue(ValuePtr) : 0;
+            if (UEnum* EnumDef = EnumProp->GetEnum())
+            {
+                return MakeShared<FJsonValueString>(EnumDef->GetNameStringByValue(EnumValue));
+            }
+            return MakeShared<FJsonValueNumber>(static_cast<double>(EnumValue));
+        }
+        if (const FObjectPropertyBase* ObjectProp = CastField<FObjectPropertyBase>(Property))
+        {
+            UObject* ReferencedObject = ObjectProp->GetObjectPropertyValue(ValuePtr);
+            if (!ReferencedObject)
+            {
+                return MakeShared<FJsonValueNull>();
+            }
+            return MakeShared<FJsonValueString>(ReferencedObject->GetPathName());
+        }
+        if (const FStructProperty* StructProp = CastField<FStructProperty>(Property))
+        {
+            if (StructProp->Struct == TBaseStructure<FVector>::Get())
+            {
+                FVector Value = *reinterpret_cast<const FVector*>(ValuePtr);
+                TArray<TSharedPtr<FJsonValue>> Arr;
+                Arr.Add(MakeShared<FJsonValueNumber>(Value.X));
+                Arr.Add(MakeShared<FJsonValueNumber>(Value.Y));
+                Arr.Add(MakeShared<FJsonValueNumber>(Value.Z));
+                return MakeShared<FJsonValueArray>(Arr);
+            }
+            if (StructProp->Struct == TBaseStructure<FRotator>::Get())
+            {
+                FRotator Value = *reinterpret_cast<const FRotator*>(ValuePtr);
+                TArray<TSharedPtr<FJsonValue>> Arr;
+                Arr.Add(MakeShared<FJsonValueNumber>(Value.Pitch));
+                Arr.Add(MakeShared<FJsonValueNumber>(Value.Yaw));
+                Arr.Add(MakeShared<FJsonValueNumber>(Value.Roll));
+                return MakeShared<FJsonValueArray>(Arr);
+            }
+            if (StructProp->Struct == TBaseStructure<FTransform>::Get())
+            {
+                FTransform Value = *reinterpret_cast<const FTransform*>(ValuePtr);
+                TSharedPtr<FJsonObject> TransformObj = MakeShared<FJsonObject>();
+                FVector Location = Value.GetLocation();
+                FRotator Rotation = Value.GetRotation().Rotator();
+                FVector Scale = Value.GetScale3D();
+
+                TArray<TSharedPtr<FJsonValue>> LocationArr;
+                LocationArr.Add(MakeShared<FJsonValueNumber>(Location.X));
+                LocationArr.Add(MakeShared<FJsonValueNumber>(Location.Y));
+                LocationArr.Add(MakeShared<FJsonValueNumber>(Location.Z));
+                TransformObj->SetArrayField(TEXT("location"), LocationArr);
+
+                TArray<TSharedPtr<FJsonValue>> RotationArr;
+                RotationArr.Add(MakeShared<FJsonValueNumber>(Rotation.Pitch));
+                RotationArr.Add(MakeShared<FJsonValueNumber>(Rotation.Yaw));
+                RotationArr.Add(MakeShared<FJsonValueNumber>(Rotation.Roll));
+                TransformObj->SetArrayField(TEXT("rotation"), RotationArr);
+
+                TArray<TSharedPtr<FJsonValue>> ScaleArr;
+                ScaleArr.Add(MakeShared<FJsonValueNumber>(Scale.X));
+                ScaleArr.Add(MakeShared<FJsonValueNumber>(Scale.Y));
+                ScaleArr.Add(MakeShared<FJsonValueNumber>(Scale.Z));
+                TransformObj->SetArrayField(TEXT("scale"), ScaleArr);
+
+                return MakeShared<FJsonValueObject>(TransformObj);
+            }
+        }
+
+        return MakeShared<FJsonValueString>(FString::Printf(TEXT("<unsupported_property_type:%s>"), *Property->GetClass()->GetName()));
+    }
+}
 
 FEpicUnrealMCPEditorCommands::FEpicUnrealMCPEditorCommands()
 {
@@ -66,8 +615,50 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCommand(const FStrin
     {
         return HandleRestartEditor(Params);
     }
+    else if (CommandType == TEXT("get_object_properties"))
+    {
+        return HandleGetObjectProperties(Params);
+    }
+    else if (CommandType == TEXT("set_object_properties"))
+    {
+        return HandleSetObjectProperties(Params);
+    }
+    else if (CommandType == TEXT("call_uobject_function"))
+    {
+        return HandleCallUObjectFunction(Params);
+    }
+    else if (CommandType == TEXT("build_navmesh"))
+    {
+        return HandleBuildNavMesh(Params);
+    }
     
     return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown editor command: %s"), *CommandType));
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleBuildNavMesh(const TSharedPtr<FJsonObject>& Params)
+{
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : GWorld;
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get editor world"));
+    }
+
+    // Use reflection to call NavigationSystemV1::Build() to avoid hard dependency on NavigationSystem module in Build.cs if not already there
+    UClass* NavSysClass = FindObject<UClass>(nullptr, TEXT("/Script/NavigationSystem.NavigationSystemV1"));
+    if (!NavSysClass) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("NavigationSystemV1 class not found. Is NavigationSystem module loaded?"));
+
+    UObject* NavSys = World->GetNavigationSystem();
+    if (!NavSys) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Navigation System not found in world"));
+
+    UFunction* BuildFunc = NavSys->FindFunction(TEXT("Build"));
+    if (!BuildFunc) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("NavigationSystemV1::Build() function not found"));
+
+    NavSys->ProcessEvent(BuildFunc, nullptr);
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("message"), TEXT("NavMesh build triggered"));
+    return ResultObj;
 }
 
 TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleGetActorsInLevel(const TSharedPtr<FJsonObject>& Params)
@@ -390,5 +981,235 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleRestartEditor(const 
 
     // Ask current editor instance to exit after spawning replacement.
     FPlatformMisc::RequestExit(false);
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleGetObjectProperties(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ResolveError;
+    UObject* TargetObject = ResolveTargetObject(Params, ResolveError);
+    if (!TargetObject)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(ResolveError);
+    }
+
+    TSharedPtr<FJsonObject> PropertiesObj = MakeShared<FJsonObject>();
+    const TArray<TSharedPtr<FJsonValue>>* RequestedPropertyNames = nullptr;
+    const bool bHasFilter = Params.IsValid() &&
+                            Params->TryGetArrayField(TEXT("property_names"), RequestedPropertyNames) &&
+                            RequestedPropertyNames;
+
+    if (bHasFilter)
+    {
+        for (const TSharedPtr<FJsonValue>& NameValue : *RequestedPropertyNames)
+        {
+            if (!NameValue.IsValid() || NameValue->Type != EJson::String)
+            {
+                continue;
+            }
+
+            const FString PropertyName = NameValue->AsString();
+            FProperty* Property = TargetObject->GetClass()->FindPropertyByName(*PropertyName);
+            if (!Property)
+            {
+                PropertiesObj->SetField(PropertyName, MakeShared<FJsonValueNull>());
+                continue;
+            }
+
+            void* PropertyValuePtr = Property->ContainerPtrToValuePtr<void>(TargetObject);
+            PropertiesObj->SetField(PropertyName, PropertyValueToJson(Property, PropertyValuePtr));
+        }
+    }
+    else
+    {
+        for (TFieldIterator<FProperty> It(TargetObject->GetClass()); It; ++It)
+        {
+            FProperty* Property = *It;
+            if (!Property)
+            {
+                continue;
+            }
+
+            void* PropertyValuePtr = Property->ContainerPtrToValuePtr<void>(TargetObject);
+            PropertiesObj->SetField(Property->GetName(), PropertyValueToJson(Property, PropertyValuePtr));
+        }
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetStringField(TEXT("object_name"), TargetObject->GetName());
+    ResultObj->SetStringField(TEXT("object_class"), TargetObject->GetClass()->GetName());
+    ResultObj->SetStringField(TEXT("object_path"), TargetObject->GetPathName());
+    ResultObj->SetObjectField(TEXT("properties"), PropertiesObj);
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleSetObjectProperties(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ResolveError;
+    UObject* TargetObject = ResolveTargetObject(Params, ResolveError);
+    if (!TargetObject)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(ResolveError);
+    }
+
+    const TSharedPtr<FJsonObject>* PropertiesToSetPtr = nullptr;
+    if (!Params.IsValid() ||
+        !Params->TryGetObjectField(TEXT("properties"), PropertiesToSetPtr) ||
+        !PropertiesToSetPtr ||
+        !PropertiesToSetPtr->IsValid())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'properties' object"));
+    }
+
+    const TSharedPtr<FJsonObject>& PropertiesToSet = *PropertiesToSetPtr;
+    TArray<TSharedPtr<FJsonValue>> UpdatedProperties;
+    TSharedPtr<FJsonObject> FailedProperties = MakeShared<FJsonObject>();
+
+    TargetObject->Modify();
+
+    for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : PropertiesToSet->Values)
+    {
+        const FString& PropertyName = Pair.Key;
+        FProperty* Property = TargetObject->GetClass()->FindPropertyByName(*PropertyName);
+        if (!Property)
+        {
+            FailedProperties->SetStringField(PropertyName, FString::Printf(TEXT("Property not found: %s"), *PropertyName));
+            continue;
+        }
+
+        void* PropertyValuePtr = Property->ContainerPtrToValuePtr<void>(TargetObject);
+        FString SetError;
+        if (!SetPropertyFromJsonValue(Property, PropertyValuePtr, Pair.Value, SetError))
+        {
+            FailedProperties->SetStringField(PropertyName, SetError);
+            continue;
+        }
+
+        UpdatedProperties.Add(MakeShared<FJsonValueString>(PropertyName));
+    }
+
+    TargetObject->PostEditChange();
+    TargetObject->MarkPackageDirty();
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetStringField(TEXT("object_name"), TargetObject->GetName());
+    ResultObj->SetStringField(TEXT("object_class"), TargetObject->GetClass()->GetName());
+    ResultObj->SetStringField(TEXT("object_path"), TargetObject->GetPathName());
+    ResultObj->SetArrayField(TEXT("updated_properties"), UpdatedProperties);
+    ResultObj->SetNumberField(TEXT("updated_count"), UpdatedProperties.Num());
+
+    if (FailedProperties->Values.Num() > 0)
+    {
+        ResultObj->SetObjectField(TEXT("failed_properties"), FailedProperties);
+        ResultObj->SetNumberField(TEXT("failed_count"), FailedProperties->Values.Num());
+    }
+    else
+    {
+        ResultObj->SetNumberField(TEXT("failed_count"), 0);
+    }
+
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCallUObjectFunction(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ResolveError;
+    UObject* TargetObject = ResolveTargetObject(Params, ResolveError);
+    if (!TargetObject)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(ResolveError);
+    }
+
+    FString FunctionName;
+    if (!Params.IsValid() || !Params->TryGetStringField(TEXT("function_name"), FunctionName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'function_name' parameter"));
+    }
+
+    UFunction* Function = TargetObject->FindFunction(FName(*FunctionName));
+    if (!Function)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Function '%s' not found on object '%s'"), *FunctionName, *TargetObject->GetName())
+        );
+    }
+
+    TSharedPtr<FJsonObject> ArgumentsObj = MakeShared<FJsonObject>();
+    const TSharedPtr<FJsonObject>* ArgumentsObjPtr = nullptr;
+    if (Params->TryGetObjectField(TEXT("arguments"), ArgumentsObjPtr) &&
+        ArgumentsObjPtr &&
+        ArgumentsObjPtr->IsValid())
+    {
+        ArgumentsObj = *ArgumentsObjPtr;
+    }
+
+    uint8* ParamsBuffer = static_cast<uint8*>(FMemory_Alloca(Function->ParmsSize));
+    FMemory::Memzero(ParamsBuffer, Function->ParmsSize);
+
+    for (TFieldIterator<FProperty> It(Function); It; ++It)
+    {
+        FProperty* Property = *It;
+        if (!Property || !Property->HasAnyPropertyFlags(CPF_Parm) || Property->HasAnyPropertyFlags(CPF_ReturnParm))
+        {
+            continue;
+        }
+
+        const FString ParamName = Property->GetName();
+        if (!ArgumentsObj->HasField(ParamName))
+        {
+            continue;
+        }
+
+        TSharedPtr<FJsonValue> ParamValue = ArgumentsObj->TryGetField(ParamName);
+        if (!ParamValue.IsValid())
+        {
+            continue;
+        }
+
+        void* ParamValuePtr = Property->ContainerPtrToValuePtr<void>(ParamsBuffer);
+        FString SetError;
+        if (!SetPropertyFromJsonValue(Property, ParamValuePtr, ParamValue, SetError))
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("Failed to set parameter '%s': %s"), *ParamName, *SetError)
+            );
+        }
+    }
+
+    TargetObject->ProcessEvent(Function, ParamsBuffer);
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetStringField(TEXT("object_name"), TargetObject->GetName());
+    ResultObj->SetStringField(TEXT("object_class"), TargetObject->GetClass()->GetName());
+    ResultObj->SetStringField(TEXT("object_path"), TargetObject->GetPathName());
+    ResultObj->SetStringField(TEXT("function_name"), FunctionName);
+
+    TSharedPtr<FJsonObject> OutParamsObj = MakeShared<FJsonObject>();
+    for (TFieldIterator<FProperty> It(Function); It; ++It)
+    {
+        FProperty* Property = *It;
+        if (!Property || !Property->HasAnyPropertyFlags(CPF_Parm))
+        {
+            continue;
+        }
+
+        void* ParamValuePtr = Property->ContainerPtrToValuePtr<void>(ParamsBuffer);
+        TSharedPtr<FJsonValue> JsonValue = PropertyValueToJson(Property, ParamValuePtr);
+
+        if (Property->HasAnyPropertyFlags(CPF_ReturnParm))
+        {
+            ResultObj->SetField(TEXT("return_value"), JsonValue);
+        }
+        else if (Property->HasAnyPropertyFlags(CPF_OutParm))
+        {
+            OutParamsObj->SetField(Property->GetName(), JsonValue);
+        }
+    }
+
+    if (OutParamsObj->Values.Num() > 0)
+    {
+        ResultObj->SetObjectField(TEXT("out_params"), OutParamsObj);
+    }
+
     return ResultObj;
 }
