@@ -13,7 +13,7 @@
 #include "Commands/EpicUnrealMCPBlueprintGraphCommands.h"
 #include "EpicUnrealMCPBridge.generated.h"
 
-class FMCPServerRunnable;
+class FMCPServerRunnable; class FEpicUnrealMCPTransactionCommands;
 
 /**
  * Editor subsystem for MCP Bridge
@@ -57,4 +57,8 @@ private:
 	TSharedPtr<FEpicUnrealMCPEditorCommands> EditorCommands;
 	TSharedPtr<FEpicUnrealMCPBlueprintCommands> BlueprintCommands;
 	TSharedPtr<FEpicUnrealMCPBlueprintGraphCommands> BlueprintGraphCommands;
+	TSharedPtr<FEpicUnrealMCPTransactionCommands> TransactionCommands;
+
+	// Internal dispatch helper used by ExecuteCommand and batch execution
+	TSharedPtr<FJsonObject> DispatchToHandler(const FString& CommandType, const TSharedPtr<FJsonObject>& Params);
 }; 
