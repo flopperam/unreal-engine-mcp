@@ -381,15 +381,47 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 ResultJson = MakeShareable(new FJsonObject);
                 ResultJson->SetStringField(TEXT("message"), TEXT("pong"));
             }
-            // Editor Commands (including actor manipulation)
-            else if (CommandType == TEXT("get_actors_in_level") || 
+            // Editor Commands (actor manipulation, lifecycle, levels, viewport, reflection)
+            else if (CommandType == TEXT("get_actors_in_level") ||
                      CommandType == TEXT("find_actors_by_name") ||
                      CommandType == TEXT("spawn_actor") ||
-                     CommandType == TEXT("delete_actor") || 
+                     CommandType == TEXT("delete_actor") ||
                      CommandType == TEXT("set_actor_transform") ||
                      CommandType == TEXT("spawn_blueprint_actor") ||
                      CommandType == TEXT("request_editor_exit") ||
-                     CommandType == TEXT("restart_editor"))
+                     CommandType == TEXT("restart_editor") ||
+                     // Phase 1: Editor lifecycle
+                     CommandType == TEXT("get_editor_state") ||
+                     CommandType == TEXT("get_engine_version") ||
+                     CommandType == TEXT("save_all") ||
+                     CommandType == TEXT("play_in_editor_start") ||
+                     CommandType == TEXT("play_in_editor_stop") ||
+                     CommandType == TEXT("simulate_start") ||
+                     CommandType == TEXT("simulate_stop") ||
+                     CommandType == TEXT("pause_game") ||
+                     // Phase 1: Level lifecycle
+                     CommandType == TEXT("list_levels") ||
+                     CommandType == TEXT("open_level") ||
+                     CommandType == TEXT("save_level") ||
+                     CommandType == TEXT("create_level") ||
+                     CommandType == TEXT("duplicate_level") ||
+                     CommandType == TEXT("delete_level") ||
+                     CommandType == TEXT("set_current_world") ||
+                     CommandType == TEXT("add_sublevel") ||
+                     CommandType == TEXT("remove_sublevel") ||
+                     CommandType == TEXT("toggle_sublevel_visibility") ||
+                     // Phase 1: Selection and viewport
+                     CommandType == TEXT("get_selected_actors") ||
+                     CommandType == TEXT("select_actors") ||
+                     CommandType == TEXT("focus_viewport_on_selection") ||
+                     CommandType == TEXT("set_viewport_camera") ||
+                     CommandType == TEXT("capture_viewport_screenshot") ||
+                     CommandType == TEXT("get_viewport_stats") ||
+                     // Reflection API
+                     CommandType == TEXT("get_object_properties") ||
+                     CommandType == TEXT("set_object_properties") ||
+                     CommandType == TEXT("call_uobject_function") ||
+                     CommandType == TEXT("build_navmesh"))
             {
                 ResultJson = EditorCommands->HandleCommand(CommandType, Params);
             }
@@ -516,7 +548,7 @@ TSharedPtr<FJsonObject> UEpicUnrealMCPBridge::DispatchToHandler(
         PingResult->SetStringField(TEXT("message"), TEXT("pong"));
         return PingResult;
     }
-    // Editor Commands
+    // Editor Commands (actor manipulation, lifecycle, levels, viewport, reflection)
     else if (CommandType == TEXT("get_actors_in_level") ||
              CommandType == TEXT("find_actors_by_name") ||
              CommandType == TEXT("spawn_actor") ||
@@ -524,7 +556,39 @@ TSharedPtr<FJsonObject> UEpicUnrealMCPBridge::DispatchToHandler(
              CommandType == TEXT("set_actor_transform") ||
              CommandType == TEXT("spawn_blueprint_actor") ||
              CommandType == TEXT("request_editor_exit") ||
-             CommandType == TEXT("restart_editor"))
+             CommandType == TEXT("restart_editor") ||
+             // Phase 1: Editor lifecycle
+             CommandType == TEXT("get_editor_state") ||
+             CommandType == TEXT("get_engine_version") ||
+             CommandType == TEXT("save_all") ||
+             CommandType == TEXT("play_in_editor_start") ||
+             CommandType == TEXT("play_in_editor_stop") ||
+             CommandType == TEXT("simulate_start") ||
+             CommandType == TEXT("simulate_stop") ||
+             CommandType == TEXT("pause_game") ||
+             // Phase 1: Level lifecycle
+             CommandType == TEXT("list_levels") ||
+             CommandType == TEXT("open_level") ||
+             CommandType == TEXT("save_level") ||
+             CommandType == TEXT("create_level") ||
+             CommandType == TEXT("duplicate_level") ||
+             CommandType == TEXT("delete_level") ||
+             CommandType == TEXT("set_current_world") ||
+             CommandType == TEXT("add_sublevel") ||
+             CommandType == TEXT("remove_sublevel") ||
+             CommandType == TEXT("toggle_sublevel_visibility") ||
+             // Phase 1: Selection and viewport
+             CommandType == TEXT("get_selected_actors") ||
+             CommandType == TEXT("select_actors") ||
+             CommandType == TEXT("focus_viewport_on_selection") ||
+             CommandType == TEXT("set_viewport_camera") ||
+             CommandType == TEXT("capture_viewport_screenshot") ||
+             CommandType == TEXT("get_viewport_stats") ||
+             // Reflection API
+             CommandType == TEXT("get_object_properties") ||
+             CommandType == TEXT("set_object_properties") ||
+             CommandType == TEXT("call_uobject_function") ||
+             CommandType == TEXT("build_navmesh"))
     {
         return EditorCommands->HandleCommand(CommandType, Params);
     }
