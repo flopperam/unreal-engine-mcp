@@ -21,8 +21,6 @@
 #include "K2Node_ClassDynamicCast.h"
 #include "K2Node_CastByteToEnum.h"
 #include "K2Node_Event.h"
-#include "K2Node_GetDataTableRow.h"
-#include "K2Node_ConstructObjectFromClass.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "EditorAssetLibrary.h"
@@ -133,16 +131,6 @@ TSharedPtr<FJsonObject> FNodePropertyManager::SetNodeProperty(const TSharedPtr<F
 		if (K2Node)
 		{
 			Success = SetVariableNodeProperty(K2Node, PropertyName, PropertyValue);
-		}
-	}
-
-	// Try as Specialized node (DataTable, ConstructObject)
-	if (!Success)
-	{
-		UK2Node* K2Node = Cast<UK2Node>(Node);
-		if (K2Node)
-		{
-			Success = SetSpecializedNodeProperty(K2Node, PropertyName, PropertyValue);
 		}
 	}
 
@@ -594,65 +582,4 @@ TSharedPtr<FJsonObject> FNodePropertyManager::CreateErrorResponse(const FString&
 	Response->SetBoolField(TEXT("success"), false);
 	Response->SetStringField(TEXT("error"), ErrorMessage);
 	return Response;
-}
-
-bool FNodePropertyManager::SetSpecializedNodeProperty(
-	UK2Node* Node,
-	const FString& PropertyName,
-	const TSharedPtr<FJsonValue>& Value)
-{
-	if (!Node || !Value.IsValid())
-	{
-		return false;
-	}
-
-	// Handle GetDataTableRow node
-	if (UK2Node_GetDataTableRow* DataRowNode = Cast<UK2Node_GetDataTableRow>(Node))
-	{
-		if (PropertyName.Equals(TEXT("DataTable"), ESearchCase::IgnoreCase))
-		{
-			FString AssetPath;
-			if (Value->TryGetString(AssetPath))
-			{
-				UDataTable* DataTable = LoadObject<UDataTable>(nullptr, *AssetPath);
-				if (DataTable)
-				{
-					// Use reflection if the property is protected/private in some UE versions
-					FObjectProperty* Prop = CastField<FObjectProperty>(DataRowNode->GetClass()->FindPropertyByName(TEXT("DataTable")));
-					if (Prop)
-					{
-						Prop->SetObjectPropertyValue_InContainer(DataRowNode, DataTable);
-						DataRowNode->ReconstructNode();
-						return true;
-					}
-				}
-			}
-		}
-	}
-
-	// Handle ConstructObjectFromClass node
-	if (UK2Node_ConstructObjectFromClass* ConstructNode = Cast<UK2Node_ConstructObjectFromClass>(Node))
-	{
-		if (PropertyName.Equals(TEXT("Class"), ESearchCase::IgnoreCase))
-		{
-			FString ClassPath;
-			if (Value->TryGetString(ClassPath))
-			{
-				UClass* TargetClass = LoadObject<UClass>(nullptr, *ClassPath);
-				if (TargetClass)
-				{
-					// Use reflection for TargetClass property
-					FObjectProperty* Prop = CastField<FObjectProperty>(ConstructNode->GetClass()->FindPropertyByName(TEXT("TargetClass")));
-					if (Prop)
-					{
-						Prop->SetObjectPropertyValue_InContainer(ConstructNode, TargetClass);
-						ConstructNode->ReconstructNode();
-						return true;
-					}
-				}
-			}
-		}
-	}
-
-	return false;
 }

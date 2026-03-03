@@ -25,6 +25,7 @@ class UNREALMCP_API FEpicUnrealMCPCommonUtils
 public:
     // JSON utilities
     static TSharedPtr<FJsonObject> CreateErrorResponse(const FString& Message);
+    static TSharedPtr<FJsonObject> CreateErrorResponse(const FString& ErrorCode, const FString& Message, const TSharedPtr<FJsonObject>& Details = nullptr);
     static TSharedPtr<FJsonObject> CreateSuccessResponse(const TSharedPtr<FJsonObject>& Data = nullptr);
     static void GetIntArrayFromJson(const TSharedPtr<FJsonObject>& JsonObject, const FString& FieldName, TArray<int32>& OutArray);
     static void GetFloatArrayFromJson(const TSharedPtr<FJsonObject>& JsonObject, const FString& FieldName, TArray<float>& OutArray);

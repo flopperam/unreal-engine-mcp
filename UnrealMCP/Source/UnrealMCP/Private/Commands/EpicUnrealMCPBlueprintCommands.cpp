@@ -101,31 +101,6 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCommand(const FSt
     {
         return HandleGetBlueprintFunctionDetails(Params);
     }
-    // Phase 4 asset creation commands
-    else if (CommandType == TEXT("create_widget_blueprint"))
-    {
-        return HandleCreateWidgetBlueprint(Params);
-    }
-    else if (CommandType == TEXT("create_blueprint_interface"))
-    {
-        return HandleCreateBlueprintInterface(Params);
-    }
-    else if (CommandType == TEXT("create_blueprint_macro_library"))
-    {
-        return HandleCreateBlueprintMacroLibrary(Params);
-    }
-    else if (CommandType == TEXT("create_data_table"))
-    {
-        return HandleCreateDataTable(Params);
-    }
-    else if (CommandType == TEXT("create_behavior_tree"))
-    {
-        return HandleCreateBehaviorTree(Params);
-    }
-    else if (CommandType == TEXT("create_blackboard"))
-    {
-        return HandleCreateBlackboard(Params);
-    }
 
     return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown blueprint command: %s"), *CommandType));
 }
@@ -1647,158 +1622,22 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleGetBlueprintFunct
     
     if (bSpecificFunction)
     {
+        ResultObj->SetStringField(TEXT("function_name"), FunctionName);
+        if (FunctionArray.Num() > 0)
+        {
+            ResultObj->SetObjectField(TEXT("function"), FunctionArray[0]->AsObject());
+        }
+        else
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Function not found: %s"), *FunctionName));
+        }
+    }
+    else
+    {
         ResultObj->SetArrayField(TEXT("functions"), FunctionArray);
         ResultObj->SetNumberField(TEXT("function_count"), FunctionArray.Num());
     }
 
     ResultObj->SetBoolField(TEXT("success"), true);
     return ResultObj;
-}
-
-TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateWidgetBlueprint(const TSharedPtr<FJsonObject>& Params)
-{
-    FString Name;
-    if (!Params->TryGetStringField(TEXT("name"), Name)) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'name'"));
-    
-    FString PackagePath = TEXT("/Game/UI/");
-    Params->TryGetStringField(TEXT("path"), PackagePath);
-    if (!PackagePath.EndsWith(TEXT("/"))) PackagePath += TEXT("/");
-
-    // Using reflection to avoid hard dependency on UMG module in Build.cs if not already there
-    UClass* FactoryClass = FindObject<UClass>(nullptr, TEXT("/Script/UMGEditor.WidgetBlueprintFactory"));
-    if (!FactoryClass) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("WidgetBlueprintFactory not found. Is UMGEditor module loaded?"));
-
-    UFactory* Factory = NewObject<UFactory>(GetTransientPackage(), FactoryClass);
-    UPackage* Package = CreatePackage(*(PackagePath + Name));
-    UObject* NewAsset = Factory->FactoryCreateNew(FindObject<UClass>(nullptr, TEXT("/Script/UMG.WidgetBlueprint")), Package, *Name, RF_Standalone | RF_Public, nullptr, GWarn);
-
-    if (NewAsset) {
-        FAssetRegistryModule::AssetCreated(NewAsset);
-        Package->MarkPackageDirty();
-        TSharedPtr<FJsonObject> Res = MakeShared<FJsonObject>();
-        Res->SetStringField(TEXT("path"), NewAsset->GetPathName());
-        return Res;
-    }
-    return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create Widget Blueprint"));
-}
-
-TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateBlueprintInterface(const TSharedPtr<FJsonObject>& Params)
-{
-    FString Name;
-    if (!Params->TryGetStringField(TEXT("name"), Name)) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'name'"));
-    
-    UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
-    Factory->BlueprintType = BPTYPE_Interface;
-    Factory->ParentClass = UInterface::StaticClass();
-
-    UPackage* Package = CreatePackage(*(TEXT("/Game/Blueprints/") + Name));
-    UBlueprint* NewBP = Cast<UBlueprint>(Factory->FactoryCreateNew(UBlueprint::StaticClass(), Package, *Name, RF_Standalone | RF_Public, nullptr, GWarn));
-
-    if (NewBP) {
-        FAssetRegistryModule::AssetCreated(NewBP);
-        Package->MarkPackageDirty();
-        TSharedPtr<FJsonObject> Res = MakeShared<FJsonObject>();
-        Res->SetStringField(TEXT("path"), NewBP->GetPathName());
-        return Res;
-    }
-    return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create Blueprint Interface"));
-}
-
-TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateBlueprintMacroLibrary(const TSharedPtr<FJsonObject>& Params)
-{
-    FString Name;
-    if (!Params->TryGetStringField(TEXT("name"), Name)) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'name'"));
-    
-    UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
-    Factory->BlueprintType = BPTYPE_MacroLibrary;
-    Factory->ParentClass = AActor::StaticClass(); // Usually Actor or Object
-
-    UPackage* Package = CreatePackage(*(TEXT("/Game/Blueprints/") + Name));
-    UBlueprint* NewBP = Cast<UBlueprint>(Factory->FactoryCreateNew(UBlueprint::StaticClass(), Package, *Name, RF_Standalone | RF_Public, nullptr, GWarn));
-
-    if (NewBP) {
-        FAssetRegistryModule::AssetCreated(NewBP);
-        Package->MarkPackageDirty();
-        TSharedPtr<FJsonObject> Res = MakeShared<FJsonObject>();
-        Res->SetStringField(TEXT("path"), NewBP->GetPathName());
-        return Res;
-    }
-    return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create Blueprint Macro Library"));
-}
-
-TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateDataTable(const TSharedPtr<FJsonObject>& Params)
-{
-    FString Name;
-    if (!Params->TryGetStringField(TEXT("name"), Name)) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'name'"));
-    
-    // Default to a simple struct if none provided
-    FString StructPath = TEXT("/Script/Engine.TableRowBase");
-    Params->TryGetStringField(TEXT("struct_path"), StructPath);
-    
-    UScriptStruct* RowStruct = FindObject<UScriptStruct>(nullptr, *StructPath);
-    if (!RowStruct) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Row struct not found"));
-
-    UClass* FactoryClass = FindObject<UClass>(nullptr, TEXT("/Script/UnrealEd.DataTableFactory"));
-    UFactory* Factory = NewObject<UFactory>(GetTransientPackage(), FactoryClass);
-    // Set the struct on the factory using reflection since we might not have the header
-    FProperty* StructProp = FactoryClass->FindPropertyByName(TEXT("Struct"));
-    if (StructProp) {
-        StructProp->SetValue_InContainer(Factory, RowStruct);
-    }
-
-    UPackage* Package = CreatePackage(*(TEXT("/Game/Data/") + Name));
-    UObject* NewAsset = Factory->FactoryCreateNew(FindObject<UClass>(nullptr, TEXT("/Script/Engine.DataTable")), Package, *Name, RF_Standalone | RF_Public, nullptr, GWarn);
-
-    if (NewAsset) {
-        FAssetRegistryModule::AssetCreated(NewAsset);
-        Package->MarkPackageDirty();
-        TSharedPtr<FJsonObject> Res = MakeShared<FJsonObject>();
-        Res->SetStringField(TEXT("path"), NewAsset->GetPathName());
-        return Res;
-    }
-    return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create Data Table"));
-}
-
-TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateBehaviorTree(const TSharedPtr<FJsonObject>& Params)
-{
-    FString Name;
-    if (!Params->TryGetStringField(TEXT("name"), Name)) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'name'"));
-    
-    UClass* FactoryClass = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BehaviorTreeFactory"));
-    if (!FactoryClass) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("BehaviorTreeFactory not found"));
-
-    UFactory* Factory = NewObject<UFactory>(GetTransientPackage(), FactoryClass);
-    UPackage* Package = CreatePackage(*(TEXT("/Game/AI/") + Name));
-    UObject* NewAsset = Factory->FactoryCreateNew(FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BehaviorTree")), Package, *Name, RF_Standalone | RF_Public, nullptr, GWarn);
-
-    if (NewAsset) {
-        FAssetRegistryModule::AssetCreated(NewAsset);
-        Package->MarkPackageDirty();
-        TSharedPtr<FJsonObject> Res = MakeShared<FJsonObject>();
-        Res->SetStringField(TEXT("path"), NewAsset->GetPathName());
-        return Res;
-    }
-    return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create Behavior Tree"));
-}
-
-TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateBlackboard(const TSharedPtr<FJsonObject>& Params)
-{
-    FString Name;
-    if (!Params->TryGetStringField(TEXT("name"), Name)) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'name'"));
-    
-    UClass* FactoryClass = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BlackboardFactory"));
-    if (!FactoryClass) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("BlackboardFactory not found"));
-
-    UFactory* Factory = NewObject<UFactory>(GetTransientPackage(), FactoryClass);
-    UPackage* Package = CreatePackage(*(TEXT("/Game/AI/") + Name));
-    UObject* NewAsset = Factory->FactoryCreateNew(FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BlackboardData")), Package, *Name, RF_Standalone | RF_Public, nullptr, GWarn);
-
-    if (NewAsset) {
-        FAssetRegistryModule::AssetCreated(NewAsset);
-        Package->MarkPackageDirty();
-        TSharedPtr<FJsonObject> Res = MakeShared<FJsonObject>();
-        Res->SetStringField(TEXT("path"), NewAsset->GetPathName());
-        return Res;
-    }
-    return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create Blackboard"));
 }

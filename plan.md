@@ -45,11 +45,21 @@ Enable MCP clients to control the entire Unreal Engine editor and build pipeline
 
 ## Delivery phases
 
-1. Phase 1 (critical control plane): items 1, 2, 4, 5, 29, 30, 33.
+1. Phase 1 (critical control plane): items 1, 2, 4, 5, 29, 30, 33. **COMPLETE**
 2. Phase 2 (content and world parity): items 3, 6, 7, 8, 9, 10, 12.
 3. Phase 3 (creative pipelines): items 11, 13, 14, 15, 16, 17, 18.
-4. Phase 4 (gameplay and production): items 19, 20, 21, 22, 23.
+4. Phase 4 (gameplay and production): items 19, 20, 21, 22, 23. (Work In Progress)
 5. Phase 5 (shipping and operations): items 24, 25, 26, 27, 28, 31, 32.
+
+### Phase 1 completion details
+All Phase 1 items implemented in protocol version 1.2.0:
+- **Item 1 — Editor/session lifecycle**: `get_editor_state`, `get_engine_version`, `save_all`, `request_exit_editor`, `restart_editor`, `play_in_editor_start`, `play_in_editor_stop`, `simulate_start`, `simulate_stop`, `pause_game`
+- **Item 2 — World/level lifecycle**: `list_levels`, `open_level`, `save_level`, `create_level`, `duplicate_level`, `delete_level`, `set_current_world`, `add_sublevel`, `remove_sublevel`, `toggle_sublevel_visibility`
+- **Item 4 — Selection/viewport**: `get_selected_actors`, `select_actors`, `focus_viewport_on_selection`, `set_viewport_camera`, `capture_viewport_screenshot`, `get_viewport_stats`
+- **Item 5 — Reflection API**: `get_object_properties`, `set_object_properties`, `call_uobject_function`, `build_navmesh`
+- **Item 29 — Transactions**: `begin_editor_transaction`, `end_editor_transaction`, `rollback_transaction`, `undo`, `redo`
+- **Item 30 — Protocol upgrades**: `list_tools_dynamic`, `get_tool_json_schema`, `batch_execute_commands`, `negotiate_protocol_version`, `ping`
+- **Item 33 — Reliability**: structured error codes, dead-letter queue (`get_dead_letters`, `clear_dead_letters`), connection heartbeat (`ping`), protocol version negotiation
 
 ## Immediate implementation priorities
 
