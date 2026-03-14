@@ -95,11 +95,12 @@ class UnrealConnection:
     LARGE_OPERATION_COMMANDS = {
         "get_available_materials",
         "create_town",
-        "create_castle_fortress", 
+        "create_castle_fortress",
         "construct_mansion",
         "create_suspension_bridge",
         "create_aqueduct",
-        "create_maze"
+        "create_maze",
+        "batch_spawn_actors"
     }
     
     def __init__(self):
@@ -518,6 +519,269 @@ def set_actor_transform(
     except Exception as e:
         logger.error(f"set_actor_transform error: {e}")
         return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def spawn_actor(
+    name: str,
+    type: str = "StaticMeshActor",
+    location: List[float] = [0.0, 0.0, 0.0],
+    rotation: List[float] = [0.0, 0.0, 0.0],
+    scale: List[float] = [1.0, 1.0, 1.0],
+    static_mesh: str = "/Engine/BasicShapes/Cube.Cube"
+) -> Dict[str, Any]:
+    """
+    Spawn a basic actor directly in the level. This is the fastest way to place objects.
+
+    Args:
+        name: Unique name for the actor
+        type: Actor type - one of: "StaticMeshActor", "PointLight", "SpotLight",
+              "DirectionalLight", "CameraActor"
+        location: World position [X, Y, Z]
+        rotation: Rotation in degrees [Pitch, Yaw, Roll]
+        scale: Scale multiplier [X, Y, Z]
+        static_mesh: Mesh asset path (for StaticMeshActor only).
+            Common meshes:
+            - /Engine/BasicShapes/Cube.Cube
+            - /Engine/BasicShapes/Sphere.Sphere
+            - /Engine/BasicShapes/Cylinder.Cylinder
+            - /Engine/BasicShapes/Cone.Cone
+            - /Engine/BasicShapes/Plane.Plane
+
+    Returns:
+        Dictionary with spawned actor details
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        params = {
+            "name": name,
+            "type": type,
+            "location": location,
+            "rotation": rotation,
+            "scale": scale,
+        }
+        if type == "StaticMeshActor":
+            params["static_mesh"] = static_mesh
+
+        response = unreal.send_command("spawn_actor", params)
+        return response or {"success": False, "message": "No response from Unreal"}
+    except Exception as e:
+        logger.error(f"spawn_actor error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def spawn_blueprint_in_level(
+    blueprint_name: str,
+    actor_name: str,
+    location: List[float] = [0.0, 0.0, 0.0],
+    rotation: List[float] = [0.0, 0.0, 0.0],
+    scale: List[float] = [1.0, 1.0, 1.0]
+) -> Dict[str, Any]:
+    """
+    Spawn an instance of an existing Blueprint class into the level.
+
+    Use this after creating and compiling a Blueprint to place it in the world.
+    For simple actors without Blueprint logic, use spawn_actor instead.
+
+    Args:
+        blueprint_name: Name of the Blueprint class (e.g., "MyCharacterBP")
+        actor_name: Unique name for the spawned instance
+        location: World position [X, Y, Z]
+        rotation: Rotation in degrees [Pitch, Yaw, Roll]
+        scale: Scale multiplier [X, Y, Z]
+
+    Returns:
+        Dictionary with spawned actor details
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        params = {
+            "blueprint_name": blueprint_name,
+            "actor_name": actor_name,
+            "location": location,
+            "rotation": rotation,
+            "scale": scale
+        }
+        response = unreal.send_command("spawn_blueprint_actor", params)
+        return response or {"success": False, "message": "No response from Unreal"}
+    except Exception as e:
+        logger.error(f"spawn_blueprint_in_level error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def batch_spawn_actors(
+    actors: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Spawn multiple actors in a single tool call. Much faster than calling spawn_actor
+    repeatedly since it avoids multiple round-trips through the MCP protocol.
+
+    Each actor dict should have:
+        - name (str, required): Unique actor name
+        - type (str): Actor type, default "StaticMeshActor"
+        - location (list): [X, Y, Z] position
+        - rotation (list): [Pitch, Yaw, Roll] in degrees
+        - scale (list): [X, Y, Z] scale
+        - static_mesh (str): Mesh path (for StaticMeshActor)
+
+    Example:
+        batch_spawn_actors(actors=[
+            {"name": "Wall_1", "location": [0, 0, 0], "scale": [5, 0.2, 3]},
+            {"name": "Wall_2", "location": [500, 0, 0], "scale": [5, 0.2, 3]},
+            {"name": "Light_1", "type": "PointLight", "location": [250, 0, 300]}
+        ])
+
+    Returns:
+        Dictionary with list of spawned actors and count of successes/failures
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        spawned = []
+        failed = []
+
+        for actor_def in actors:
+            if "name" not in actor_def:
+                failed.append({"error": "Missing 'name' field", "actor": actor_def})
+                continue
+
+            params = {
+                "name": actor_def["name"],
+                "type": actor_def.get("type", "StaticMeshActor"),
+                "location": actor_def.get("location", [0.0, 0.0, 0.0]),
+                "rotation": actor_def.get("rotation", [0.0, 0.0, 0.0]),
+                "scale": actor_def.get("scale", [1.0, 1.0, 1.0]),
+            }
+            if params["type"] == "StaticMeshActor":
+                params["static_mesh"] = actor_def.get("static_mesh", "/Engine/BasicShapes/Cube.Cube")
+
+            resp = safe_spawn_actor(unreal, params)
+            if resp and resp.get("status") == "success":
+                spawned.append(resp)
+            else:
+                failed.append({"name": actor_def["name"], "error": resp.get("error", "Unknown error") if resp else "No response"})
+
+        return {
+            "success": len(failed) == 0,
+            "spawned_count": len(spawned),
+            "failed_count": len(failed),
+            "total_requested": len(actors),
+            "actors": spawned,
+            "failures": failed if failed else None,
+            "message": f"Spawned {len(spawned)}/{len(actors)} actors"
+        }
+    except Exception as e:
+        logger.error(f"batch_spawn_actors error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def duplicate_actor(
+    source_name: str,
+    new_name: str,
+    location_offset: List[float] = [200.0, 0.0, 0.0]
+) -> Dict[str, Any]:
+    """
+    Duplicate an existing actor with an offset. Finds the source actor,
+    reads its transform, and spawns a copy at an offset position.
+
+    Args:
+        source_name: Name of the actor to duplicate
+        new_name: Name for the new copy
+        location_offset: Offset from original position [X, Y, Z]
+
+    Returns:
+        Dictionary with the duplicated actor details
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        # Find the source actor to get its properties
+        find_response = unreal.send_command("find_actors_by_name", {"pattern": source_name})
+        if not find_response or not find_response.get("actors"):
+            return {"success": False, "message": f"Source actor '{source_name}' not found"}
+
+        source_actor = find_response["actors"][0]
+        source_loc = source_actor.get("location", {})
+        source_rot = source_actor.get("rotation", {})
+        source_scale = source_actor.get("scale", {})
+
+        # Calculate new location
+        new_location = [
+            source_loc.get("x", 0) + location_offset[0],
+            source_loc.get("y", 0) + location_offset[1],
+            source_loc.get("z", 0) + location_offset[2]
+        ]
+
+        new_rotation = [
+            source_rot.get("pitch", 0),
+            source_rot.get("yaw", 0),
+            source_rot.get("roll", 0)
+        ]
+
+        new_scale = [
+            source_scale.get("x", 1),
+            source_scale.get("y", 1),
+            source_scale.get("z", 1)
+        ]
+
+        # Spawn the duplicate
+        params = {
+            "name": new_name,
+            "type": "StaticMeshActor",
+            "location": new_location,
+            "rotation": new_rotation,
+            "scale": new_scale,
+            "static_mesh": source_actor.get("mesh", "/Engine/BasicShapes/Cube.Cube")
+        }
+
+        response = safe_spawn_actor(unreal, params)
+        if response and response.get("status") == "success":
+            return {
+                "success": True,
+                "message": f"Duplicated '{source_name}' as '{new_name}'",
+                "source": source_name,
+                "duplicate": response
+            }
+        else:
+            return {"success": False, "message": f"Failed to spawn duplicate: {response}"}
+
+    except Exception as e:
+        logger.error(f"duplicate_actor error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def ping() -> Dict[str, Any]:
+    """
+    Test the connection to Unreal Engine. Returns success if the plugin is running
+    and responding. Use this to verify connectivity before other operations.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        response = unreal.send_command("ping", {})
+        if response:
+            return {"success": True, "message": "Unreal Engine is connected and responding", "response": response}
+        return {"success": False, "message": "No response from Unreal Engine"}
+    except Exception as e:
+        logger.error(f"ping error: {e}")
+        return {"success": False, "message": f"Connection failed: {str(e)}"}
+
 
 # Essential Blueprint Tools for Physics Actors
 @mcp.tool()
@@ -1242,8 +1506,7 @@ def spawn_physics_blueprint_actor (
                     logger.warning(f"Failed to set color {color} for {bp_name}: {color_result.get('message', 'Unknown error')}")
 
         compile_blueprint(bp_name)
-        result = spawn_blueprint_actor(bp_name, name, location)
-        
+
         # Spawn the blueprint actor using helper function
         unreal = get_unreal_connection()
         result = spawn_blueprint_actor(unreal, bp_name, name, location)
@@ -1255,7 +1518,7 @@ def spawn_physics_blueprint_actor (
 
         return result
     except Exception as e:
-        logger.error(f"spawn_physics_blueprint_actor  error: {e}")
+        logger.error(f"spawn_physics_blueprint_actor error: {e}")
         return {"success": False, "message": str(e)}
 
 @mcp.tool()
@@ -2026,73 +2289,30 @@ def add_node(
     function_name: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Add a node to a Blueprint graph.
-
-    Create various types of K2Nodes in a Blueprint's event graph or function graph.
-    Supports 23 node types organized by category.
+    Add a node to a Blueprint event graph or function graph.
 
     Args:
         blueprint_name: Name of the Blueprint to modify
-        node_type: Type of node to create. Supported types (23 total):
+        node_type: Node type to create. Supported types:
+            Control Flow: "Branch", "Comparison", "Switch", "SwitchEnum", "SwitchInteger", "ExecutionSequence"
+            Data: "VariableGet", "VariableSet", "MakeArray"
+            Casting: "DynamicCast", "ClassDynamicCast", "CastByteToEnum"
+            Utility: "Print", "CallFunction", "Select", "SpawnActor"
+            Specialized: "Timeline", "GetDataTableRow", "AddComponentByClass", "Self", "Knot"
+            Event: "Event" (uses event_type param: BeginPlay, Tick, Destroyed, etc.)
+        pos_x: X position in graph
+        pos_y: Y position in graph
+        message: Text for Print nodes
+        event_type: Event name for Event nodes (BeginPlay, Tick, Destroyed, etc.)
+        variable_name: Variable name for VariableGet/VariableSet nodes
+        target_function: Function name for CallFunction nodes
+        target_blueprint: Optional Blueprint path for CallFunction nodes
+        function_name: Function graph name (None = EventGraph)
 
-            CONTROL FLOW:
-                "Branch" - Conditional execution (if/then/else)
-                "Comparison" - Arithmetic/logical operators (==, !=, <, >, AND, OR, etc.)
-                    ℹ️ Types can be changed via set_node_property with action="set_pin_type"
-                "Switch" - Switch on byte/enum value with cases
-                    ℹ️ Creates 1 pin at creation; add more via set_node_property with action="add_pin"
-                "SwitchEnum" - Switch on enum type (auto-generates pins per enum value)
-                    ℹ️ Creates pins based on enum; change enum via set_node_property with action="set_enum_type"
-                "SwitchInteger" - Switch on integer value with cases
-                    ℹ️ Creates 1 pin at creation; add more via set_node_property with action="add_pin"
-                "ExecutionSequence" - Sequential execution with multiple outputs
-                    ℹ️ Creates 1 pin at creation; add/remove via set_node_property (add_pin/remove_pin)
-
-            DATA:
-                "VariableGet" - Read a variable value (⚠️ variable must exist in Blueprint)
-                "VariableSet" - Set a variable value (⚠️ variable must exist and be assignable)
-                "MakeArray" - Create array from individual inputs
-                    ℹ️ Creates 1 pin at creation; add/remove via set_node_property with action="set_num_elements"
-
-            CASTING:
-                "DynamicCast" - Cast object to specific class (⚠️ handle "Cast Failed" output)
-                "ClassDynamicCast" - Cast class reference to derived class (⚠️ handle failure cases)
-                "CastByteToEnum" - Convert byte value to enum (⚠️ byte must be valid enum range)
-
-            UTILITY:
-                "Print" - Debug output to screen/log (configurable duration and color)
-                "CallFunction" - Call any blueprint/engine function (⚠️ function must exist)
-                "Select" - Choose between two inputs based on boolean condition
-                "SpawnActor" - Spawn actor from class (⚠️ class must derive from Actor)
-
-            SPECIALIZED:
-                "Timeline" - Animation timeline playback with curve tracks
-                    ⚠️ REQUIRES MANUAL IMPLEMENTATION: Animation curves must be added in editor
-                "GetDataTableRow" - Query row from data table (⚠️ DataTable must exist)
-                "AddComponentByClass" - Dynamically add component to actor
-                "Self" - Reference to current actor/object
-                "Knot" - Invisible reroute node (wire organization only)
-
-            EVENT:
-                "Event" - Blueprint event (specify event_type: BeginPlay, Tick, etc.)
-                    ℹ️ Tick events run every frame - be mindful of performance impact
-
-        pos_x: X position in graph (default: 0)
-        pos_y: Y position in graph (default: 0)
-        message: For Print nodes, the text to print
-        event_type: For Event nodes, the event name (BeginPlay, Tick, Destroyed, etc.)
-        variable_name: For Variable nodes, the variable name
-        target_function: For CallFunction nodes, the function to call
-        target_blueprint: For CallFunction nodes, optional path to target Blueprint
-        function_name: Optional name of function graph to add node to (if None, uses EventGraph)
-
-    Returns:
-        Dictionary with success status, node_id, and position
-
-    Important Notes:
-        - Most nodes can have pins modified after creation via set_node_property
-        - Dynamic pin management: Switch/SwitchEnum/ExecutionSequence/MakeArray support pin operations
-        - Timeline is the ONLY node requiring manual implementation (curves must be added in editor)
+    Notes:
+        - Switch/ExecutionSequence/MakeArray pins can be added via set_node_property action="add_pin"
+        - Variables must exist before creating VariableGet/VariableSet nodes
+        - Timeline curves must be configured manually in the editor after creation
     """
     unreal = get_unreal_connection()
     if not unreal:
@@ -2250,111 +2470,31 @@ def set_blueprint_variable_properties(
     is_private: Optional[bool] = None
 ) -> Dict[str, Any]:
     """
-    Modify properties of an existing Blueprint variable without deleting it.
-
-    Preserves all VariableGet and VariableSet nodes connected to this variable.
+    Modify properties of an existing Blueprint variable. Preserves connected nodes.
 
     Args:
-        blueprint_name: Name of the Blueprint to modify
-        variable_name: Name of the variable to modify
-
-        var_name: Rename the variable (optional)
-            ✅ PASS - VarDesc->VarName works correctly
-
-        var_type: Change variable type (optional)
-            ✅ PASS - VarDesc->VarType works correctly (int→float returns "real")
-
-        is_blueprint_readable: Allow reading in Blueprint (VariableGet) (optional)
-            ✅ PASS - CPF_BlueprintReadOnly flag (inverted logic)
-
-        is_blueprint_writable: Allow writing in Blueprint (Set) (optional)
-            ✅ PASS - CPF_BlueprintReadOnly flag (inverted logic)
-            ⚠️ NOT returned by get_variable_details()
-
-        is_public: Visible in Blueprint editor (optional)
-            ✅ PASS - Controls variable visibility
-
-        is_editable_in_instance: Modifiable on instances (optional)
-            ✅ PASS - CPF_DisableEditOnInstance flag (inverted logic)
-
-        tooltip: Variable description (optional)
-            ✅ PASS - Metadata MD_Tooltip works correctly
-
-        category: Variable category (optional)
-            ✅ PASS - Direct property Category works
-
-        default_value: New default value (optional)
-            ✅ PASS - Works but get_variable_details() returns empty string
-
-        expose_on_spawn: Show in spawn dialog (optional)
-            ✅ PASS - Metadata MD_ExposeOnSpawn works
-            ⚠️ Requires is_editable_in_instance=true to be visible
-            ⚠️ NOT returned by get_variable_details()
-
-        expose_to_cinematics: Expose to cinematics (optional)
-            ✅ PASS - CPF_Interp flag works correctly
-            ⚠️ NOT returned by get_variable_details()
-
-        slider_range_min: UI slider minimum value (optional)
-            ✅ PASS - Metadata MD_UIMin works (string value)
-            ⚠️ NOT returned by get_variable_details()
-
-        slider_range_max: UI slider maximum value (optional)
-            ✅ PASS - Metadata MD_UIMax works (string value)
-            ⚠️ NOT returned by get_variable_details()
-
-        value_range_min: Clamp minimum value (optional)
-            ✅ PASS - Metadata MD_ClampMin works (string value)
-            ⚠️ NOT returned by get_variable_details()
-
-        value_range_max: Clamp maximum value (optional)
-            ✅ PASS - Metadata MD_ClampMax works (string value)
-            ⚠️ NOT returned by get_variable_details()
-
-        units: Display units (optional)
-            ⚠️ PARTIAL - Metadata MD_Units works for value display (e.g., "0.0 cm")
-            ❌ UI dropdown stays at "None" (Unreal Editor limitation - dropdown doesn't sync with metadata)
-            ⚠️ Use long format: "Centimeters", "Meters" (not "cm", "m")
-            ⚠️ NOT returned by get_variable_details()
-
-        bitmask: Treat as bitmask (optional)
-            ✅ PASS - Metadata TEXT("Bitmask") works correctly
-            ⚠️ NOT returned by get_variable_details()
-
-        bitmask_enum: Bitmask enum type (optional)
-            ✅ PASS - Metadata TEXT("BitmaskEnum") works
-            ⚠️ REQUIRES full path format: "/Script/ModuleName.EnumName"
-            ❌ Short names generate warning and don't sync dropdown
-            ✅ Validated enums (use FULL PATHS):
-                - /Script/UniversalObjectLocator.ELocatorResolveFlags
-                - /Script/JsonObjectGraph.EJsonStringifyFlags
-                - /Script/MediaAssets.EMediaAudioCaptureDeviceFilter
-                - /Script/MediaAssets.EMediaVideoCaptureDeviceFilter
-                - /Script/MediaAssets.EMediaWebcamCaptureDeviceFilter
-                - /Script/Engine.EAnimAssetCurveFlags
-                - /Script/Engine.EHardwareDeviceSupportedFeatures
-                - /Script/EnhancedInput.EMappingQueryIssue
-                - /Script/EnhancedInput.ETriggerEvent
-            ⚠️ NOT returned by get_variable_details()
-
-        replication_enabled: Enable network replication (CPF_Net flag) (optional)
-            ✅ PASS - CPF_Net flag works - Changes "Replication" dropdown (None ↔ Replicated)
-            ⚠️ NOT returned by get_variable_details()
-
-        replication_condition: Network replication condition (ELifetimeCondition 0-7) (optional)
-            ✅ PASS - VarDesc->ReplicationCondition works
-            ✅ Changes "Replication Condition" dropdown (e.g., None → Initial Only)
-            ⚠️ Values: 0=None, 1=InitialOnly, 2=OwnerOnly, 3=SkipOwner, 4=SimulatedOnly, 5=AutonomousOnly, 6=SimulatedOrPhysics, 7=InitialOrOwner
-            ✅ Returned by get_variable_details() as "replication"
-
-        is_private: Set variable as private (optional)
-            ❌ UNRESOLVED - Property flag/metadata not yet identified
-            ⚠️ Attempted CPF_NativeAccessSpecifierPrivate flag and MD_AllowPrivateAccess metadata - neither work
-            ⚠️ The property that controls "Privé" (Private) checkbox remains unknown
-            ⚠️ Parameter exists but has no effect on UI - do NOT use until resolved
-
-    Returns:
-        Dictionary with success status and updated properties
+        blueprint_name: Blueprint to modify
+        variable_name: Variable to modify
+        var_name: Rename variable
+        var_type: Change type (bool, int, float, string, vector, rotator)
+        is_blueprint_readable: Allow VariableGet nodes
+        is_blueprint_writable: Allow VariableSet nodes
+        is_public: Visible in editor
+        is_editable_in_instance: Editable on instances
+        tooltip: Description text
+        category: Organization category
+        default_value: Default value
+        expose_on_spawn: Show in spawn dialog (requires is_editable_in_instance=true)
+        expose_to_cinematics: Expose to Sequencer
+        slider_range_min/max: UI slider bounds (string values)
+        value_range_min/max: Clamped value bounds (string values)
+        units: Display units (use "Centimeters", "Meters", etc. - long format)
+        bitmask: Treat as bitmask
+        bitmask_enum: Bitmask enum (full path: "/Script/ModuleName.EnumName")
+        replication_enabled: Enable network replication
+        replication_condition: Replication condition (0=None, 1=InitialOnly, 2=OwnerOnly,
+            3=SkipOwner, 4=SimulatedOnly, 5=AutonomousOnly, 6=SimulatedOrPhysics, 7=InitialOrOwner)
+        is_private: NOT WORKING - parameter has no effect
     """
     unreal = get_unreal_connection()
     if not unreal:
@@ -2489,81 +2629,29 @@ def set_node_property(
     event_type: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Set a property on a Blueprint node or perform semantic node editing.
+    Set a property on a Blueprint node or perform semantic editing operations.
 
-    This function supports both simple property modifications and advanced semantic
-    node editing operations (pin management, type modifications, reference updates).
+    Two modes of operation:
+    1. Legacy mode: Set property_name + property_value directly (message, duration, pos_x, pos_y, comment)
+    2. Semantic mode: Use action parameter for advanced operations:
+        - "add_pin": Add pin (requires pin_type: "SwitchCase"/"ExecutionOutput"/"ArrayElement"/"EnumValue")
+        - "remove_pin": Remove pin (requires pin_name)
+        - "set_enum_type": Set enum type (requires enum_type path)
+        - "set_pin_type": Change pin type (requires pin_name, new_type)
+        - "set_value_type": Change value type on Select nodes (requires new_type)
+        - "set_cast_target": Change cast target (requires target_type)
+        - "set_function_call": Change called function (requires target_function, optional target_class)
+        - "set_event_type": Change event type (requires event_type)
 
     Args:
-        blueprint_name: Name of the Blueprint to modify
-        node_id: ID of the node to modify
-        property_name: Name of property to set (legacy mode, used if action not specified)
-        property_value: Value to set (legacy mode)
-        function_name: Name of function graph (optional, defaults to EventGraph)
-        action: Semantic action to perform - can be one of:
-            Phase 1 (Pin Management):
-                - "add_pin": Add a pin to a node (requires pin_type)
-                - "remove_pin": Remove a pin from a node (requires pin_name)
-                - "set_enum_type": Set enum type on a node (requires enum_type)
-            Phase 2 (Type Modification):
-                - "set_pin_type": Change pin type on comparison nodes (requires pin_name, new_type)
-                - "set_value_type": Change value type on select nodes (requires new_type)
-                - "set_cast_target": Change cast target type (requires target_type)
-            Phase 3 (Reference Updates - DESTRUCTIVE):
-                - "set_function_call": Change function being called (requires target_function)
-                - "set_event_type": Change event type (requires event_type)
-
-    Semantic action parameters:
-        pin_type: Type of pin to add ("SwitchCase", "ExecutionOutput", "ArrayElement", "EnumValue")
-        pin_name: Name of pin to remove or modify
-        enum_type: Full path to enum type (e.g., "/Game/Enums/ECardinalDirection")
-        new_type: New type for pin or value ("int", "float", "string", "bool", "vector", etc.)
-        target_type: Target class path for casting
-        target_function: Name of function to call
-        target_class: Optional class containing the function
-        event_type: Event type (e.g., "BeginPlay", "Tick", "Destroyed")
-
-    Returns:
-        Dictionary with success status and details
-
-    Supported legacy properties by node type:
-        - Print nodes: "message", "duration", "text_color"
-        - Variable nodes: "variable_name"
-        - All nodes: "pos_x", "pos_y", "comment"
-
-    Examples:
-        Legacy mode (set simple property):
-            set_node_property(
-                blueprint_name="MyActorBlueprint",
-                node_id="K2Node_1234567890",
-                property_name="message",
-                property_value="Hello World!"
-            )
-
-        Semantic mode (add pin):
-            set_node_property(
-                blueprint_name="MyActorBlueprint",
-                node_id="K2Node_Switch_123",
-                action="add_pin",
-                pin_type="SwitchCase"
-            )
-
-        Semantic mode (set enum type):
-            set_node_property(
-                blueprint_name="MyActorBlueprint",
-                node_id="K2Node_SwitchEnum_456",
-                action="set_enum_type",
-                enum_type="ECardinalDirection"
-            )
-
-        Semantic mode (change function call):
-            set_node_property(
-                blueprint_name="MyActorBlueprint",
-                node_id="K2Node_CallFunction_789",
-                action="set_function_call",
-                target_function="BeginPlay",
-                target_class="APawn"
-            )
+        blueprint_name: Blueprint to modify
+        node_id: Node ID to modify
+        property_name: Property name (legacy mode)
+        property_value: Property value (legacy mode)
+        function_name: Function graph name (None = EventGraph)
+        action: Semantic action (see above)
+        pin_type/pin_name/enum_type/new_type/target_type/target_function/target_class/event_type:
+            Parameters for semantic actions (see above)
     """
     unreal = get_unreal_connection()
     if not unreal:
