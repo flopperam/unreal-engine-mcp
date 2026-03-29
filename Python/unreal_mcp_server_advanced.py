@@ -1242,8 +1242,7 @@ def spawn_physics_blueprint_actor (
                     logger.warning(f"Failed to set color {color} for {bp_name}: {color_result.get('message', 'Unknown error')}")
 
         compile_blueprint(bp_name)
-        result = spawn_blueprint_actor(bp_name, name, location)
-        
+
         # Spawn the blueprint actor using helper function
         unreal = get_unreal_connection()
         result = spawn_blueprint_actor(unreal, bp_name, name, location)
@@ -1252,6 +1251,14 @@ def spawn_physics_blueprint_actor (
         if result.get("success", False):
             spawned_name = result.get("result", {}).get("name", name)
             set_actor_transform(spawned_name, scale=scale)
+
+            # Apply color to the spawned actor instance
+            # Blueprint material colors may not persist through compile+spawn,
+            # so we also apply the color directly on the spawned actor
+            if color is not None:
+                apply_result = set_mesh_material_color(spawned_name, "Mesh", color)
+                if not apply_result.get("success", False):
+                    logger.warning(f"Failed to apply color to spawned actor {spawned_name}: {apply_result.get('message', 'Unknown error')}")
 
         return result
     except Exception as e:
