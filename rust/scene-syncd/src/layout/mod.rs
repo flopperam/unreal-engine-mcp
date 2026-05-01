@@ -1,11 +1,16 @@
+pub mod brick_generator;
 pub mod constraint;
 pub mod constraint_extract;
 pub mod crenellations;
 pub mod denormalizer;
+pub mod detail_realizer;
 pub mod entity_resolver;
 pub mod kind_registry;
 pub mod preview;
 pub mod realization;
+pub mod roof_tile_generator;
 pub mod scene_object_builder;
+pub mod shape_grammar;
 pub mod span;
 pub mod transform;
+pub mod window_generator;

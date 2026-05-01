@@ -1,5 +1,7 @@
 use crate::db::SurrealSceneRepository;
 use crate::error::AppError;
+use crate::ir::instance_set::InstanceSet;
+use crate::sync::instance_set_planner::{plan_instance_set_sync, InstanceSetOperation, InstanceSetState};
 use crate::sync::{SyncAction, SyncOperation, SyncPlan};
 use crate::unreal::client::UnrealClient;
 use serde::{Deserialize, Serialize};
@@ -50,6 +52,9 @@ pub struct SyncApplySummary {
     pub update_visuals: usize,
     pub deletes: usize,
     pub noops: usize,
+    pub instance_set_creates: usize,
+    pub instance_set_updates: usize,
+    pub instance_set_deletes: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,12 +135,58 @@ fn response_error_summary(response: &serde_json::Value) -> String {
     }
 }
 
+/// Convert domain Transform to array-format JSON expected by Unreal ISM commands.
+fn transforms_to_json(transforms: &[crate::domain::Transform]) -> Vec<serde_json::Value> {
+    transforms
+        .iter()
+        .map(|t| {
+            json!({
+                "location": [t.location.x, t.location.y, t.location.z],
+                "rotation": [t.rotation.pitch, t.rotation.yaw, t.rotation.roll],
+                "scale": [t.scale.x, t.scale.y, t.scale.z],
+            })
+        })
+        .collect()
+}
+
+/// Parse Unreal `list_instance_sets` response into `InstanceSetState` structs.
+fn parse_instance_set_list(response: &serde_json::Value) -> Vec<InstanceSetState> {
+    response
+        .get("sets")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|item| {
+                    let set_id = item.get("set_id")?.as_str()?;
+                    let mesh = item.get("mesh_path")?.as_str()?.to_string();
+                    let material = item
+                        .get("material_path")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let instance_count = item
+                        .get("instance_count")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0) as usize;
+                    Some(InstanceSetState {
+                        set_id: set_id.to_string(),
+                        mesh,
+                        material,
+                        instance_count,
+                        cell_id: None,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub async fn apply_sync(
     unreal: &UnrealClient,
     db: &SurrealSceneRepository,
     plan: &SyncPlan,
     mode: &str,
     allow_delete: bool,
+    instance_sets: Option<&[InstanceSet]>,
 ) -> Result<SyncApplyResult, AppError> {
     if mode == "plan_only" {
         return Err(AppError::Validation(
@@ -155,19 +206,239 @@ pub async fn apply_sync(
         ..Default::default()
     };
 
-    result.summary.total = plan.operations.len();
-
     for warning in &plan.warnings {
         result.warnings.push(warning.clone());
     }
 
+    // --- Build lookup: mcp_id -> desired_hash from individual plan operations ---
+    let mut mcp_id_to_hash: HashMap<String, String> = HashMap::new();
+    for op in &plan.operations {
+        if let Some(desired) = &op.desired {
+            if let Some(hash) = desired.get("desired_hash").and_then(|v| v.as_str()) {
+                mcp_id_to_hash.insert(op.mcp_id.clone(), hash.to_string());
+            }
+        }
+    }
+
+    // --- InstanceSet apply phase ----------------------------------------
+    let mut instance_set_mcp_ids: HashSet<String> = HashSet::new();
+    let mut instance_sync_marks: Vec<(String, String, Option<String>)> = Vec::new();
+    let mut instance_op_records: Vec<(String, String, String, String)> = Vec::new();
+
+    if let Some(desired_sets) = instance_sets {
+        // Collect all mcp_ids that belong to instance sets
+        for set in desired_sets {
+            for mcp_id in &set.source_mcp_ids {
+                instance_set_mcp_ids.insert(mcp_id.clone());
+            }
+        }
+
+        // Query actual instance sets from Unreal
+        let actual_sets = match unreal.list_instance_sets().await {
+            Ok(resp) => parse_instance_set_list(&resp),
+            Err(e) => {
+                result.warnings.push(format!("Could not list instance sets from Unreal: {e}"));
+                Vec::new()
+            }
+        };
+
+        let ism_ops = plan_instance_set_sync(desired_sets, &actual_sets);
+
+        for op in &ism_ops {
+            match op {
+                InstanceSetOperation::Create {
+                    set_id,
+                    mesh,
+                    material,
+                    transforms,
+                    ..
+                } => {
+                    let json_transforms = transforms_to_json(transforms);
+                    let mat_ref = material.as_deref();
+                    match unreal.spawn_instance_set(set_id, mesh, mat_ref, json_transforms).await {
+                        Ok(resp) => {
+                            let success = resp
+                                .get("success")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            let actor_name = resp
+                                .get("actor_name")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            if success {
+                                result.summary.succeeded += 1;
+                                result.summary.instance_set_creates += 1;
+                                result.operations.push(AppliedOperation {
+                                    mcp_id: set_id.clone(),
+                                    action: "instance_set_create".to_string(),
+                                    status: "success".to_string(),
+                                    unreal_actor_name: actor_name.clone(),
+                                    error: None,
+                                });
+                                // Mark all member mcp_ids as synced
+                                if let Some(desired) = desired_sets.iter().find(|s| s.set_id == *set_id) {
+                                    for mcp_id in &desired.source_mcp_ids {
+                                        let hash = mcp_id_to_hash.get(mcp_id).cloned().unwrap_or_default();
+                                        instance_sync_marks.push((mcp_id.clone(), hash, actor_name.clone()));
+                                        instance_op_records.push((mcp_id.clone(), "create".to_string(), "success".to_string(), "applied via instance set".to_string()));
+                                    }
+                                }
+                            } else {
+                                result.summary.failed += 1;
+                                let err_msg = resp
+                                    .get("error")
+                                    .and_then(|e| e.as_str())
+                                    .unwrap_or("unknown spawn_instance_set error");
+                                result.operations.push(AppliedOperation {
+                                    mcp_id: set_id.clone(),
+                                    action: "instance_set_create".to_string(),
+                                    status: "error".to_string(),
+                                    unreal_actor_name: None,
+                                    error: Some(err_msg.to_string()),
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            result.summary.failed += 1;
+                            result.operations.push(AppliedOperation {
+                                mcp_id: set_id.clone(),
+                                action: "instance_set_create".to_string(),
+                                status: "error".to_string(),
+                                unreal_actor_name: None,
+                                error: Some(e.to_string()),
+                            });
+                        }
+                    }
+                }
+                InstanceSetOperation::Update {
+                    set_id,
+                    mesh: _,
+                    material: _,
+                    transforms,
+                    ..
+                } => {
+                    let json_transforms = transforms_to_json(transforms);
+                    match unreal.update_instance_set(set_id, json_transforms).await {
+                        Ok(resp) => {
+                            let success = resp
+                                .get("success")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            if success {
+                                result.summary.succeeded += 1;
+                                result.summary.instance_set_updates += 1;
+                                result.operations.push(AppliedOperation {
+                                    mcp_id: set_id.clone(),
+                                    action: "instance_set_update".to_string(),
+                                    status: "success".to_string(),
+                                    unreal_actor_name: None,
+                                    error: None,
+                                });
+                                if let Some(desired) = desired_sets.iter().find(|s| s.set_id == *set_id) {
+                                    for mcp_id in &desired.source_mcp_ids {
+                                        let hash = mcp_id_to_hash.get(mcp_id).cloned().unwrap_or_default();
+                                        instance_sync_marks.push((mcp_id.clone(), hash, None));
+                                        instance_op_records.push((mcp_id.clone(), "update_transform".to_string(), "success".to_string(), "applied via instance set".to_string()));
+                                    }
+                                }
+                            } else {
+                                result.summary.failed += 1;
+                                let err_msg = resp
+                                    .get("error")
+                                    .and_then(|e| e.as_str())
+                                    .unwrap_or("unknown update_instance_set error");
+                                result.operations.push(AppliedOperation {
+                                    mcp_id: set_id.clone(),
+                                    action: "instance_set_update".to_string(),
+                                    status: "error".to_string(),
+                                    unreal_actor_name: None,
+                                    error: Some(err_msg.to_string()),
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            result.summary.failed += 1;
+                            result.operations.push(AppliedOperation {
+                                mcp_id: set_id.clone(),
+                                action: "instance_set_update".to_string(),
+                                status: "error".to_string(),
+                                unreal_actor_name: None,
+                                error: Some(e.to_string()),
+                            });
+                        }
+                    }
+                }
+                InstanceSetOperation::Delete { set_id } => {
+                    match unreal.delete_instance_set(set_id).await {
+                        Ok(resp) => {
+                            let success = resp
+                                .get("success")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            if success {
+                                result.summary.succeeded += 1;
+                                result.summary.instance_set_deletes += 1;
+                                result.operations.push(AppliedOperation {
+                                    mcp_id: set_id.clone(),
+                                    action: "instance_set_delete".to_string(),
+                                    status: "success".to_string(),
+                                    unreal_actor_name: None,
+                                    error: None,
+                                });
+                                if let Some(desired) = desired_sets.iter().find(|s| s.set_id == *set_id) {
+                                    for mcp_id in &desired.source_mcp_ids {
+                                        instance_sync_marks.push((mcp_id.clone(), "".to_string(), None));
+                                        instance_op_records.push((mcp_id.clone(), "delete".to_string(), "success".to_string(), "applied via instance set".to_string()));
+                                    }
+                                }
+                            } else {
+                                result.summary.failed += 1;
+                                let err_msg = resp
+                                    .get("error")
+                                    .and_then(|e| e.as_str())
+                                    .unwrap_or("unknown delete_instance_set error");
+                                result.operations.push(AppliedOperation {
+                                    mcp_id: set_id.clone(),
+                                    action: "instance_set_delete".to_string(),
+                                    status: "error".to_string(),
+                                    unreal_actor_name: None,
+                                    error: Some(err_msg.to_string()),
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            result.summary.failed += 1;
+                            result.operations.push(AppliedOperation {
+                                mcp_id: set_id.clone(),
+                                action: "instance_set_delete".to_string(),
+                                status: "error".to_string(),
+                                unreal_actor_name: None,
+                                error: Some(e.to_string()),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Filter individual operations for mcp_ids already handled by instance sets ---
+    let filtered_plan = if instance_set_mcp_ids.is_empty() {
+        plan.clone()
+    } else {
+        let mut filtered = plan.clone();
+        filtered.operations.retain(|op| !instance_set_mcp_ids.contains(&op.mcp_id));
+        filtered
+    };
+    result.summary.total = filtered_plan.operations.len();
+
     // --- P4: Batch apply via apply_scene_delta ---------------------------
     let batch_result = apply_scene_delta_batch(
         db,
-        &unreal,
+        unreal,
         &run_id,
         &plan.scene_id,
-        plan,
+        &filtered_plan,
         mode,
         allow_delete,
     )
@@ -194,9 +465,9 @@ pub async fn apply_sync(
             }
         }
         Err(e) => {
-            result.summary.failed += plan.operations.len();
+            result.summary.failed += filtered_plan.operations.len();
             result.warnings.push(format!("Batch apply failed: {e}"));
-            for op in &plan.operations {
+            for op in &filtered_plan.operations {
                 result.operations.push(AppliedOperation {
                     mcp_id: op.mcp_id.clone(),
                     action: format!("{:?}", op.action).to_lowercase(),
@@ -208,6 +479,18 @@ pub async fn apply_sync(
         }
     }
     // ------------------------------------------------------------------
+
+    // --- Persist instance set sync marks and operation records ------------
+    if !instance_sync_marks.is_empty() {
+        if let Err(e) = db.mark_objects_synced_batch(&plan.scene_id, &instance_sync_marks).await {
+            result.warnings.push(format!("Failed to mark instance set objects as synced: {e}"));
+        }
+    }
+    if !instance_op_records.is_empty() {
+        if let Err(e) = db.record_operations_batch(&run_id, &plan.scene_id, &instance_op_records).await {
+            result.warnings.push(format!("Failed to record instance set operations: {e}"));
+        }
+    }
 
     if let Err(e) = db.finish_sync_run(&run_id, &result.summary).await {
         result
@@ -841,7 +1124,7 @@ async fn apply_scene_delta_batch(
                                 .and_then(|v| v.as_array())
                                 .map(|arr| {
                                     [
-                                        arr.get(0).and_then(|v| v.as_f64()).unwrap_or(0.0),
+                                        arr.first().and_then(|v| v.as_f64()).unwrap_or(0.0),
                                         arr.get(1).and_then(|v| v.as_f64()).unwrap_or(0.0),
                                         arr.get(2).and_then(|v| v.as_f64()).unwrap_or(0.0),
                                     ]
@@ -852,7 +1135,7 @@ async fn apply_scene_delta_batch(
                                 .and_then(|v| v.as_array())
                                 .map(|arr| {
                                     [
-                                        arr.get(0).and_then(|v| v.as_f64()).unwrap_or(0.0),
+                                        arr.first().and_then(|v| v.as_f64()).unwrap_or(0.0),
                                         arr.get(1).and_then(|v| v.as_f64()).unwrap_or(0.0),
                                         arr.get(2).and_then(|v| v.as_f64()).unwrap_or(0.0),
                                     ]
@@ -863,7 +1146,7 @@ async fn apply_scene_delta_batch(
                                 .and_then(|v| v.as_array())
                                 .map(|arr| {
                                     [
-                                        arr.get(0).and_then(|v| v.as_f64()).unwrap_or(1.0),
+                                        arr.first().and_then(|v| v.as_f64()).unwrap_or(1.0),
                                         arr.get(1).and_then(|v| v.as_f64()).unwrap_or(1.0),
                                         arr.get(2).and_then(|v| v.as_f64()).unwrap_or(1.0),
                                     ]

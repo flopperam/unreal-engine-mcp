@@ -112,6 +112,46 @@ impl Default for KindRegistry {
                 layer: 0,
             },
         );
+        map.insert(
+            "crenellation".to_string(),
+            KindSpec {
+                actor_type: "StaticMeshActor",
+                asset_path: "/Engine/BasicShapes/Cube.Cube",
+                default_tags: vec!["crenellation", "detail"],
+                draft_color: [0.8, 0.75, 0.65, 0.35],
+                layer: 1,
+            },
+        );
+        map.insert(
+            "window".to_string(),
+            KindSpec {
+                actor_type: "StaticMeshActor",
+                asset_path: "/Engine/BasicShapes/Cube.Cube",
+                default_tags: vec!["window", "detail"],
+                draft_color: [0.4, 0.6, 0.9, 0.5],
+                layer: 1,
+            },
+        );
+        map.insert(
+            "roof_tile".to_string(),
+            KindSpec {
+                actor_type: "StaticMeshActor",
+                asset_path: "/Engine/BasicShapes/Cube.Cube",
+                default_tags: vec!["roof_tile", "detail"],
+                draft_color: [0.6, 0.35, 0.25, 0.4],
+                layer: 1,
+            },
+        );
+        map.insert(
+            "brick".to_string(),
+            KindSpec {
+                actor_type: "StaticMeshActor",
+                asset_path: "/Engine/BasicShapes/Cube.Cube",
+                default_tags: vec!["brick", "detail"],
+                draft_color: [0.7, 0.5, 0.35, 0.35],
+                layer: 1,
+            },
+        );
         Self { map }
     }
 }
@@ -139,6 +179,10 @@ mod tests {
             "moat",
             "building",
             "decoration",
+            "crenellation",
+            "window",
+            "roof_tile",
+            "brick",
         ] {
             assert!(registry.get(kind).is_some(), "missing kind: {kind}");
         }

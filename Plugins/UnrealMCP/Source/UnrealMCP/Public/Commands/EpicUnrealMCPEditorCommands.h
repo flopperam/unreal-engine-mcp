@@ -90,4 +90,11 @@ private:
     TSharedPtr<FJsonObject> HandleCreateDraftProxy(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleUpdateDraftProxy(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleDeleteDraftProxy(const TSharedPtr<FJsonObject>& Params);
+
+    // InstanceSet commands (HISM/ISM bulk instancing)
+    TSharedPtr<FJsonObject> HandleSpawnInstanceSet(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleUpdateInstanceSet(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleDeleteInstanceSet(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleGetInstanceSetState(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleListInstanceSets(const TSharedPtr<FJsonObject>& Params);
 }; 

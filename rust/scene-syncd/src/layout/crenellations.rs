@@ -109,6 +109,7 @@ pub fn generate_crenellations(
             }
         }
         object.visual["draft"]["proxy_group"] = serde_json::json!("crenellation");
+        object.metadata["render_mode"] = serde_json::json!("instance_set");
         objects.push(object);
     }
 

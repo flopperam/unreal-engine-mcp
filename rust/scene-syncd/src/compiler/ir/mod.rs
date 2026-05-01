@@ -17,6 +17,8 @@ pub struct CompileResult {
     pub world_cells: Vec<WorldCell>,
     pub diagnostics: Vec<Diagnostic>,
     pub summary: CompileSummary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub render_plan: Option<crate::ir::render_plan::RenderPlan>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,3 +1,5 @@
+use crate::ir::material::MaterialPlan;
+use crate::ir::style::WorldStyleProfile;
 use serde::{Deserialize, Serialize};
 
 /// Typed semantic IR derived from denormalized SceneObjects.
@@ -7,6 +9,12 @@ pub struct SemanticScene {
     pub scene_id: String,
     pub entities: Vec<SemanticEntity>,
     pub metadata: serde_json::Value,
+    /// World style profile driving material coherence decisions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style_profile: Option<WorldStyleProfile>,
+    /// Material plans for each object, computed by MaterialCoherencePass.
+    #[serde(default)]
+    pub material_plans: Vec<MaterialPlan>,
 }
 
 impl SemanticScene {
@@ -15,6 +23,8 @@ impl SemanticScene {
             scene_id,
             entities: Vec::new(),
             metadata: serde_json::json!({}),
+            style_profile: None,
+            material_plans: Vec::new(),
         }
     }
 
@@ -68,6 +78,8 @@ impl SemanticScene {
             scene_id,
             entities: entity_map.into_values().collect(),
             metadata: serde_json::json!({}),
+            style_profile: None,
+            material_plans: Vec::new(),
         }
     }
 }

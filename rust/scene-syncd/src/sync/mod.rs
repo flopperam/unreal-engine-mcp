@@ -45,6 +45,12 @@ pub struct SyncPlanSummary {
     pub noop: usize,
     pub conflict: usize,
     pub unsupported: usize,
+    #[serde(default)]
+    pub instance_set_creates: usize,
+    #[serde(default)]
+    pub instance_set_updates: usize,
+    #[serde(default)]
+    pub instance_set_deletes: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

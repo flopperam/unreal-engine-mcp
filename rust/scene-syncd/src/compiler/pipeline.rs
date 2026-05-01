@@ -6,6 +6,7 @@ use crate::compiler::passes::import::ImportPass;
 use crate::compiler::passes::infer_anchors::InferAnchorsPass;
 use crate::compiler::passes::lower_geometry::GeometryLoweringPass;
 use crate::compiler::passes::normalize::NormalizePass;
+use crate::compiler::passes::plan_density_lod::DensityPlannerPass;
 use crate::compiler::passes::realize::RealizePass;
 use crate::compiler::passes::solve_layout::ConstraintSolvePass;
 use crate::compiler::passes::validate::ValidatePass;
@@ -13,9 +14,11 @@ use crate::compiler::passes::Pass;
 use crate::db::SurrealSceneRepository;
 use crate::error::AppError;
 use crate::layout::denormalizer::denormalize_layout;
+use crate::layout::entity_resolver::resolve_span;
 use crate::layout::kind_registry::KindRegistry;
-use crate::ir::instance_set::group_into_instance_sets;
+use crate::ir::render_plan::RenderPlan;
 use crate::ir::world_cell::partition_into_cells;
+use std::collections::HashMap;
 
 pub struct CompilerPipeline {
     pub context: CompilerContext,
@@ -37,19 +40,36 @@ impl CompilerPipeline {
         let registry = KindRegistry::default();
         let objects = denormalize_layout(scene_id, &entities, &relations, &registry)?;
 
+        // Compute spans for entities that have them (curtain_wall, bridge, etc.)
+        let entity_by_id: HashMap<&str, &crate::domain::SceneEntity> = entities
+            .iter()
+            .map(|e| (e.entity_id.as_str(), e))
+            .collect();
+        let spans: Vec<(String, crate::layout::span::Span)> = entities
+            .iter()
+            .filter_map(|e| {
+                resolve_span(e, &relations, &entity_by_id)
+                    .map(|span| (e.entity_id.clone(), span))
+            })
+            .collect();
+
         let mut context = CompilerContext::new(scene_id.to_string());
         context.objects = objects;
+        context.entities = entities;
+        context.spans = spans;
 
-        let mut passes: Vec<Box<dyn Pass>> = Vec::new();
-        passes.push(Box::new(ImportPass));
-        passes.push(Box::new(GraphBuildPass));
-        passes.push(Box::new(InferAnchorsPass));
-        passes.push(Box::new(GeometryLoweringPass));
-        passes.push(Box::new(NormalizePass));
-        passes.push(Box::new(RealizePass::blockout()));
-        passes.push(Box::new(ConstraintSolvePass));
-        passes.push(Box::new(ValidatePass::default()));
-        passes.push(Box::new(DiffPlanningPass::new()));
+        let passes: Vec<Box<dyn Pass>> = vec![
+            Box::new(ImportPass),
+            Box::new(GraphBuildPass),
+            Box::new(InferAnchorsPass),
+            Box::new(GeometryLoweringPass),
+            Box::new(NormalizePass),
+            Box::new(RealizePass::blockout()),
+            Box::new(ConstraintSolvePass),
+            Box::new(ValidatePass::default()),
+            Box::new(DensityPlannerPass),
+            Box::new(DiffPlanningPass::new()),
+        ];
 
         Ok(Self { context, passes })
     }
@@ -128,8 +148,14 @@ impl CompilerPipeline {
         let objects = std::mem::take(&mut self.context.objects);
         let diagnostics = std::mem::take(&mut self.context.diagnostics);
 
-        // Phase 4: InstanceSet grouping
-        let instance_sets = group_into_instance_sets(&objects);
+        // Phase 3: Density/LOD planner produces render_plan + instance_sets.
+        // If validation failed early, the pass never ran: fall back to all-actors.
+        let render_plan = self
+            .context
+            .render_plan
+            .take()
+            .unwrap_or_else(|| RenderPlan::all_actors(&self.context.scene_id, &objects));
+        let instance_sets = std::mem::take(&mut self.context.instance_sets);
         let instance_set_count = instance_sets.len();
 
         // Phase 6: World Partition cell assignment
@@ -164,6 +190,7 @@ impl CompilerPipeline {
                 instance_sets: instance_set_count,
                 world_cells: world_cell_count,
             },
+            render_plan: Some(render_plan),
         })
     }
 

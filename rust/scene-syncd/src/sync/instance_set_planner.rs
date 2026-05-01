@@ -120,6 +120,7 @@ mod tests {
             tags: vec![],
             cell_id: None,
             lod_policy: "default".to_string(),
+            source_mcp_ids: vec![],
         }
     }
 

@@ -1,6 +1,7 @@
 use crate::compiler::context::CompilerContext;
 use crate::compiler::passes::Pass;
 use crate::error::AppError;
+use crate::layout::detail_realizer::DetailRealizer;
 use crate::layout::kind_registry::KindRegistry;
 
 /// Realization pass: maps semantic kinds to concrete Unreal assets.
@@ -35,6 +36,16 @@ impl RealizePass {
     }
 }
 
+/// Kinds that represent detail/sub-objects eligible for InstanceSet rendering.
+const DETAIL_KINDS: &[&str] = &[
+    "crenellation",
+    "merlon",
+    "battlement",
+    "window",
+    "brick",
+    "roof_tile",
+];
+
 impl Pass for RealizePass {
     fn name(&self) -> &'static str {
         "realize"
@@ -68,12 +79,18 @@ impl Pass for RealizePass {
                         });
                     }
                     "detail" => {
-                        // Integrate crenellations and detail tags.
                         let mut tags = obj.tags.clone();
-                        if !tags.iter().any(|t| t.starts_with("detail:")) {
-                            tags.push("detail:crenellation".to_string());
+                        // Only add detail tags to objects that are detail kinds
+                        let is_detail = DETAIL_KINDS.iter().any(|dk| kind == *dk)
+                            || tags.iter().any(|t| t == "detail");
+                        if is_detail && !tags.iter().any(|t| t.starts_with("detail:")) {
+                            tags.push(format!("detail:{}", kind));
                         }
                         obj.tags = tags;
+                        // Mark detail objects for InstanceSet rendering
+                        if is_detail {
+                            obj.metadata["render_mode"] = serde_json::json!("instance_set");
+                        }
                     }
                     "finalize" => {
                         let mut tags = obj.tags.clone();
@@ -89,6 +106,44 @@ impl Pass for RealizePass {
                 }
             }
         }
+
+        // Detail stage: generate procedural detail sub-objects from entities/spans.
+        if self.stage == "detail" && !ctx.entities.is_empty() {
+            let realizer = DetailRealizer;
+
+            // Crenellations from curtain_wall entities
+            let crenellation_objects = DetailRealizer::realize_crenellations(
+                &ctx.scene_id,
+                &ctx.entities,
+                &ctx.spans,
+            )?;
+            ctx.objects.extend(crenellation_objects);
+
+            // Windows from building/keep/tower entities
+            let window_objects = realizer.realize_windows(
+                &ctx.scene_id,
+                &ctx.entities,
+                &ctx.spans,
+            )?;
+            ctx.objects.extend(window_objects);
+
+            // Roof tiles from building/keep/tower entities
+            let roof_objects = realizer.realize_roof_tiles(
+                &ctx.scene_id,
+                &ctx.entities,
+                &ctx.spans,
+            )?;
+            ctx.objects.extend(roof_objects);
+
+            // Bricks from curtain_wall entities
+            let brick_objects = realizer.realize_bricks(
+                &ctx.scene_id,
+                &ctx.entities,
+                &ctx.spans,
+            )?;
+            ctx.objects.extend(brick_objects);
+        }
+
         Ok(())
     }
 }
@@ -175,13 +230,31 @@ mod tests {
     }
 
     #[test]
-    fn detail_adds_crenellation_tag() {
+    fn detail_tags_crenellation_kind_only() {
         let mut ctx = CompilerContext::new("test".to_string());
-        ctx.objects = vec![make_obj("keep")];
+        let mut crenel = make_obj("crenellation");
+        crenel.mcp_id = "crenel_1".to_string();
+        let mut keep = make_obj("keep");
+        keep.mcp_id = "keep_1".to_string();
+        let mut wall = make_obj("curtain_wall");
+        wall.mcp_id = "wall_1".to_string();
+        ctx.objects = vec![crenel, keep, wall];
         let pass = RealizePass::detail();
         pass.run(&mut ctx).unwrap();
-        let obj = &ctx.objects[0];
-        assert!(obj.tags.iter().any(|t| t == "detail:crenellation"));
+
+        // Crenellation should get detail tag and render_mode
+        let crenel_obj = ctx.objects.iter().find(|o| o.mcp_id == "crenel_1").unwrap();
+        assert!(crenel_obj.tags.iter().any(|t| t.starts_with("detail:")));
+        assert_eq!(crenel_obj.metadata["render_mode"], "instance_set");
+
+        // Keep should NOT get detail tag or render_mode
+        let keep_obj = ctx.objects.iter().find(|o| o.mcp_id == "keep_1").unwrap();
+        assert!(!keep_obj.tags.iter().any(|t| t.starts_with("detail:")));
+        assert!(keep_obj.metadata.get("render_mode").is_none());
+
+        // Curtain wall should NOT get detail tag (it's a parent, not a detail)
+        let wall_obj = ctx.objects.iter().find(|o| o.mcp_id == "wall_1").unwrap();
+        assert!(!wall_obj.tags.iter().any(|t| t.starts_with("detail:")));
     }
 
     #[test]

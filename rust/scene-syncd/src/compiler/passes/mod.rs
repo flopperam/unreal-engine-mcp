@@ -5,6 +5,8 @@ pub mod import;
 pub mod infer_anchors;
 pub mod lower_geometry;
 pub mod normalize;
+pub mod plan_density_lod;
+pub mod plan_material_coherence;
 pub mod realize;
 pub mod solve_layout;
 pub mod validate;

@@ -1,4 +1,5 @@
 pub mod api;
+pub mod blueprint;
 pub mod compiler;
 pub mod config;
 pub mod db;

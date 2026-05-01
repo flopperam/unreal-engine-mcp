@@ -1,7 +1,12 @@
+pub mod density;
 pub mod geometric;
 pub mod instance_set;
+pub mod lod;
+pub mod material;
 pub mod render;
+pub mod render_plan;
 pub mod semantic;
 pub mod source_map;
+pub mod style;
 pub mod sync;
 pub mod world_cell;

@@ -249,6 +249,33 @@ impl UnrealClient {
         .await
     }
 
+    /// Delete an instance set by set_id.
+    pub async fn delete_instance_set(&self, set_id: &str) -> Result<serde_json::Value, AppError> {
+        self.send_command("delete_instance_set", json!({"set_id": set_id}))
+            .await
+    }
+
+    /// Get state of an existing instance set.
+    pub async fn get_instance_set_state(&self, set_id: &str) -> Result<serde_json::Value, AppError> {
+        self.send_command("get_instance_set_state", json!({"set_id": set_id}))
+            .await
+    }
+
+    /// List all instance sets currently in the level.
+    pub async fn list_instance_sets(&self) -> Result<serde_json::Value, AppError> {
+        self.send_command("list_instance_sets", json!({})).await
+    }
+
+    /// Start Play-In-Editor session for smoke/verification testing.
+    pub async fn start_pie(&self) -> Result<serde_json::Value, AppError> {
+        self.send_command("start_pie", json!({})).await
+    }
+
+    /// Stop Play-In-Editor session.
+    pub async fn stop_pie(&self) -> Result<serde_json::Value, AppError> {
+        self.send_command("stop_pie", json!({})).await
+    }
+
     async fn send_command(
         &self,
         command: &str,
@@ -498,6 +525,28 @@ mod tests {
                                 "status": "success",
                                 "result": {"actor_name": "bp_actor_01", "success": true}
                             }),
+                            Some("spawn_instance_set") => json!({
+                                "status": "success",
+                                "result": {"success": true, "set_id": "crenellation_test", "instance_count": 300, "actor_name": "InstanceSet_crenellation_test", "use_hism": true}
+                            }),
+                            Some("update_instance_set") => json!({
+                                "status": "success",
+                                "result": {"success": true, "set_id": "crenellation_test", "instance_count": 300}
+                            }),
+                            Some("delete_instance_set") => json!({
+                                "status": "success",
+                                "result": {"success": true, "deleted": true, "set_id": "crenellation_test"}
+                            }),
+                            Some("get_instance_set_state") => json!({
+                                "status": "success",
+                                "result": {"success": true, "set_id": "crenellation_test", "instance_count": 300, "actor_name": "InstanceSet_crenellation_test", "use_hism": true, "mesh_path": "/Engine/BasicShapes/Cube.Cube"}
+                            }),
+                            Some("list_instance_sets") => json!({
+                                "status": "success",
+                                "result": {"success": true, "count": 1, "sets": [
+                                    {"set_id": "crenellation_test", "instance_count": 300, "actor_name": "InstanceSet_crenellation_test", "use_hism": true, "mesh_path": "/Engine/BasicShapes/Cube.Cube"}
+                                ]}
+                            }),
                             _ => json!({"status": "error", "error": "unknown command"}),
                         };
                         let mut resp_bytes = serde_json::to_vec(&resp).unwrap();
@@ -605,6 +654,96 @@ mod tests {
             )
             .await
             .unwrap();
+        assert_eq!(resp.get("success"), Some(&serde_json::Value::Bool(true)));
+    }
+
+    #[tokio::test]
+    async fn mock_bridge_spawn_instance_set() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let _server = mock_bridge_server(port).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let client = UnrealClient {
+            host: "127.0.0.1".to_string(),
+            port,
+            stream: Arc::new(Mutex::new(None)),
+        };
+        let transforms: Vec<serde_json::Value> = (0..3)
+            .map(|i| {
+                json!({
+                    "location": [i as f64 * 10.0, 0.0, 100.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [1.0, 1.0, 1.0],
+                })
+            })
+            .collect();
+        let resp = client
+            .spawn_instance_set(
+                "crenellation_test",
+                "/Engine/BasicShapes/Cube.Cube",
+                None,
+                transforms,
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.get("success"), Some(&serde_json::Value::Bool(true)));
+        assert_eq!(
+            resp.get("instance_count"),
+            Some(&serde_json::Value::Number(300.into()))
+        );
+    }
+
+    #[tokio::test]
+    async fn mock_bridge_update_delete_get_list_instance_set() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let _server = mock_bridge_server(port).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let client = UnrealClient {
+            host: "127.0.0.1".to_string(),
+            port,
+            stream: Arc::new(Mutex::new(None)),
+        };
+
+        // update
+        let transforms: Vec<serde_json::Value> = (0..3)
+            .map(|i| {
+                json!({
+                    "location": [i as f64 * 10.0, 0.0, 100.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [1.0, 1.0, 1.0],
+                })
+            })
+            .collect();
+        let resp = client
+            .update_instance_set("crenellation_test", transforms)
+            .await
+            .unwrap();
+        assert_eq!(resp.get("success"), Some(&serde_json::Value::Bool(true)));
+
+        // get state
+        let resp = client.get_instance_set_state("crenellation_test").await.unwrap();
+        assert_eq!(resp.get("success"), Some(&serde_json::Value::Bool(true)));
+        assert_eq!(
+            resp.get("instance_count"),
+            Some(&serde_json::Value::Number(300.into()))
+        );
+
+        // list
+        let resp = client.list_instance_sets().await.unwrap();
+        assert_eq!(resp.get("success"), Some(&serde_json::Value::Bool(true)));
+        let sets = resp.get("sets").and_then(|v| v.as_array());
+        assert!(sets.is_some());
+        assert_eq!(sets.unwrap().len(), 1);
+
+        // delete
+        let resp = client.delete_instance_set("crenellation_test").await.unwrap();
         assert_eq!(resp.get("success"), Some(&serde_json::Value::Bool(true)));
     }
 }

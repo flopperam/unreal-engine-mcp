@@ -16,6 +16,9 @@ pub struct InstanceSet {
     pub cell_id: Option<String>,
     /// LOD policy for this instance set.
     pub lod_policy: String,
+    /// MCP IDs of the source SceneObjects grouped into this set.
+    /// Used by the sync applier to suppress individual actor operations.
+    pub source_mcp_ids: Vec<String>,
 }
 
 /// Command to spawn or update an instance set in Unreal.
@@ -53,16 +56,45 @@ impl InstanceSetCommand {
 
 /// Group objects by (mesh, material, tags) to produce instance sets.
 /// Objects with actor_type StaticMeshActor and matching asset_ref are candidates.
-pub fn group_into_instance_sets(objects: &[SceneObject]) -> Vec<InstanceSet> {
-    use std::collections::HashMap;
+///
+/// When `decisions` is provided, only objects whose `RenderDecision` is
+/// `RenderMode::InstanceSet` are grouped.  This prevents objects that the
+/// density planner classified as individual Actors from being pulled into
+/// an InstanceSet.
+pub fn group_into_instance_sets(
+    objects: &[SceneObject],
+    decisions: Option<&[crate::ir::render_plan::RenderDecision]>,
+) -> Vec<InstanceSet> {
+    use std::collections::{HashMap, HashSet};
 
-    let mut groups: HashMap<(String, Option<String>, String), Vec<crate::domain::Transform>> =
-        HashMap::new();
+    #[derive(Default)]
+    struct Group {
+        transforms: Vec<crate::domain::Transform>,
+        mcp_ids: Vec<String>,
+    }
+
+    // Build lookup: mcp_id -> RenderMode when decisions are provided.
+    let allowed_mcp_ids: Option<HashSet<String>> = decisions.map(|d| {
+        d.iter()
+            .filter(|rd| matches!(rd.decision, crate::ir::render_plan::RenderMode::InstanceSet))
+            .map(|rd| rd.source_mcp_id.clone())
+            .collect()
+    });
+
+    let mut groups: HashMap<(String, Option<String>, String), Group> = HashMap::new();
 
     for obj in objects {
         if obj.deleted {
             continue;
         }
+
+        // If decisions are provided, skip objects not classified as InstanceSet.
+        if let Some(ref allowed) = allowed_mcp_ids {
+            if !allowed.contains(&obj.mcp_id) {
+                continue;
+            }
+        }
+
         // Only StaticMeshActor with a mesh asset path is a candidate.
         let mesh = obj
             .asset_ref
@@ -86,21 +118,24 @@ pub fn group_into_instance_sets(objects: &[SceneObject]) -> Vec<InstanceSet> {
             .unwrap_or("unknown")
             .to_string();
         let key = (mesh, material, kind);
-        groups.entry(key).or_default().push(obj.transform.clone());
+        let group = groups.entry(key).or_default();
+        group.transforms.push(obj.transform.clone());
+        group.mcp_ids.push(obj.mcp_id.clone());
     }
 
     let mut result = Vec::new();
-    for ((mesh, material, kind), transforms) in groups {
+    for ((mesh, material, kind), group) in groups {
         let set_id = format!("{}_{}_instances", kind, mesh.replace('/', "_"));
         result.push(InstanceSet {
             set_id,
             mesh,
             material,
-            transforms,
+            transforms: group.transforms,
             custom_data: serde_json::json!({}),
             tags: vec![format!("layout_kind:{}", kind)],
             cell_id: None,
             lod_policy: "default".to_string(),
+            source_mcp_ids: group.mcp_ids,
         });
     }
 
@@ -156,7 +191,7 @@ mod tests {
             make_instance_object("a", "/Engine/BasicShapes/Cube", 0.0),
             make_instance_object("b", "/Engine/BasicShapes/Cube", 100.0),
         ];
-        let sets = group_into_instance_sets(&objs);
+        let sets = group_into_instance_sets(&objs, None);
         assert_eq!(sets.len(), 1);
         assert_eq!(sets[0].transforms.len(), 2);
     }
@@ -165,7 +200,7 @@ mod tests {
     fn empty_for_no_mesh() {
         let mut obj = make_instance_object("a", "", 0.0);
         obj.asset_ref = json!({});
-        let sets = group_into_instance_sets(&[obj]);
+        let sets = group_into_instance_sets(&[obj], None);
         assert!(sets.is_empty());
     }
 
@@ -173,14 +208,14 @@ mod tests {
     fn skips_deleted_objects() {
         let mut obj = make_instance_object("a", "/Engine/BasicShapes/Cube", 0.0);
         obj.deleted = true;
-        let sets = group_into_instance_sets(&[obj]);
+        let sets = group_into_instance_sets(&[obj], None);
         assert!(sets.is_empty());
     }
 
     #[test]
     fn command_from_instance_set_has_transforms() {
         let objs = vec![make_instance_object("a", "/Engine/BasicShapes/Cube", 50.0)];
-        let sets = group_into_instance_sets(&objs);
+        let sets = group_into_instance_sets(&objs, None);
         let cmd = InstanceSetCommand::from_instance_set(&sets[0]);
         assert_eq!(cmd.transforms.len(), 1);
         assert!(cmd.transforms[0].get("location").is_some());
