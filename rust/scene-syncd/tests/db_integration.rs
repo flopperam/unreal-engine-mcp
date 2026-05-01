@@ -309,6 +309,9 @@ async fn record_operation_and_sync_run() {
         update_visuals: 0,
         deletes: 0,
         noops: 0,
+        instance_set_creates: 0,
+        instance_set_updates: 0,
+        instance_set_deletes: 0,
     };
     repo.finish_sync_run("run_001", &summary).await.unwrap();
 }

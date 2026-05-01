@@ -341,6 +341,7 @@ class TestPythonToCppCommandMapping:
             "scene_create_layout", "scene_generate_layout_objects",
             "scene_update_layout_node", "scene_preview_layout", "scene_approve_layout",
             "scene_realize_layout", "scene_show_draft_proxy",
+            "scene_upsert_procedural_mesh",
         }
         registered = self._collect_registered_tool_names()
         missing = []

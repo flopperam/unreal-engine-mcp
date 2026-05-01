@@ -62,6 +62,16 @@ public class UnrealMCP : ModuleRules
 				"Navmesh"
 			}
 		);
+
+		PrivateDependencyModuleNames.AddRange(
+			new string[]
+			{
+				"GeometryCore",
+				"GeometryScriptingCore",
+				"GeometryFramework",
+				"DynamicMesh"
+			}
+		);
 		
 		if (Target.bBuildEditor == true)
 		{

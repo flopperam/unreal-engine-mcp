@@ -11,6 +11,7 @@ use surrealdb::Surreal;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 
+use crate::compiler::passes::Pass;
 use crate::config::Config;
 use crate::db::SurrealSceneRepository;
 use crate::domain::ids::validate_mcp_id;
@@ -24,7 +25,6 @@ use crate::layout::realization::{realize_layout, RealizationStage};
 use crate::sync::applier::apply_sync;
 use crate::sync::planner::plan_sync;
 use crate::unreal::client::UnrealClient;
-use crate::compiler::passes::Pass;
 
 #[derive(Debug, Clone)]
 pub struct AppState {
@@ -617,7 +617,10 @@ pub async fn plan_sync_route(
         let _ = pass.run(&mut ctx);
         ctx.render_plan
     };
-    let instance_sets = density_plan.as_ref().map(|p| p.instance_sets()).unwrap_or_default();
+    let instance_sets = density_plan
+        .as_ref()
+        .map(|p| p.instance_sets())
+        .unwrap_or_default();
     let instance_set_count = instance_sets.len();
 
     let mut warnings = plan.warnings.clone();
@@ -742,7 +745,13 @@ pub async fn apply_sync_route(
         ctx.instance_sets
     };
 
-    let result = apply_sync(&unreal_client, &repo, &plan, mode, allow_delete, Some(&desired_sets),
+    let result = apply_sync(
+        &unreal_client,
+        &repo,
+        &plan,
+        mode,
+        allow_delete,
+        Some(&desired_sets),
     )
     .await?;
 
@@ -1317,9 +1326,8 @@ pub async fn compile_preview_route(
     let scene_id = normalize_scene_id_input(&scene_id)?;
     let repo = SurrealSceneRepository::new(state.db.clone());
 
-    let result = crate::compiler::pipeline::CompilerPipeline::compile_preview(&repo, &scene_id,
-    )
-    .await?;
+    let result =
+        crate::compiler::pipeline::CompilerPipeline::compile_preview(&repo, &scene_id).await?;
 
     Ok(Json(success_response(json!({
         "scene_id": result.scene_id,
@@ -1431,9 +1439,8 @@ pub async fn validate_route(
     let repo = SurrealSceneRepository::new(state.db.clone());
 
     let result =
-        crate::compiler::pipeline::CompilerPipeline::compile_validate_only(&repo, &scene_id,
-        )
-        .await?;
+        crate::compiler::pipeline::CompilerPipeline::compile_validate_only(&repo, &scene_id)
+            .await?;
 
     Ok(Json(success_response(json!({
         "scene_id": result.scene_id,
@@ -1459,15 +1466,12 @@ pub async fn compile_plan_route(
 
     // Fetch actual state from Unreal for diff comparison.
     let actual_objects = repo
-        .list_desired_objects(&scene_id, true, None, None
-        )
+        .list_desired_objects(&scene_id, true, None, None)
         .await?;
 
     let result =
-        crate::compiler::pipeline::CompilerPipeline::compile_plan(
-            &repo, &scene_id, actual_objects,
-        )
-        .await?;
+        crate::compiler::pipeline::CompilerPipeline::compile_plan(&repo, &scene_id, actual_objects)
+            .await?;
 
     Ok(Json(success_response(json!({
         "scene_id": result.scene_id,
@@ -1499,11 +1503,12 @@ pub async fn compile_apply_route(
     let scene_id = normalize_scene_id_input(&scene_id)?;
     let repo = SurrealSceneRepository::new(state.db.clone());
 
-    let result =
-        crate::compiler::pipeline::CompilerPipeline::compile_apply(
-            &repo, &scene_id, req.allow_delete,
-        )
-        .await?;
+    let result = crate::compiler::pipeline::CompilerPipeline::compile_apply(
+        &repo,
+        &scene_id,
+        req.allow_delete,
+    )
+    .await?;
 
     Ok(Json(success_response(json!({
         "scene_id": result.scene_id,
@@ -1551,10 +1556,19 @@ pub async fn pie_run(
         "smoke" => crate::unreal::pie_types::TestMode::Smoke,
         "full" => crate::unreal::pie_types::TestMode::Full,
         "performance" => crate::unreal::pie_types::TestMode::Performance,
-        _ => return Err(AppError::Validation(format!("unknown PIE mode: {}", req.mode))),
+        _ => {
+            return Err(AppError::Validation(format!(
+                "unknown PIE mode: {}",
+                req.mode
+            )))
+        }
     };
 
-    let run_id = format!("pie_{}_{}", scene_id, chrono::Utc::now().format("%Y%m%d%H%M%S"));
+    let run_id = format!(
+        "pie_{}_{}",
+        scene_id,
+        chrono::Utc::now().format("%Y%m%d%H%M%S")
+    );
 
     // Attempt to start PIE via Unreal client.
     let unreal_client = state.unreal_client.clone();
@@ -1602,9 +1616,7 @@ pub struct ParseLogsRequest {
     pub raw_output: String,
 }
 
-pub async fn parse_logs(
-    Json(req): Json<ParseLogsRequest>,
-) -> Result<Json<Value>, AppError> {
+pub async fn parse_logs(Json(req): Json<ParseLogsRequest>) -> Result<Json<Value>, AppError> {
     let events = crate::unreal::pie_types::parse_unreal_logs(&req.raw_output);
     let diagnostics = crate::unreal::pie_types::extract_diagnostics(&events);
     Ok(Json(success_response(json!({
@@ -1675,6 +1687,109 @@ pub async fn fix_plan(
         "operation_count": plan.operations.len(),
         "operations": plan.operations,
     }))))
+}
+
+// ------------------------------------------------------------------
+// Procedural mesh generation
+// ------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct CreateProceduralMeshRequest {
+    pub vertex_count: u32,
+    pub index_count: u32,
+    pub positions: Vec<[f32; 3]>,
+    pub normals: Vec<[f32; 3]>,
+    pub indices: Vec<u32>,
+    #[serde(default)]
+    pub uvs: Vec<[f32; 2]>,
+    #[serde(default)]
+    pub colors: Vec<[u8; 4]>,
+    #[serde(default)]
+    pub mcp_id: Option<String>,
+    #[serde(default)]
+    pub flags: u32,
+    #[serde(default = "default_actor_name")]
+    pub actor_name: String,
+    #[serde(default)]
+    pub material_path: String,
+    #[serde(default)]
+    pub location: Option<[f32; 3]>,
+    #[serde(default)]
+    pub rotation: Option<[f32; 3]>,
+    #[serde(default)]
+    pub scale: Option<[f32; 3]>,
+    #[serde(default = "default_focus_viewport")]
+    pub focus_viewport: bool,
+}
+
+fn default_actor_name() -> String {
+    "ProceduralMesh".to_string()
+}
+
+fn default_focus_viewport() -> bool {
+    true
+}
+
+pub async fn create_procedural_mesh_route(
+    State(state): State<AppState>,
+    Json(req): Json<CreateProceduralMeshRequest>,
+) -> Result<Json<Value>, AppError> {
+    use crate::procedural::mesh_buffer::ProceduralMeshPayload;
+
+    let mcp_id = req.mcp_id.clone().unwrap_or_else(|| req.actor_name.clone());
+    let request_id = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
+    let uvs = if req.uvs.is_empty() { None } else { Some(req.uvs) };
+    let colors = if req.colors.is_empty() { None } else { Some(req.colors) };
+
+    let payload = match ProceduralMeshPayload::new(
+        &mcp_id,
+        request_id,
+        req.positions,
+        req.normals,
+        uvs,
+        colors,
+        req.indices,
+    ) {
+        Ok(p) => p,
+        Err(e) => return Err(AppError::Validation(format!("Invalid mesh data: {}", e))),
+    };
+    payload.validate_size()
+        .map_err(|e| AppError::Validation(format!("Invalid mesh data: {}", e)))?;
+
+    let start = std::time::Instant::now();
+    let location = req.location.unwrap_or([0.0, 0.0, 0.0]);
+    let rotation = req.rotation.unwrap_or([0.0, 0.0, 0.0]);
+    let scale = req.scale.unwrap_or([1.0, 1.0, 1.0]);
+
+    let result = state.unreal_client.upsert_procedural_mesh(
+        &mcp_id,
+        &req.actor_name,
+        if req.material_path.is_empty() { None } else { Some(&req.material_path) },
+        [location[0] as f64, location[1] as f64, location[2] as f64],
+        [rotation[0] as f64, rotation[1] as f64, rotation[2] as f64],
+        [scale[0] as f64, scale[1] as f64, scale[2] as f64],
+        req.focus_viewport,
+        payload,
+    ).await;
+    let elapsed = start.elapsed();
+
+    match result {
+        Ok(resp) => {
+            tracing::info!("Procedural mesh created in {:?}", elapsed);
+            Ok(Json(success_response(json!({
+                "unreal_response": resp,
+                "elapsed_ms": elapsed.as_millis() as u64,
+            }))))
+        }
+        Err(e) => {
+            tracing::error!("Failed to create procedural mesh: {}", e);
+            Err(e)
+        }
+    }
 }
 
 #[cfg(test)]

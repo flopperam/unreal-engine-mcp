@@ -1236,3 +1236,69 @@ def scene_realize_layout(
         }),
         "scene_realize_layout",
     )
+
+
+
+@mcp.tool()
+def scene_upsert_procedural_mesh(
+    mcp_id: str,
+    actor_name: Optional[str] = None,
+    vertex_count: int = 3,
+    index_count: int = 3,
+    positions: List[List[float]] = None,
+    normals: List[List[float]] = None,
+    indices: List[int] = None,
+    uvs: List[List[float]] = None,
+    material_path: str = "",
+    location: Optional[Dict[str, float]] = None,
+    rotation: Optional[Dict[str, float]] = None,
+    scale: Optional[Dict[str, float]] = None,
+    focus_viewport: bool = True,
+) -> Dict[str, Any]:
+    """Upsert a procedural mesh in Unreal Engine by sending vertex data through the Rust scene-syncd service.
+
+    This tool bypasses the JSON-only UnrealConnection and uses the Rust scene-syncd
+    TCP binary protocol for efficient large mesh transfer. mcp_id is required.
+    """
+    positions = positions or []
+    normals = normals or []
+    indices = indices or []
+    uvs = uvs or []
+    
+    try:
+        validate_string(mcp_id, "mcp_id")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    if len(positions) != vertex_count:
+        return make_error_response(f"positions length ({len(positions)}) does not match vertex_count ({vertex_count})")
+    if len(normals) != vertex_count:
+        return make_error_response(f"normals length ({len(normals)}) does not match vertex_count ({vertex_count})")
+    if len(indices) != index_count:
+        return make_error_response(f"indices length ({len(indices)}) does not match index_count ({index_count})")
+
+    payload = {
+        "mcp_id": mcp_id,
+        "actor_name": actor_name or mcp_id,
+        "vertex_count": vertex_count,
+        "index_count": index_count,
+        "positions": positions,
+        "normals": normals,
+        "indices": indices,
+        "material_path": material_path,
+        "focus_viewport": focus_viewport,
+    }
+    
+    if location:
+        payload["location"] = [location.get("x", 0.0), location.get("y", 0.0), location.get("z", 0.0)]
+    if rotation:
+        payload["rotation"] = [rotation.get("pitch", 0.0), rotation.get("yaw", 0.0), rotation.get("roll", 0.0)]
+    if scale:
+        payload["scale"] = [scale.get("x", 1.0), scale.get("y", 1.0), scale.get("z", 1.0)]
+
+    if uvs:
+        payload["uvs"] = uvs
+        payload["flags"] = 0x01
+
+    result = call_scene_syncd("/procedural/create-mesh", payload)
+    return _scene_syncd_error_response(result, "scene_upsert_procedural_mesh")

@@ -135,7 +135,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleFindActorsByName(con
     TArray<TSharedPtr<FJsonValue>> MatchingActors;
     for (AActor* Actor : AllActors)
     {
-        if (Actor && Actor->GetName().Contains(Pattern, ESearchCase::IgnoreCase))
+        if (Actor && (Actor->GetName().Contains(Pattern, ESearchCase::IgnoreCase) || Actor->GetActorLabel().Contains(Pattern, ESearchCase::IgnoreCase)))
         {
             MatchingActors.Add(FEpicUnrealMCPCommonUtils::ActorToJson(Actor));
         }

@@ -3581,6 +3581,7 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
+ "crc32fast",
  "criterion",
  "futures",
  "geo 0.32.0",

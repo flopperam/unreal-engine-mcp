@@ -138,3 +138,7 @@ dotnet-install.ps1
 
 # benchmarks results
 tests/benchmarks/
+
+#docx
+docs/desin.md
+docs/research

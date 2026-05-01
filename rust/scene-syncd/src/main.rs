@@ -53,10 +53,7 @@ async fn main() -> anyhow::Result<()> {
             "/scenes/create",
             post(scene_syncd::api::routes::create_scene),
         )
-        .route(
-            "/scenes/list",
-            post(scene_syncd::api::routes::list_scenes),
-        )
+        .route("/scenes/list", post(scene_syncd::api::routes::list_scenes))
         .route(
             "/objects/upsert",
             post(scene_syncd::api::routes::upsert_object),
@@ -202,18 +199,17 @@ async fn main() -> anyhow::Result<()> {
             post(scene_syncd::api::routes::realize_layout_route),
         )
         // P10: PIE / Log Validation routes
-        .route(
-            "/unreal/pie/run",
-            post(scene_syncd::api::routes::pie_run),
-        )
+        .route("/unreal/pie/run", post(scene_syncd::api::routes::pie_run))
         .route(
             "/unreal/logs/parse",
             post(scene_syncd::api::routes::parse_logs),
         )
+        .route("/unreal/fix-plan", post(scene_syncd::api::routes::fix_plan))
         .route(
-            "/unreal/fix-plan",
-            post(scene_syncd::api::routes::fix_plan),
+            "/procedural/create-mesh",
+            post(scene_syncd::api::routes::create_procedural_mesh_route),
         )
+        .layer(axum::extract::DefaultBodyLimit::max(512 * 1024 * 1024))
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()

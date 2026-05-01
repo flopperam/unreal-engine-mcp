@@ -129,6 +129,29 @@ SELECT * FROM sync_run ORDER BY started_at DESC LIMIT 5;
 SELECT * FROM scene_operation ORDER BY created_at DESC LIMIT 20;
 ```
 
+## 7a. Procedural mesh visibility smoke test
+
+The `/procedural/create-mesh` route forwards float32 vertex buffers from `scene-syncd` to the Unreal C++ bridge. The bridge parses those floats explicitly, creates a `UDynamicMeshComponent`, applies a visible default surface material when `material_path` is empty, selects the spawned actor, and frames the editor viewport by default.
+
+Optional request fields:
+
+- `location`: `[x, y, z]`, default `[0, 0, 0]`
+- `rotation`: `[pitch, yaw, roll]`, default `[0, 0, 0]`
+- `scale`: `[x, y, z]`, default `[1, 1, 1]`
+- `focus_viewport`: `true` by default; selects and frames the spawned actor in Unreal Editor
+
+Large terrain demo:
+
+```bash
+cd /home/arat2/Project-MUSE/Python && python tests/e2e/demo_terrain_mesh.py
+```
+
+Expected:
+
+- Unreal response has `"success": true`.
+- `E2E_Terrain_10K` is selected in the editor and the viewport is framed around it.
+- The response includes `bounds_origin` and `bounds_extent` so callers can confirm the spawned mesh has non-zero visible bounds.
+
 ## 8. Backup
 
 Preferred logical export, version permitting:

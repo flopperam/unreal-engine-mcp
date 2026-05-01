@@ -8,6 +8,7 @@ pub mod error;
 pub mod geom;
 pub mod ir;
 pub mod layout;
+pub mod procedural;
 pub mod sync;
 pub mod unreal;
 pub mod validation;

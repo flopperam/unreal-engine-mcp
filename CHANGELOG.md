@@ -4,6 +4,20 @@ All notable changes in this fork, relative to the upstream [flopperam/unreal-eng
 
 ---
 
+## [2026-05-01] - Procedural mesh visibility fix
+
+### Fixed
+
+- Fixed Unreal C++ procedural mesh binary parsing to read Rust float32 positions, normals, and UVs explicitly instead of copying into `FVector`/`FVector2D` storage directly. On UE5 large-world-coordinate builds, the previous direct copy could corrupt mesh coordinates while still returning a successful spawn response.
+- Made spawned procedural meshes visible in the editor by registering the dynamic mesh component as an instance component, applying a default surface material when no material is provided, selecting the actor, and framing the editor viewport by default.
+
+### Added
+
+- Added optional `/procedural/create-mesh` transform controls: `location`, `rotation`, `scale`, and `focus_viewport`.
+- Enlarged the 10K terrain demo to a visibly large terrain and documented the visibility smoke test in the scene-sync operations runbook.
+
+---
+
 ## [2026-04-29] - Semantic layout graph draft visualization
 
 ### Added

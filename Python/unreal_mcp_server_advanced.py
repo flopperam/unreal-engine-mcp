@@ -95,6 +95,7 @@ from server.scene_tools import (
     scene_health,
     scene_plan_sync,
     scene_sync,
+    scene_upsert_procedural_mesh,
 )
 
 
@@ -168,6 +169,7 @@ __all__ = [
     "scene_health",
     "scene_plan_sync",
     "scene_sync",
+    "scene_upsert_procedural_mesh",
 ]
 
 

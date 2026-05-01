@@ -38,6 +38,9 @@ public:
 
 private:
     void ProcessMessage(const FString& Message);
+    void SendJsonResponse(const TSharedPtr<FJsonObject>& ResponseObj);
+    void SendJsonResponseString(const FString& Response);
+    void ProcessUpsertProceduralMesh(const TSharedPtr<FJsonObject>& Params);
 
     UEpicUnrealMCPBridge* Bridge;
     FSocket* ClientSocket;
