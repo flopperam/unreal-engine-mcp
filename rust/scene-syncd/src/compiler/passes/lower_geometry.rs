@@ -2,7 +2,9 @@ use crate::compiler::context::CompilerContext;
 use crate::compiler::passes::Pass;
 use crate::error::AppError;
 use crate::geom::footprint::Footprint2;
-use crate::ir::geometric::{Connector, ConnectorType, FootprintPrimitive, GeometricIr, GeometricPrimitive, VolumePrimitive};
+use crate::ir::geometric::{
+    Connector, ConnectorType, FootprintPrimitive, GeometricIr, GeometricPrimitive, VolumePrimitive,
+};
 use crate::layout::kind_registry::KindRegistry;
 
 pub struct GeometryLoweringPass;
@@ -21,10 +23,7 @@ impl Pass for GeometryLoweringPass {
             if obj.deleted {
                 continue;
             }
-            let kind = obj
-                .tags
-                .iter()
-                .find_map(|t| t.strip_prefix("layout_kind:"));
+            let kind = obj.tags.iter().find_map(|t| t.strip_prefix("layout_kind:"));
             let layer = kind
                 .and_then(|k| registry.get(k))
                 .map(|s| s.layer)
@@ -52,14 +51,14 @@ impl Pass for GeometryLoweringPass {
                         (fp.min_x, fp.max_y),
                     ]
                 };
-                geo_ir.primitives.push(GeometricPrimitive::Footprint(
-                    FootprintPrimitive {
+                geo_ir
+                    .primitives
+                    .push(GeometricPrimitive::Footprint(FootprintPrimitive {
                         entity_id: entity_id.clone(),
                         kind: kind_str.clone(),
                         polygon,
                         z: fp.z,
-                    },
-                ));
+                    }));
             } else {
                 let base_polygon = if let Some(ref poly) = fp.polygon {
                     poly.exterior.clone()
@@ -76,14 +75,16 @@ impl Pass for GeometryLoweringPass {
                     .get("height")
                     .and_then(|v| v.as_f64())
                     .unwrap_or(10.0);
-                geo_ir.primitives.push(GeometricPrimitive::Volume(VolumePrimitive {
-                    entity_id: entity_id.clone(),
-                    kind: kind_str.clone(),
-                    base_polygon,
-                    base_z: fp.z,
-                    height,
-                    transform: obj.transform.clone(),
-                }));
+                geo_ir
+                    .primitives
+                    .push(GeometricPrimitive::Volume(VolumePrimitive {
+                        entity_id: entity_id.clone(),
+                        kind: kind_str.clone(),
+                        base_polygon,
+                        base_z: fp.z,
+                        height,
+                        transform: obj.transform.clone(),
+                    }));
             }
         }
 
@@ -175,7 +176,10 @@ mod tests {
         pass.run(&mut ctx).unwrap();
         let geo = ctx.geometric_ir.unwrap();
         assert_eq!(geo.primitives.len(), 1);
-        assert!(matches!(geo.primitives[0], GeometricPrimitive::Footprint(..)));
+        assert!(matches!(
+            geo.primitives[0],
+            GeometricPrimitive::Footprint(..)
+        ));
     }
 
     #[test]

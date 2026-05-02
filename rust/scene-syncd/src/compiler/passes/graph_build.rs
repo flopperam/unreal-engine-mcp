@@ -35,11 +35,7 @@ impl Pass for GraphBuildPass {
                 if !entity_ids.contains(&id) {
                     entity_ids.push(id.clone());
                 }
-                if let Some(kind) = obj
-                    .tags
-                    .iter()
-                    .find_map(|t| t.strip_prefix("layout_kind:"))
-                {
+                if let Some(kind) = obj.tags.iter().find_map(|t| t.strip_prefix("layout_kind:")) {
                     entity_kinds.insert(id, kind.to_string());
                 }
             }

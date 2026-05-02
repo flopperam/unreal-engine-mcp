@@ -37,7 +37,8 @@ impl Footprint2 {
         let min_y = t.location.y - half_y;
         let max_y = t.location.y + half_y;
 
-        let polygon = if has_non_trivial_rotation(t.rotation.pitch, t.rotation.yaw, t.rotation.roll) {
+        let polygon = if has_non_trivial_rotation(t.rotation.pitch, t.rotation.yaw, t.rotation.roll)
+        {
             let obb = Obb3::from_scene_object(obj);
             Some(polygon_from_obb_xy(&obb))
         } else {
@@ -61,16 +62,16 @@ impl Footprint2 {
     /// and computing the convex-hull polygon.
     pub fn from_scene_object_obb(obj: &SceneObject, layer: i32) -> Self {
         let obb = Obb3::from_scene_object(obj);
-        Self::from_obb(&obb, obj.mcp_id.clone(), extract_kind(&obj.tags).unwrap_or_default(), layer)
+        Self::from_obb(
+            &obb,
+            obj.mcp_id.clone(),
+            extract_kind(&obj.tags).unwrap_or_default(),
+            layer,
+        )
     }
 
     /// Build a footprint directly from an OBB.
-    pub fn from_obb(
-        obb: &Obb3,
-        mcp_id: String,
-        kind: String,
-        layer: i32,
-    ) -> Self {
+    pub fn from_obb(obb: &Obb3, mcp_id: String, kind: String, layer: i32) -> Self {
         let verts = obb.vertices();
         let mut min_x = f64::INFINITY;
         let mut max_x = f64::NEG_INFINITY;
@@ -109,11 +110,7 @@ impl Footprint2 {
     /// - Broad-phase: AABB rejection (fast).
     /// - Exact phase: if **both** footprints carry a `polygon`, use `geo::Polygon`
     ///   boolean intersection.  Otherwise fall back to the AABB result.
-    pub fn intersects_2d(
-        &self,
-        other: &Footprint2,
-        epsilon: Cm,
-    ) -> bool {
+    pub fn intersects_2d(&self, other: &Footprint2, epsilon: Cm) -> bool {
         let e = epsilon.value();
 
         // Broad-phase: AABB rejection
@@ -144,7 +141,7 @@ impl Footprint2 {
     }
 }
 
-fn extract_kind(tags: &[ String ]) -> Option<String> {
+fn extract_kind(tags: &[String]) -> Option<String> {
     tags.iter()
         .find_map(|t| t.strip_prefix("layout_kind:").map(|s| s.to_string()))
 }
@@ -205,9 +202,7 @@ fn convex_hull_2d(points: &mut [(f64, f64)]) -> Vec<(f64, f64)> {
 
     let mut lower = Vec::new();
     for &p in points.iter() {
-        while lower.len() >= 2
-            && cross(lower[lower.len() - 2], lower[lower.len() - 1], p) <= 0.0
-        {
+        while lower.len() >= 2 && cross(lower[lower.len() - 2], lower[lower.len() - 1], p) <= 0.0 {
             lower.pop();
         }
         lower.push(p);
@@ -215,9 +210,7 @@ fn convex_hull_2d(points: &mut [(f64, f64)]) -> Vec<(f64, f64)> {
 
     let mut upper = Vec::new();
     for &p in points.iter().rev() {
-        while upper.len() >= 2
-            && cross(upper[upper.len() - 2], upper[upper.len() - 1], p) <= 0.0
-        {
+        while upper.len() >= 2 && cross(upper[upper.len() - 2], upper[upper.len() - 1], p) <= 0.0 {
             upper.pop();
         }
         upper.push(p);
@@ -239,13 +232,7 @@ mod tests {
     use crate::domain::{Rotator, SceneObject, Transform, Vec3};
     use serde_json::json;
 
-    fn make_object(
-        x: f64,
-        y: f64,
-        sx: f64,
-        sy: f64,
-        tags: Vec<String>,
-    ) -> SceneObject {
+    fn make_object(x: f64, y: f64, sx: f64, sy: f64, tags: Vec<String>) -> SceneObject {
         SceneObject {
             id: String::new(),
             scene: "scene:test".to_string(),
@@ -297,13 +284,7 @@ mod tests {
 
     #[test]
     fn footprint_from_object() {
-        let obj = make_object(
-            100.0,
-            200.0,
-            2.0,
-            4.0,
-            vec!["layout_kind:keep".to_string()],
-        );
+        let obj = make_object(100.0, 200.0, 2.0, 4.0, vec!["layout_kind:keep".to_string()]);
         let fp = Footprint2::from_scene_object(&obj, 0);
         assert_eq!(fp.min_x, 0.0); // 100 - 2*50
         assert_eq!(fp.max_x, 200.0); // 100 + 2*50

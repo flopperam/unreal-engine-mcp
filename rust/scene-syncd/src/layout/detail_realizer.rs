@@ -56,7 +56,10 @@ impl DetailRealizer {
             if entity.deleted {
                 continue;
             }
-            if !matches!(entity.kind.as_str(), "keep" | "building" | "tower" | "gatehouse") {
+            if !matches!(
+                entity.kind.as_str(),
+                "keep" | "building" | "tower" | "gatehouse"
+            ) {
                 continue;
             }
             let Some(spec) = registry.get(&entity.kind) else {
@@ -88,7 +91,10 @@ impl DetailRealizer {
             if entity.deleted {
                 continue;
             }
-            if !matches!(entity.kind.as_str(), "keep" | "building" | "tower" | "gatehouse") {
+            if !matches!(
+                entity.kind.as_str(),
+                "keep" | "building" | "tower" | "gatehouse"
+            ) {
                 continue;
             }
             let Some(spec) = registry.get(&entity.kind) else {

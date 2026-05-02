@@ -1,9 +1,7 @@
 use crate::compiler::context::CompilerContext;
 use crate::compiler::passes::Pass;
 use crate::error::AppError;
-use crate::layout::constraint::{
-    evaluate_hard_constraints, evaluate_soft_score,
-};
+use crate::layout::constraint::{evaluate_hard_constraints, evaluate_soft_score};
 use crate::layout::constraint_extract::extract_constraints;
 use crate::validation::diagnostic::{Diagnostic, Severity};
 
@@ -20,11 +18,7 @@ impl Pass for ConstraintSolvePass {
 
     fn run(&self, ctx: &mut CompilerContext) -> Result<(), AppError> {
         let geo_ir = ctx.geometric_ir.as_ref();
-        let (hard, soft) = extract_constraints(
-            &ctx.objects,
-            &ctx.footprints,
-            geo_ir,
-        );
+        let (hard, soft) = extract_constraints(&ctx.objects, &ctx.footprints, geo_ir);
 
         let repairs = evaluate_hard_constraints(&hard, &ctx.objects, &ctx.footprints);
         for repair in repairs {
@@ -67,7 +61,11 @@ mod tests {
             actor_type: "StaticMeshActor".to_string(),
             asset_ref: json!({}),
             transform: Transform {
-                location: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+                location: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
                 rotation: Rotator {
                     pitch: 0.0,
                     yaw: 0.0,
@@ -98,12 +96,13 @@ mod tests {
         let mut ctx = CompilerContext::new("test".to_string());
         let tower = make_obj("t1", "tower");
         ctx.objects = vec![tower.clone()];
-        ctx.footprints = vec![crate::geom::footprint::Footprint2::from_scene_object(&tower, 0)];
+        ctx.footprints = vec![crate::geom::footprint::Footprint2::from_scene_object(
+            &tower, 0,
+        )];
         let pass = ConstraintSolvePass;
         pass.run(&mut ctx).unwrap();
         assert!(ctx.diagnostics.iter().any(|d| {
-            d.code == "TOWER_CONNECTED_TO_WALL"
-                && matches!(d.severity, Severity::Error)
+            d.code == "TOWER_CONNECTED_TO_WALL" && matches!(d.severity, Severity::Error)
         }));
     }
 
@@ -121,6 +120,9 @@ mod tests {
         ctx.objects = vec![make_obj("g1", "gatehouse")];
         let pass = ConstraintSolvePass;
         pass.run(&mut ctx).unwrap();
-        assert!(ctx.diagnostics.iter().any(|d| d.code == "SOFT_CONSTRAINT_SCORE"));
+        assert!(ctx
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "SOFT_CONSTRAINT_SCORE"));
     }
 }

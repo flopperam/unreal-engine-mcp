@@ -13,11 +13,7 @@ impl ValidationRule for GroundContact {
         "GROUND_CONTACT"
     }
 
-    fn validate(
-        &self,
-        objects: &[SceneObject],
-        _footprints: &[Footprint2],
-    ) -> Vec<Diagnostic> {
+    fn validate(&self, objects: &[SceneObject], _footprints: &[Footprint2]) -> Vec<Diagnostic> {
         let mut results = Vec::new();
         for obj in objects {
             if obj.deleted {

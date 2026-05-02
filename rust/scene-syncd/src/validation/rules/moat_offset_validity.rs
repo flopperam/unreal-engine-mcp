@@ -11,17 +11,10 @@ impl ValidationRule for MoatOffsetValidity {
         "MOAT_OFFSET_VALIDITY"
     }
 
-    fn validate(
-        &self,
-        _objects: &[SceneObject],
-        footprints: &[Footprint2],
-    ) -> Vec<Diagnostic> {
+    fn validate(&self, _objects: &[SceneObject], footprints: &[Footprint2]) -> Vec<Diagnostic> {
         let mut results = Vec::new();
 
-        let moats: Vec<&Footprint2> = footprints
-            .iter()
-            .filter(|fp| fp.kind == "moat")
-            .collect();
+        let moats: Vec<&Footprint2> = footprints.iter().filter(|fp| fp.kind == "moat").collect();
 
         let structures: Vec<&Footprint2> = footprints
             .iter()
@@ -63,7 +56,14 @@ mod tests {
     use crate::domain::{Rotator, SceneObject, Transform, Vec3};
     use serde_json::json;
 
-    fn make_obj(mcp_id: &str, x: f64, y: f64, sx: f64, sy: f64, kind: &str) -> (SceneObject, Footprint2) {
+    fn make_obj(
+        mcp_id: &str,
+        x: f64,
+        y: f64,
+        sx: f64,
+        sy: f64,
+        kind: &str,
+    ) -> (SceneObject, Footprint2) {
         let obj = SceneObject {
             id: String::new(),
             scene: "scene:test".to_string(),

@@ -66,7 +66,10 @@ mod tests {
             transform: crate::domain::Transform::default(),
             visual: serde_json::json!({}),
             physics: serde_json::json!({}),
-            tags: vec!["layout_entity:obj".to_string(), "layout_kind:keep".to_string()],
+            tags: vec![
+                "layout_entity:obj".to_string(),
+                "layout_kind:keep".to_string(),
+            ],
             metadata: serde_json::json!({}),
             desired_hash: String::new(),
             last_applied_hash: None,

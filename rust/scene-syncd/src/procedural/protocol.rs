@@ -108,14 +108,8 @@ mod tests {
 
     #[test]
     fn test_header_serialization() {
-        let header = ProceduralMeshHeader::new(
-            FLAG_HAS_UV,
-            100,
-            300,
-            0xDEADBEEF,
-            42,
-            "test-mcp-id-12345",
-        );
+        let header =
+            ProceduralMeshHeader::new(FLAG_HAS_UV, 100, 300, 0xDEADBEEF, 42, "test-mcp-id-12345");
 
         let bytes = header.to_bytes();
         assert_eq!(bytes.len(), MCPM_HEADER_SIZE as usize);

@@ -46,7 +46,13 @@ fn make_object(mcp_id: &str, x: f64, y: f64) -> SceneObject {
 fn bench_validate(c: &mut Criterion) {
     for size in [10, 50, 100, 500] {
         let objects: Vec<SceneObject> = (0..size)
-            .map(|i| make_object(&format!("obj_{}", i), (i % 100) as f64 * 500.0, (i / 100) as f64 * 500.0))
+            .map(|i| {
+                make_object(
+                    &format!("obj_{}", i),
+                    (i % 100) as f64 * 500.0,
+                    (i / 100) as f64 * 500.0,
+                )
+            })
             .collect();
         let footprints: Vec<Footprint2> = objects
             .iter()

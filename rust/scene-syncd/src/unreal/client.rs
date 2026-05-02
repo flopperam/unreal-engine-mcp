@@ -269,6 +269,30 @@ impl UnrealClient {
         self.send_command("list_instance_sets", json!({})).await
     }
 
+    /// Create or update a spline actor from generated segment data.
+    pub async fn create_spline_from_points(
+        &self,
+        mcp_id: &str,
+        spline_name: &str,
+        segments: Vec<serde_json::Value>,
+        closed_loop: bool,
+        tangent_mode: &str,
+        focus_viewport: bool,
+    ) -> Result<serde_json::Value, AppError> {
+        self.send_command(
+            "create_spline_from_points",
+            json!({
+                "mcp_id": mcp_id,
+                "spline_name": spline_name,
+                "segments": segments,
+                "closed_loop": closed_loop,
+                "tangent_mode": tangent_mode,
+                "focus_viewport": focus_viewport,
+            }),
+        )
+        .await
+    }
+
     /// Start Play-In-Editor session for smoke/verification testing.
     pub async fn start_pie(&self) -> Result<serde_json::Value, AppError> {
         self.send_command("start_pie", json!({})).await
@@ -1010,23 +1034,31 @@ mod tests {
             vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
             None,
             None,
-            vec![0, 1, 2],
-        ).unwrap();
-
-        let resp = client.upsert_procedural_mesh(
-            "test_mcp_id",
-            "TestTriangle",
             None,
-            [100.0, 200.0, 300.0],
-            [0.0, 0.0, 0.0],
-            [10.0, 10.0, 10.0],
-            false,
-            payload
-        ).await.unwrap();
+            None,
+            vec![0, 1, 2],
+        )
+        .unwrap();
+
+        let resp = client
+            .upsert_procedural_mesh(
+                "test_mcp_id",
+                "TestTriangle",
+                None,
+                [100.0, 200.0, 300.0],
+                [0.0, 0.0, 0.0],
+                [10.0, 10.0, 10.0],
+                false,
+                payload,
+            )
+            .await
+            .unwrap();
         assert_eq!(resp.get("success"), Some(&serde_json::Value::Bool(true)));
         assert_eq!(
             resp.get("actor_name"),
-            Some(&serde_json::Value::String("TestTriangle_Internal".to_string()))
+            Some(&serde_json::Value::String(
+                "TestTriangle_Internal".to_string()
+            ))
         );
         assert_eq!(
             resp.get("actor_label"),
@@ -1062,7 +1094,7 @@ mod tests {
 
         for vertex_count in [1_000u32, 10_000, 100_000] {
             let index_count = vertex_count * 3;
-            
+
             let positions: Vec<[f32; 3]> = (0..vertex_count)
                 .map(|i| {
                     let f = i as f32;
@@ -1080,30 +1112,34 @@ mod tests {
                 normals,
                 None,
                 None,
-                indices
-            ).unwrap();
-            
+                None,
+                None,
+                indices,
+            )
+            .unwrap();
+
             let bytes_len = payload.total_bytes();
 
             let start = std::time::Instant::now();
-            let resp = client.upsert_procedural_mesh(
-                "bench_mcp",
-                &format!("BenchMesh_{}", vertex_count),
-                None,
-                [0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0],
-                [1.0, 1.0, 1.0],
-                true,
-                payload
-            ).await.unwrap();
+            let resp = client
+                .upsert_procedural_mesh(
+                    "bench_mcp",
+                    &format!("BenchMesh_{}", vertex_count),
+                    None,
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0],
+                    [1.0, 1.0, 1.0],
+                    true,
+                    payload,
+                )
+                .await
+                .unwrap();
             let elapsed = start.elapsed();
 
             assert_eq!(resp.get("success"), Some(&serde_json::Value::Bool(true)));
             println!(
                 "Benchmark {} vertices: {} bytes in {:?}",
-                vertex_count,
-                bytes_len,
-                elapsed
+                vertex_count, bytes_len, elapsed
             );
         }
     }

@@ -29,10 +29,7 @@ impl ValidationRule for NoSameLayerZFight {
             if obj.deleted {
                 continue;
             }
-            let kind = obj
-                .tags
-                .iter()
-                .find_map(|t| t.strip_prefix("layout_kind:"));
+            let kind = obj.tags.iter().find_map(|t| t.strip_prefix("layout_kind:"));
             let layer = kind
                 .and_then(|k| registry.get(k))
                 .map(|s| s.layer)
@@ -75,13 +72,7 @@ mod tests {
     use crate::domain::{Rotator, SceneObject, Transform, Vec3};
     use serde_json::json;
 
-    fn make_surface_object(
-        mcp_id: &str,
-        x: f64,
-        y: f64,
-        z: f64,
-        kind_tag: &str,
-    ) -> SceneObject {
+    fn make_surface_object(mcp_id: &str, x: f64, y: f64, z: f64, kind_tag: &str) -> SceneObject {
         SceneObject {
             id: String::new(),
             scene: "scene:test".to_string(),

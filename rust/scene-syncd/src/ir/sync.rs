@@ -122,7 +122,10 @@ mod tests {
         let desired = vec![make_obj("a", "h1"), make_obj("b", "h2")];
         let sync = SyncIr::from_desired_and_actual(&desired, None);
         assert_eq!(sync.operations.len(), 2);
-        assert!(sync.operations.iter().all(|op| matches!(op, SyncOperation::Create { .. })));
+        assert!(sync
+            .operations
+            .iter()
+            .all(|op| matches!(op, SyncOperation::Create { .. })));
     }
 
     #[test]

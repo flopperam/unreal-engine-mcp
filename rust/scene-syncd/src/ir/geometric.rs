@@ -106,8 +106,16 @@ mod tests {
         let conn = Connector {
             from_entity: "wall_1".to_string(),
             to_entity: "tower_1".to_string(),
-            from_point: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-            to_point: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+            from_point: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            to_point: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
             connector_type: ConnectorType::WallToTower,
         };
         let json = serde_json::to_string(&conn).unwrap();

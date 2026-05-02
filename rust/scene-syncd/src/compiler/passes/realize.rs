@@ -112,35 +112,23 @@ impl Pass for RealizePass {
             let realizer = DetailRealizer;
 
             // Crenellations from curtain_wall entities
-            let crenellation_objects = DetailRealizer::realize_crenellations(
-                &ctx.scene_id,
-                &ctx.entities,
-                &ctx.spans,
-            )?;
+            let crenellation_objects =
+                DetailRealizer::realize_crenellations(&ctx.scene_id, &ctx.entities, &ctx.spans)?;
             ctx.objects.extend(crenellation_objects);
 
             // Windows from building/keep/tower entities
-            let window_objects = realizer.realize_windows(
-                &ctx.scene_id,
-                &ctx.entities,
-                &ctx.spans,
-            )?;
+            let window_objects =
+                realizer.realize_windows(&ctx.scene_id, &ctx.entities, &ctx.spans)?;
             ctx.objects.extend(window_objects);
 
             // Roof tiles from building/keep/tower entities
-            let roof_objects = realizer.realize_roof_tiles(
-                &ctx.scene_id,
-                &ctx.entities,
-                &ctx.spans,
-            )?;
+            let roof_objects =
+                realizer.realize_roof_tiles(&ctx.scene_id, &ctx.entities, &ctx.spans)?;
             ctx.objects.extend(roof_objects);
 
             // Bricks from curtain_wall entities
-            let brick_objects = realizer.realize_bricks(
-                &ctx.scene_id,
-                &ctx.entities,
-                &ctx.spans,
-            )?;
+            let brick_objects =
+                realizer.realize_bricks(&ctx.scene_id, &ctx.entities, &ctx.spans)?;
             ctx.objects.extend(brick_objects);
         }
 

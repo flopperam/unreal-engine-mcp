@@ -96,6 +96,9 @@ from server.scene_tools import (
     scene_plan_sync,
     scene_sync,
     scene_upsert_procedural_mesh,
+    scene_create_sdf_mesh,
+    scene_create_superformula_mesh,
+    scene_create_lsystem_spline,
 )
 
 
@@ -170,6 +173,9 @@ __all__ = [
     "scene_plan_sync",
     "scene_sync",
     "scene_upsert_procedural_mesh",
+    "scene_create_sdf_mesh",
+    "scene_create_superformula_mesh",
+    "scene_create_lsystem_spline",
 ]
 
 

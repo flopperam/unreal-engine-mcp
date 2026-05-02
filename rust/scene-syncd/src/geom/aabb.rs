@@ -53,10 +53,7 @@ impl Aabb3 {
         }
     }
 
-    pub fn intersects(&self,
-        other: &Aabb3,
-        epsilon: Cm,
-    ) -> bool {
+    pub fn intersects(&self, other: &Aabb3, epsilon: Cm) -> bool {
         let e = epsilon.value();
         self.max.x + e > other.min.x
             && self.min.x - e < other.max.x
@@ -66,10 +63,7 @@ impl Aabb3 {
             && self.min.z - e < other.max.z
     }
 
-    pub fn contains_point(&self,
-        point: &Vec3,
-        epsilon: Cm,
-    ) -> bool {
+    pub fn contains_point(&self, point: &Vec3, epsilon: Cm) -> bool {
         let e = epsilon.value();
         point.x >= self.min.x - e
             && point.x <= self.max.x + e
@@ -87,9 +81,7 @@ impl Aabb3 {
     }
 
     /// Expand the AABB to include another AABB.
-    pub fn merge(&self,
-        other: &Aabb3,
-    ) -> Aabb3 {
+    pub fn merge(&self, other: &Aabb3) -> Aabb3 {
         Aabb3 {
             min: Vec3 {
                 x: self.min.x.min(other.min.x),
@@ -219,7 +211,7 @@ mod tests {
             },
         };
         let aabb = Aabb3::from_domain_transform(&t);
-        assert_eq!(aabb.min.x, 0.0);   // 100 - 2*50
+        assert_eq!(aabb.min.x, 0.0); // 100 - 2*50
         assert_eq!(aabb.max.x, 200.0); // 100 + 2*50
         assert_eq!(aabb.min.y, 100.0);
         assert_eq!(aabb.max.y, 300.0);

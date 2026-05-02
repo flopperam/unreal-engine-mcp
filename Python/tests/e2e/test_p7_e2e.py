@@ -13,7 +13,7 @@ Run:
 import json
 import pytest
 
-from .conftest import api_post, api_get, assert_success, SCENE_SYNCD_URL
+from .conftest import api_post, api_get, assert_success, SCENE_SYNCD_URL, unreal_command
 
 
 class TestComponentCRUD:

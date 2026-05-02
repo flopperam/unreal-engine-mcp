@@ -89,9 +89,21 @@ mod tests {
             actor_type: "StaticMeshActor".to_string(),
             asset_ref: json!({"mesh": mesh}),
             transform: Transform {
-                location: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-                rotation: Rotator { pitch: 0.0, yaw: 0.0, roll: 0.0 },
-                scale: Vec3 { x: 1.0, y: 1.0, z: 1.0 },
+                location: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                rotation: Rotator {
+                    pitch: 0.0,
+                    yaw: 0.0,
+                    roll: 0.0,
+                },
+                scale: Vec3 {
+                    x: 1.0,
+                    y: 1.0,
+                    z: 1.0,
+                },
             },
             visual: json!({}),
             physics: json!({}),

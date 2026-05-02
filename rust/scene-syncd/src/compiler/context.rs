@@ -46,10 +46,7 @@ impl CompilerContext {
         }
     }
 
-    pub fn add_diagnostics(
-        &mut self,
-        mut diags: Vec<Diagnostic>,
-    ) {
+    pub fn add_diagnostics(&mut self, mut diags: Vec<Diagnostic>) {
         self.diagnostics.append(&mut diags);
     }
 }

@@ -44,18 +44,14 @@ impl SpatialSceneIndex {
     }
 
     /// Return all pairs of footprints whose 2D envelopes overlap.
-    pub fn overlapping_pairs(&self,
-        epsilon: Cm,
-    ) -> Vec<(&Footprint2, &Footprint2)> {
+    pub fn overlapping_pairs(&self, epsilon: Cm) -> Vec<(&Footprint2, &Footprint2)> {
         let e = epsilon.value();
         let mut pairs = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
         for (i, fp) in self.footprints.iter().enumerate() {
-            let envelope = AABB::from_corners(
-                [fp.min_x - e, fp.min_y - e],
-                [fp.max_x + e, fp.max_y + e],
-            );
+            let envelope =
+                AABB::from_corners([fp.min_x - e, fp.min_y - e], [fp.max_x + e, fp.max_y + e]);
             for candidate in self.tree.locate_in_envelope_intersecting(&envelope) {
                 let j = candidate.index;
                 if j <= i {

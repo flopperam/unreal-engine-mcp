@@ -281,6 +281,9 @@ class TestPythonToCppCommandMapping:
                 # TMap-based dispatch: {TEXT("command_name"), bucket}
                 for m in re.finditer(r'\{\s*TEXT\s*\(\s*"([^"]+)"\s*\)\s*,\s*\d+\s*\}', text):
                     commands.add(m.group(1))
+                # TMap-based dispatch to member function pointers.
+                for m in re.finditer(r'\{\s*TEXT\s*\(\s*"([^"]+)"\s*\)\s*,\s*&[A-Za-z0-9_:]+::[A-Za-z0-9_]+\s*\}', text):
+                    commands.add(m.group(1))
         return commands
 
     def _collect_python_commands(self):
@@ -318,7 +321,7 @@ class TestPythonToCppCommandMapping:
         py_cmds = self._collect_python_commands()
         cpp_cmds = self._collect_cpp_commands()
         missing = cpp_cmds - py_cmds
-        whitelist = {"ping", "apply_scene_delta", "clone_actor"}
+        whitelist = {"ping", "apply_scene_delta", "clone_actor", "create_spline_from_points"}
         actual_missing = missing - whitelist
         assert not actual_missing, (
             f"C++ supports these commands but Python tools never send them: {actual_missing}"
@@ -342,6 +345,9 @@ class TestPythonToCppCommandMapping:
             "scene_update_layout_node", "scene_preview_layout", "scene_approve_layout",
             "scene_realize_layout", "scene_show_draft_proxy",
             "scene_upsert_procedural_mesh",
+            "scene_create_sdf_mesh",
+            "scene_create_superformula_mesh",
+            "scene_create_lsystem_spline",
         }
         registered = self._collect_registered_tool_names()
         missing = []
@@ -389,7 +395,7 @@ class TestPythonToCppCommandMapping:
         """All C++ commands should be reachable through at least one MCP tool."""
         py_cmds = self._collect_python_commands()
         cpp_cmds = self._collect_cpp_commands()
-        unreachable = cpp_cmds - py_cmds - {"ping", "apply_scene_delta", "clone_actor"}
+        unreachable = cpp_cmds - py_cmds - {"ping", "apply_scene_delta", "clone_actor", "create_spline_from_points"}
         assert not unreachable, (
             f"C++ commands not reachable through any Python tool: {unreachable}"
         )

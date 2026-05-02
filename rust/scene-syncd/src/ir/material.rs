@@ -138,8 +138,14 @@ mod tests {
             ..Default::default()
         };
         let plan = compute_material_plan("wall_1", "curtain_wall", &style);
-        assert!(plan.surface_modifiers.iter().any(|m| m.modifier_type == "weathering"));
-        assert!(plan.surface_modifiers.iter().any(|m| m.modifier_type == "moss"));
+        assert!(plan
+            .surface_modifiers
+            .iter()
+            .any(|m| m.modifier_type == "weathering"));
+        assert!(plan
+            .surface_modifiers
+            .iter()
+            .any(|m| m.modifier_type == "moss"));
     }
 
     #[test]

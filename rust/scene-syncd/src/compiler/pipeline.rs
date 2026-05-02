@@ -13,11 +13,11 @@ use crate::compiler::passes::validate::ValidatePass;
 use crate::compiler::passes::Pass;
 use crate::db::SurrealSceneRepository;
 use crate::error::AppError;
+use crate::ir::render_plan::RenderPlan;
+use crate::ir::world_cell::partition_into_cells;
 use crate::layout::denormalizer::denormalize_layout;
 use crate::layout::entity_resolver::resolve_span;
 use crate::layout::kind_registry::KindRegistry;
-use crate::ir::render_plan::RenderPlan;
-use crate::ir::world_cell::partition_into_cells;
 use std::collections::HashMap;
 
 pub struct CompilerPipeline {
@@ -31,25 +31,19 @@ impl CompilerPipeline {
     }
 
     /// Async preparation: load entities/relations from DB and run denormalization.
-    pub async fn prepare(
-        repo: &SurrealSceneRepository,
-        scene_id: &str,
-    ) -> Result<Self, AppError> {
+    pub async fn prepare(repo: &SurrealSceneRepository, scene_id: &str) -> Result<Self, AppError> {
         let entities = repo.list_entities(scene_id, None).await?;
         let relations = repo.list_relations(scene_id, None).await?;
         let registry = KindRegistry::default();
         let objects = denormalize_layout(scene_id, &entities, &relations, &registry)?;
 
         // Compute spans for entities that have them (curtain_wall, bridge, etc.)
-        let entity_by_id: HashMap<&str, &crate::domain::SceneEntity> = entities
-            .iter()
-            .map(|e| (e.entity_id.as_str(), e))
-            .collect();
+        let entity_by_id: HashMap<&str, &crate::domain::SceneEntity> =
+            entities.iter().map(|e| (e.entity_id.as_str(), e)).collect();
         let spans: Vec<(String, crate::layout::span::Span)> = entities
             .iter()
             .filter_map(|e| {
-                resolve_span(e, &relations, &entity_by_id)
-                    .map(|span| (e.entity_id.clone(), span))
+                resolve_span(e, &relations, &entity_by_id).map(|span| (e.entity_id.clone(), span))
             })
             .collect();
 
@@ -75,9 +69,7 @@ impl CompilerPipeline {
     }
 
     /// Run the prepared pipeline synchronously.
-    pub fn run(&mut self,
-        stage: &str,
-    ) -> Result<CompileResult, AppError> {
+    pub fn run(&mut self, stage: &str) -> Result<CompileResult, AppError> {
         let mut failed_validation = false;
 
         for pass in &self.passes {
@@ -91,10 +83,7 @@ impl CompilerPipeline {
                     .diagnostics
                     .iter()
                     .filter(|d| {
-                        matches!(
-                            d.severity,
-                            crate::validation::diagnostic::Severity::Error
-                        )
+                        matches!(d.severity, crate::validation::diagnostic::Severity::Error)
                     })
                     .count();
                 if errors > 0 {
@@ -114,34 +103,19 @@ impl CompilerPipeline {
             .context
             .diagnostics
             .iter()
-            .filter(|d| {
-                matches!(
-                    d.severity,
-                    crate::validation::diagnostic::Severity::Error
-                )
-            })
+            .filter(|d| matches!(d.severity, crate::validation::diagnostic::Severity::Error))
             .count();
         let warnings = self
             .context
             .diagnostics
             .iter()
-            .filter(|d| {
-                matches!(
-                    d.severity,
-                    crate::validation::diagnostic::Severity::Warning
-                )
-            })
+            .filter(|d| matches!(d.severity, crate::validation::diagnostic::Severity::Warning))
             .count();
         let infos = self
             .context
             .diagnostics
             .iter()
-            .filter(|d| {
-                matches!(
-                    d.severity,
-                    crate::validation::diagnostic::Severity::Info
-                )
-            })
+            .filter(|d| matches!(d.severity, crate::validation::diagnostic::Severity::Info))
             .count();
 
         let object_count = self.context.objects.len();
@@ -161,7 +135,13 @@ impl CompilerPipeline {
         // Phase 6: World Partition cell assignment
         let positions: Vec<(String, f64, f64)> = objects
             .iter()
-            .map(|o| (o.mcp_id.clone(), o.transform.location.x, o.transform.location.y))
+            .map(|o| {
+                (
+                    o.mcp_id.clone(),
+                    o.transform.location.x,
+                    o.transform.location.y,
+                )
+            })
             .collect();
         let mut world_cells = partition_into_cells(&positions, 5000.0);
         for cell in &mut world_cells {
@@ -226,7 +206,9 @@ impl CompilerPipeline {
         let mut pipeline = Self::prepare(repo, scene_id).await?;
         // Replace the default diff pass with one that has actual snapshot.
         pipeline.passes.retain(|p| p.name() != "diff");
-        pipeline.passes.push(Box::new(DiffPlanningPass::with_actual(actual)));
+        pipeline
+            .passes
+            .push(Box::new(DiffPlanningPass::with_actual(actual)));
         pipeline.run("plan")
     }
 
@@ -258,46 +240,44 @@ mod tests {
     #[test]
     fn pipeline_runs_passes_and_collects_diagnostics() {
         let mut ctx = CompilerContext::new("test_scene".to_string());
-        ctx.objects = vec![
-            SceneObject {
-                id: String::new(),
-                scene: "scene:test".to_string(),
-                group: None,
-                mcp_id: "obj_1".to_string(),
-                desired_name: "obj_1".to_string(),
-                unreal_actor_name: None,
-                actor_type: "StaticMeshActor".to_string(),
-                asset_ref: json!({}),
-                transform: Transform {
-                    location: Vec3 {
-                        x: 0.0,
-                        y: 0.0,
-                        z: 0.0,
-                    },
-                    rotation: Rotator {
-                        pitch: 0.0,
-                        yaw: 0.0,
-                        roll: 0.0,
-                    },
-                    scale: Vec3 {
-                        x: 1.0,
-                        y: 1.0,
-                        z: 1.0,
-                    },
+        ctx.objects = vec![SceneObject {
+            id: String::new(),
+            scene: "scene:test".to_string(),
+            group: None,
+            mcp_id: "obj_1".to_string(),
+            desired_name: "obj_1".to_string(),
+            unreal_actor_name: None,
+            actor_type: "StaticMeshActor".to_string(),
+            asset_ref: json!({}),
+            transform: Transform {
+                location: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
                 },
-                visual: json!({}),
-                physics: json!({}),
-                tags: vec!["layout_kind:keep".to_string()],
-                metadata: json!({}),
-                desired_hash: String::new(),
-                last_applied_hash: None,
-                sync_status: "pending".to_string(),
-                deleted: false,
-                revision: 1,
-                created_at: surrealdb::sql::Datetime::from(chrono::Utc::now()),
-                updated_at: surrealdb::sql::Datetime::from(chrono::Utc::now()),
+                rotation: Rotator {
+                    pitch: 0.0,
+                    yaw: 0.0,
+                    roll: 0.0,
+                },
+                scale: Vec3 {
+                    x: 1.0,
+                    y: 1.0,
+                    z: 1.0,
+                },
             },
-        ];
+            visual: json!({}),
+            physics: json!({}),
+            tags: vec!["layout_kind:keep".to_string()],
+            metadata: json!({}),
+            desired_hash: String::new(),
+            last_applied_hash: None,
+            sync_status: "pending".to_string(),
+            deleted: false,
+            revision: 1,
+            created_at: surrealdb::sql::Datetime::from(chrono::Utc::now()),
+            updated_at: surrealdb::sql::Datetime::from(chrono::Utc::now()),
+        }];
 
         let mut pipeline = CompilerPipeline {
             context: ctx,
@@ -371,8 +351,7 @@ mod tests {
         let result = pipeline.run("preview").unwrap();
         assert!(
             result.diagnostics.iter().any(|d| {
-                d.code == "NO_ZERO_OR_NEGATIVE_SCALE"
-                    && matches!(d.severity, Severity::Error)
+                d.code == "NO_ZERO_OR_NEGATIVE_SCALE" && matches!(d.severity, Severity::Error)
             }),
             "expected zero-scale error"
         );
@@ -382,34 +361,44 @@ mod tests {
     #[test]
     fn preview_result_summary_matches() {
         let mut ctx = CompilerContext::new("snapshot_scene".to_string());
-        ctx.objects = vec![
-            SceneObject {
-                id: String::new(),
-                scene: "scene:test".to_string(),
-                group: None,
-                mcp_id: "keep_1".to_string(),
-                desired_name: "keep_1".to_string(),
-                unreal_actor_name: None,
-                actor_type: "StaticMeshActor".to_string(),
-                asset_ref: json!({}),
-                transform: Transform {
-                    location: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-                    rotation: Rotator { pitch: 0.0, yaw: 0.0, roll: 0.0 },
-                    scale: Vec3 { x: 1.0, y: 1.0, z: 1.0 },
+        ctx.objects = vec![SceneObject {
+            id: String::new(),
+            scene: "scene:test".to_string(),
+            group: None,
+            mcp_id: "keep_1".to_string(),
+            desired_name: "keep_1".to_string(),
+            unreal_actor_name: None,
+            actor_type: "StaticMeshActor".to_string(),
+            asset_ref: json!({}),
+            transform: Transform {
+                location: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
                 },
-                visual: json!({}),
-                physics: json!({}),
-                tags: vec!["layout_kind:keep".to_string()],
-                metadata: json!({}),
-                desired_hash: String::new(),
-                last_applied_hash: None,
-                sync_status: "pending".to_string(),
-                deleted: false,
-                revision: 1,
-                created_at: surrealdb::sql::Datetime::from(chrono::Utc::now()),
-                updated_at: surrealdb::sql::Datetime::from(chrono::Utc::now()),
+                rotation: Rotator {
+                    pitch: 0.0,
+                    yaw: 0.0,
+                    roll: 0.0,
+                },
+                scale: Vec3 {
+                    x: 1.0,
+                    y: 1.0,
+                    z: 1.0,
+                },
             },
-        ];
+            visual: json!({}),
+            physics: json!({}),
+            tags: vec!["layout_kind:keep".to_string()],
+            metadata: json!({}),
+            desired_hash: String::new(),
+            last_applied_hash: None,
+            sync_status: "pending".to_string(),
+            deleted: false,
+            revision: 1,
+            created_at: surrealdb::sql::Datetime::from(chrono::Utc::now()),
+            updated_at: surrealdb::sql::Datetime::from(chrono::Utc::now()),
+        }];
 
         let mut pipeline = CompilerPipeline {
             context: ctx,

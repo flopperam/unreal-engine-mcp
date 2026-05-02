@@ -40,10 +40,7 @@ impl Pass for InferAnchorsPass {
             if obj.deleted {
                 continue;
             }
-            let kind = obj
-                .tags
-                .iter()
-                .find_map(|t| t.strip_prefix("layout_kind:"));
+            let kind = obj.tags.iter().find_map(|t| t.strip_prefix("layout_kind:"));
             if kind == Some("tower") && *kind_counts.get("curtain_wall").unwrap_or(&0) == 0 {
                 diags.push(
                     Diagnostic::info(
@@ -54,7 +51,9 @@ impl Pass for InferAnchorsPass {
                         ),
                     )
                     .with_mcp_id(obj.mcp_id.clone())
-                    .with_suggestion("Add curtain_wall entities connected to this tower.".to_string()),
+                    .with_suggestion(
+                        "Add curtain_wall entities connected to this tower.".to_string(),
+                    ),
                 );
             }
 

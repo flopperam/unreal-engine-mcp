@@ -18,7 +18,9 @@ impl DiffPlanningPass {
     }
 
     pub fn with_actual(actual: Vec<crate::domain::SceneObject>) -> Self {
-        Self { actual: Some(actual) }
+        Self {
+            actual: Some(actual),
+        }
     }
 }
 
@@ -89,7 +91,10 @@ mod tests {
         ctx.objects = vec![make_obj("a", "h1")];
         let pass = DiffPlanningPass::new();
         pass.run(&mut ctx).unwrap();
-        assert!(ctx.diagnostics.iter().any(|d| d.code == "DIFF_PLAN_SUMMARY"));
+        assert!(ctx
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "DIFF_PLAN_SUMMARY"));
         assert!(ctx.sync_ir.is_some());
     }
 
@@ -113,6 +118,9 @@ mod tests {
         pass.run(&mut ctx).unwrap();
         let sync = ctx.sync_ir.unwrap();
         assert_eq!(sync.operations.len(), 1);
-        assert!(matches!(sync.operations[0], crate::ir::sync::SyncOperation::Update { .. }));
+        assert!(matches!(
+            sync.operations[0],
+            crate::ir::sync::SyncOperation::Update { .. }
+        ));
     }
 }

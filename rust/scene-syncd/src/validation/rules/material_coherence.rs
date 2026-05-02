@@ -40,15 +40,15 @@ impl ValidationRule for MaterialCoherenceRule {
                 .unwrap_or("")
                 .to_string();
 
-            kind_meshes
-                .entry(kind.to_string())
-                .or_default()
-                .push(mesh);
+            kind_meshes.entry(kind.to_string()).or_default().push(mesh);
         }
 
         for (kind, meshes) in &kind_meshes {
-            let unique_meshes: std::collections::HashSet<&str> =
-                meshes.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect();
+            let unique_meshes: std::collections::HashSet<&str> = meshes
+                .iter()
+                .map(|s| s.as_str())
+                .filter(|s| !s.is_empty())
+                .collect();
             if unique_meshes.len() > 1 {
                 diagnostics.push(
                     Diagnostic::warning(
@@ -121,9 +121,21 @@ mod tests {
                 json!({"mesh": mesh})
             },
             transform: Transform {
-                location: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-                rotation: Rotator { pitch: 0.0, yaw: 0.0, roll: 0.0 },
-                scale: Vec3 { x: 1.0, y: 1.0, z: 1.0 },
+                location: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                rotation: Rotator {
+                    pitch: 0.0,
+                    yaw: 0.0,
+                    roll: 0.0,
+                },
+                scale: Vec3 {
+                    x: 1.0,
+                    y: 1.0,
+                    z: 1.0,
+                },
             },
             visual: json!({}),
             physics: json!({}),
@@ -162,14 +174,14 @@ mod tests {
         ];
         let rule = MaterialCoherenceRule;
         let diags = rule.validate(&objects, &[]);
-        assert!(!diags.iter().any(|d| d.code == "MATERIAL_COHERENCE" && d.message.contains("different meshes")));
+        assert!(!diags
+            .iter()
+            .any(|d| d.code == "MATERIAL_COHERENCE" && d.message.contains("different meshes")));
     }
 
     #[test]
     fn warns_detail_object_without_render_mode() {
-        let objects = vec![
-            make_obj("c1", "crenellation", "/Mesh/Cube", None),
-        ];
+        let objects = vec![make_obj("c1", "crenellation", "/Mesh/Cube", None)];
         let rule = MaterialCoherenceRule;
         let diags = rule.validate(&objects, &[]);
         assert!(diags.iter().any(|d| d.message.contains("render_mode")));
@@ -177,9 +189,12 @@ mod tests {
 
     #[test]
     fn no_warning_detail_object_with_render_mode() {
-        let objects = vec![
-            make_obj("c1", "crenellation", "/Mesh/Cube", Some("instance_set")),
-        ];
+        let objects = vec![make_obj(
+            "c1",
+            "crenellation",
+            "/Mesh/Cube",
+            Some("instance_set"),
+        )];
         let rule = MaterialCoherenceRule;
         let diags = rule.validate(&objects, &[]);
         assert!(!diags.iter().any(|d| d.message.contains("render_mode")));

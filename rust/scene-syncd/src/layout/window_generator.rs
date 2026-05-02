@@ -26,14 +26,8 @@ impl WindowConfig {
             return None;
         }
         Some(Self {
-            rows: windows
-                .get("rows")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(3) as usize,
-            columns: windows
-                .get("columns")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(2) as usize,
+            rows: windows.get("rows").and_then(|v| v.as_u64()).unwrap_or(3) as usize,
+            columns: windows.get("columns").and_then(|v| v.as_u64()).unwrap_or(2) as usize,
             column_spacing: windows.get("column_spacing").and_then(|v| v.as_f64()),
             row_spacing: windows.get("row_spacing").and_then(|v| v.as_f64()),
             window_width: windows
@@ -175,8 +169,16 @@ mod tests {
             }),
         );
         let span = Span {
-            from: Vec3 { x: -400.0, y: 0.0, z: 0.0 },
-            to: Vec3 { x: 400.0, y: 0.0, z: 0.0 },
+            from: Vec3 {
+                x: -400.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            to: Vec3 {
+                x: 400.0,
+                y: 0.0,
+                z: 0.0,
+            },
         };
         let windows = generate_windows("test", &entity, spec, "keep_1", &span).unwrap();
         assert_eq!(windows.len(), 6, "2 rows x 3 cols = 6 windows");
@@ -197,8 +199,16 @@ mod tests {
             }),
         );
         let span = Span {
-            from: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-            to: Vec3 { x: 800.0, y: 0.0, z: 0.0 },
+            from: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            to: Vec3 {
+                x: 800.0,
+                y: 0.0,
+                z: 0.0,
+            },
         };
         let windows = generate_windows("test", &entity, spec, "keep_1", &span).unwrap();
         assert!(windows.is_empty());
@@ -210,8 +220,16 @@ mod tests {
         let spec = registry.get("keep").unwrap();
         let entity = make_entity("keep", "Plain Keep", json!({"height": 400.0}));
         let span = Span {
-            from: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-            to: Vec3 { x: 800.0, y: 0.0, z: 0.0 },
+            from: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            to: Vec3 {
+                x: 800.0,
+                y: 0.0,
+                z: 0.0,
+            },
         };
         let windows = generate_windows("test", &entity, spec, "keep_1", &span).unwrap();
         assert!(windows.is_empty());

@@ -49,7 +49,11 @@ impl Obb3 {
     /// Compute the 8 world-space vertices of this OBB.
     pub fn vertices(&self) -> [Vec3; 8] {
         let c = DVec3::new(self.center.x, self.center.y, self.center.z);
-        let h = DVec3::new(self.half_extents.x, self.half_extents.y, self.half_extents.z);
+        let h = DVec3::new(
+            self.half_extents.x,
+            self.half_extents.y,
+            self.half_extents.z,
+        );
         let r = self.rotation;
 
         let signs: [(f64, f64, f64); 8] = [
@@ -120,8 +124,16 @@ impl Obb3 {
         let b = other.rotation_matrix();
 
         // Half-extents as glam vectors for dot products
-        let h1 = DVec3::new(self.half_extents.x, self.half_extents.y, self.half_extents.z);
-        let h2 = DVec3::new(other.half_extents.x, other.half_extents.y, other.half_extents.z);
+        let h1 = DVec3::new(
+            self.half_extents.x,
+            self.half_extents.y,
+            self.half_extents.z,
+        );
+        let h2 = DVec3::new(
+            other.half_extents.x,
+            other.half_extents.y,
+            other.half_extents.z,
+        );
 
         // Build the rotation matrix R = A^T * B expressed as dot products
         let mut r_mat = [[0.0; 3]; 3];
@@ -244,7 +256,11 @@ mod tests {
                     yaw,
                     roll: 0.0,
                 },
-                scale: Vec3 { x: sx, y: sy, z: sz },
+                scale: Vec3 {
+                    x: sx,
+                    y: sy,
+                    z: sz,
+                },
             },
             visual: json!({}),
             physics: json!({}),
@@ -272,7 +288,11 @@ mod tests {
     #[test]
     fn obb_vertices_count() {
         let obb = Obb3 {
-            center: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+            center: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
             half_extents: Vec3 {
                 x: 50.0,
                 y: 50.0,
@@ -307,7 +327,11 @@ mod tests {
     #[test]
     fn obb_intersects_overlapping() {
         let a = Obb3 {
-            center: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+            center: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
             half_extents: Vec3 {
                 x: 50.0,
                 y: 50.0,
@@ -334,7 +358,11 @@ mod tests {
     #[test]
     fn obb_does_not_interact_separated() {
         let a = Obb3 {
-            center: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+            center: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
             half_extents: Vec3 {
                 x: 10.0,
                 y: 10.0,
@@ -361,7 +389,11 @@ mod tests {
     #[test]
     fn obb_contains_point_center() {
         let obb = Obb3 {
-            center: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+            center: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
             half_extents: Vec3 {
                 x: 50.0,
                 y: 50.0,
@@ -369,13 +401,24 @@ mod tests {
             },
             rotation: DQuat::IDENTITY,
         };
-        assert!(obb.contains_point(&Vec3 { x: 0.0, y: 0.0, z: 0.0 }, Cm::ZERO));
+        assert!(obb.contains_point(
+            &Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0
+            },
+            Cm::ZERO
+        ));
     }
 
     #[test]
     fn obb_contains_point_outside() {
         let obb = Obb3 {
-            center: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+            center: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
             half_extents: Vec3 {
                 x: 10.0,
                 y: 10.0,
@@ -397,7 +440,11 @@ mod tests {
     fn rotated_obbs_intersect_when_expected() {
         // Two identical cubes at same center with 45° yaw should overlap
         let a = Obb3 {
-            center: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+            center: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
             half_extents: Vec3 {
                 x: 50.0,
                 y: 10.0,
@@ -406,18 +453,17 @@ mod tests {
             rotation: DQuat::IDENTITY,
         };
         let b = Obb3 {
-            center: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+            center: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
             half_extents: Vec3 {
                 x: 50.0,
                 y: 10.0,
                 z: 50.0,
             },
-            rotation: DQuat::from_euler(
-                glam::EulerRot::YXZ,
-                45f64.to_radians(),
-                0.0,
-                0.0,
-            ),
+            rotation: DQuat::from_euler(glam::EulerRot::YXZ, 45f64.to_radians(), 0.0, 0.0),
         };
         assert!(a.intersects_obb(&b, Cm::ZERO));
     }

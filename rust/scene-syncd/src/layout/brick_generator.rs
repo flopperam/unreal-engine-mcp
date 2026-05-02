@@ -24,18 +24,9 @@ impl BrickConfig {
             return None;
         }
         Some(Self {
-            brick_rows: bricks
-                .get("rows")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(8) as usize,
-            brick_columns: bricks
-                .get("columns")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(12) as usize,
-            brick_width: bricks
-                .get("width")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(40.0),
+            brick_rows: bricks.get("rows").and_then(|v| v.as_u64()).unwrap_or(8) as usize,
+            brick_columns: bricks.get("columns").and_then(|v| v.as_u64()).unwrap_or(12) as usize,
+            brick_width: bricks.get("width").and_then(|v| v.as_f64()).unwrap_or(40.0),
             brick_height: bricks
                 .get("height")
                 .and_then(|v| v.as_f64())
@@ -185,8 +176,16 @@ mod tests {
             }),
         );
         let span = Span {
-            from: Vec3 { x: -500.0, y: 0.0, z: 0.0 },
-            to: Vec3 { x: 500.0, y: 0.0, z: 0.0 },
+            from: Vec3 {
+                x: -500.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            to: Vec3 {
+                x: 500.0,
+                y: 0.0,
+                z: 0.0,
+            },
         };
         let bricks = generate_bricks("test", &entity, spec, "wall_1", &span).unwrap();
         assert_eq!(bricks.len(), 12, "3 rows x 4 cols = 12 bricks");
@@ -206,8 +205,16 @@ mod tests {
             }),
         );
         let span = Span {
-            from: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-            to: Vec3 { x: 1000.0, y: 0.0, z: 0.0 },
+            from: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            to: Vec3 {
+                x: 1000.0,
+                y: 0.0,
+                z: 0.0,
+            },
         };
         let bricks = generate_bricks("test", &entity, spec, "wall_1", &span).unwrap();
         assert!(bricks.is_empty());

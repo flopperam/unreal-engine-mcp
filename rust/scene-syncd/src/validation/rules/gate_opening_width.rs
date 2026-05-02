@@ -14,11 +14,7 @@ impl ValidationRule for GateOpeningWidth {
         "GATE_OPENING_WIDTH"
     }
 
-    fn validate(
-        &self,
-        objects: &[SceneObject],
-        _footprints: &[Footprint2],
-    ) -> Vec<Diagnostic> {
+    fn validate(&self, objects: &[SceneObject], _footprints: &[Footprint2]) -> Vec<Diagnostic> {
         let mut results = Vec::new();
 
         for obj in objects {

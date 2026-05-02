@@ -4,11 +4,7 @@ use crate::validation::diagnostic::Diagnostic;
 
 pub trait ValidationRule: Send + Sync {
     fn code(&self) -> &'static str;
-    fn validate(
-        &self,
-        objects: &[SceneObject],
-        footprints: &[Footprint2],
-    ) -> Vec<Diagnostic>;
+    fn validate(&self, objects: &[SceneObject], footprints: &[Footprint2]) -> Vec<Diagnostic>;
 }
 
 pub struct ValidationEngine {
@@ -26,18 +22,11 @@ impl ValidationEngine {
         Self { rules: Vec::new() }
     }
 
-    pub fn add_rule(
-        &mut self,
-        rule: Box<dyn ValidationRule>,
-    ) {
+    pub fn add_rule(&mut self, rule: Box<dyn ValidationRule>) {
         self.rules.push(rule);
     }
 
-    pub fn validate(
-        &self,
-        objects: &[SceneObject],
-        footprints: &[Footprint2],
-    ) -> Vec<Diagnostic> {
+    pub fn validate(&self, objects: &[SceneObject], footprints: &[Footprint2]) -> Vec<Diagnostic> {
         let mut all = Vec::new();
         for rule in &self.rules {
             let mut results = rule.validate(objects, footprints);
@@ -46,10 +35,7 @@ impl ValidationEngine {
         all
     }
 
-    pub fn has_errors(
-        &self,
-        diagnostics: &[Diagnostic],
-    ) -> bool {
+    pub fn has_errors(&self, diagnostics: &[Diagnostic]) -> bool {
         diagnostics
             .iter()
             .any(|d| matches!(d.severity, crate::validation::diagnostic::Severity::Error))
@@ -104,12 +90,19 @@ mod tests {
         assert!(!engine.has_errors(&diags));
     }
 
-    use proptest::prelude::*;
     use crate::domain::{Rotator, Transform, Vec3};
+    use proptest::prelude::*;
     use serde_json::json;
 
     fn arb_scene_object() -> impl Strategy<Value = SceneObject> {
-        (any::<f64>(), any::<f64>(), any::<f64>(), any::<f64>(), any::<f64>(), any::<f64>())
+        (
+            any::<f64>(),
+            any::<f64>(),
+            any::<f64>(),
+            any::<f64>(),
+            any::<f64>(),
+            any::<f64>(),
+        )
             .prop_map(|(x, y, z, sx, sy, sz)| SceneObject {
                 id: String::new(),
                 scene: "scene:test".to_string(),
@@ -121,8 +114,16 @@ mod tests {
                 asset_ref: json!({}),
                 transform: Transform {
                     location: Vec3 { x, y, z },
-                    rotation: Rotator { pitch: 0.0, yaw: 0.0, roll: 0.0 },
-                    scale: Vec3 { x: sx.abs().max(0.001), y: sy.abs().max(0.001), z: sz.abs().max(0.001) },
+                    rotation: Rotator {
+                        pitch: 0.0,
+                        yaw: 0.0,
+                        roll: 0.0,
+                    },
+                    scale: Vec3 {
+                        x: sx.abs().max(0.001),
+                        y: sy.abs().max(0.001),
+                        z: sz.abs().max(0.001),
+                    },
                 },
                 visual: json!({}),
                 physics: json!({}),

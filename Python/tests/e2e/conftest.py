@@ -96,7 +96,12 @@ def unreal_command(command: str, params: dict = None) -> dict:
                 if not chunk:
                     raise ConnectionError("Unreal connection closed by peer")
                 data.extend(chunk)
-            return json.loads(bytes(data).split(b"\n", 1)[0].decode("utf-8"))
+            parsed = json.loads(bytes(data).split(b"\n", 1)[0].decode("utf-8"))
+            result = parsed.get("result") if isinstance(parsed, dict) else None
+            if isinstance(result, dict):
+                for key, value in result.items():
+                    parsed.setdefault(key, value)
+            return parsed
         except (ConnectionAbortedError, ConnectionResetError, ConnectionError, OSError, socket.timeout) as exc:
             last_error = exc
             try:
@@ -148,7 +153,7 @@ def isolated_scene(scene_syncd_available):
     """Create a unique scene for each test and clean up after."""
     if not scene_syncd_available:
         pytest.skip("scene-syncd not available")
-    suffix = time.strftime("%Y%m%d%H%M%S")
+    suffix = f"{time.strftime('%Y%m%d%H%M%S')}_{time.time_ns()}"
     scene_id = f"e2e_test_{suffix}_{id(scene_syncd_available)}"
     api_post("/scenes/create", {
         "scene_id": scene_id,

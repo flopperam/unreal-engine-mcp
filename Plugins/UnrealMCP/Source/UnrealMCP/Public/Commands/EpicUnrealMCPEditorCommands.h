@@ -83,6 +83,9 @@ private:
     TSharedPtr<FJsonObject> HandleCreatePatrolRoute(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetAIBehavior(const TSharedPtr<FJsonObject>& Params);
 
+    // Procedural spline from points (L-System output)
+    TSharedPtr<FJsonObject> HandleCreateSplineFromPoints(const TSharedPtr<FJsonObject>& Params);
+
     // Batch scene delta (P4)
     TSharedPtr<FJsonObject> HandleApplySceneDelta(const TSharedPtr<FJsonObject>& Params);
 

@@ -110,7 +110,8 @@ pub struct BlueprintEdge {
 impl BlueprintGraphIr {
     /// Parse a BlueprintGraphIr from the JSON response of `read_blueprint_content`.
     pub fn from_json(json: &serde_json::Value) -> Result<Self, String> {
-        serde_json::from_value(json.clone()).map_err(|e| format!("Failed to parse BlueprintGraphIr: {e}"))
+        serde_json::from_value(json.clone())
+            .map_err(|e| format!("Failed to parse BlueprintGraphIr: {e}"))
     }
 
     /// Find all function calls in the graph (nodes that call another function).
@@ -133,10 +134,7 @@ impl BlueprintGraphIr {
     pub fn variable_access(&self) -> Vec<&BlueprintNode> {
         self.nodes
             .iter()
-            .filter(|n| {
-                n.node_type == "K2Node_VariableGet"
-                    || n.node_type == "K2Node_VariableSet"
-            })
+            .filter(|n| n.node_type == "K2Node_VariableGet" || n.node_type == "K2Node_VariableSet")
             .collect()
     }
 }

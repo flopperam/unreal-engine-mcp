@@ -18,8 +18,7 @@ impl Pass for MaterialCoherencePass {
 
     fn run(&self, ctx: &mut CompilerContext) -> Result<(), AppError> {
         // Derive the world style profile from scene metadata, or use defaults.
-        let style = WorldStyleProfile::from_metadata(&serde_json::json!({}))
-            .unwrap_or_default();
+        let style = WorldStyleProfile::from_metadata(&serde_json::json!({})).unwrap_or_default();
 
         // Compute material plans for each non-deleted object.
         let mut material_plans: Vec<MaterialPlan> = Vec::new();
@@ -71,9 +70,21 @@ mod tests {
             actor_type: "StaticMeshActor".to_string(),
             asset_ref: json!({}),
             transform: Transform {
-                location: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-                rotation: Rotator { pitch: 0.0, yaw: 0.0, roll: 0.0 },
-                scale: Vec3 { x: 1.0, y: 1.0, z: 1.0 },
+                location: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                rotation: Rotator {
+                    pitch: 0.0,
+                    yaw: 0.0,
+                    roll: 0.0,
+                },
+                scale: Vec3 {
+                    x: 1.0,
+                    y: 1.0,
+                    z: 1.0,
+                },
             },
             visual: json!({}),
             physics: json!({}),
@@ -92,7 +103,10 @@ mod tests {
     #[test]
     fn material_coherence_assigns_materials() {
         let mut ctx = CompilerContext::new("test_scene".to_string());
-        ctx.objects = vec![make_obj("keep", "keep_1"), make_obj("curtain_wall", "wall_1")];
+        ctx.objects = vec![
+            make_obj("keep", "keep_1"),
+            make_obj("curtain_wall", "wall_1"),
+        ];
         let pass = MaterialCoherencePass;
         pass.run(&mut ctx).unwrap();
 
@@ -113,6 +127,9 @@ mod tests {
         pass.run(&mut ctx).unwrap();
 
         // semantic_ir should not be set when all objects are deleted
-        assert!(ctx.semantic_ir.is_none() || ctx.semantic_ir.as_ref().unwrap().material_plans.is_empty());
+        assert!(
+            ctx.semantic_ir.is_none()
+                || ctx.semantic_ir.as_ref().unwrap().material_plans.is_empty()
+        );
     }
 }

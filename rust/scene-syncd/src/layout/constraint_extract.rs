@@ -161,7 +161,11 @@ mod tests {
             actor_type: "StaticMeshActor".to_string(),
             asset_ref: json!({}),
             transform: Transform {
-                location: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+                location: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
                 rotation: Rotator {
                     pitch: 0.0,
                     yaw: 0.0,
@@ -192,14 +196,18 @@ mod tests {
         let objects = vec![make_obj("t1", "tower"), make_obj("w1", "curtain_wall")];
         let (hard, soft) = extract_constraints(&objects, &[], None);
         assert_eq!(hard.len(), 1); // TowerConnectedToWall
-        assert!(hard.iter().any(|c| matches!(c, HardConstraint::TowerConnectedToWall { .. })));
+        assert!(hard
+            .iter()
+            .any(|c| matches!(c, HardConstraint::TowerConnectedToWall { .. })));
     }
 
     #[test]
     fn keep_with_walls_extracts_boundary() {
         let objects = vec![make_obj("k1", "keep"), make_obj("w1", "curtain_wall")];
         let (hard, soft) = extract_constraints(&objects, &[], None);
-        assert!(hard.iter().any(|c| matches!(c, HardConstraint::KeepInsideBoundary { .. })));
+        assert!(hard
+            .iter()
+            .any(|c| matches!(c, HardConstraint::KeepInsideBoundary { .. })));
     }
 
     #[test]

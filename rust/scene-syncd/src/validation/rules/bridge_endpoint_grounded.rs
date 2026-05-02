@@ -15,11 +15,7 @@ impl ValidationRule for BridgeEndpointGrounded {
         "BRIDGE_ENDPOINT_GROUNDED"
     }
 
-    fn validate(
-        &self,
-        objects: &[SceneObject],
-        _footprints: &[Footprint2],
-    ) -> Vec<Diagnostic> {
+    fn validate(&self, objects: &[SceneObject], _footprints: &[Footprint2]) -> Vec<Diagnostic> {
         let mut results = Vec::new();
 
         for obj in objects {

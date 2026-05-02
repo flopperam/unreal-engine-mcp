@@ -54,8 +54,9 @@ impl SemanticScene {
 
             let kind = SemanticKind::from_str(kind_str);
 
-            let entry = entity_map.entry(entity_id.clone()).or_insert_with(|| {
-                SemanticEntity {
+            let entry = entity_map
+                .entry(entity_id.clone())
+                .or_insert_with(|| SemanticEntity {
                     entity_id: entity_id.clone(),
                     kind: kind.clone(),
                     name: obj.desired_name.clone(),
@@ -65,8 +66,7 @@ impl SemanticScene {
                         "mcp_id": obj.mcp_id,
                         "actor_type": obj.actor_type,
                     }),
-                }
-            });
+                });
 
             // If this object refines the kind, update it.
             if kind != SemanticKind::Unknown(String::new()) {
@@ -202,9 +202,10 @@ mod tests {
         let scene = SemanticScene::from_objects("test".to_string(), &objs);
         assert_eq!(scene.entities.len(), 2);
         assert!(scene.entities.iter().any(|e| e.kind == SemanticKind::Tower));
-        assert!(
-            scene.entities.iter().any(|e| e.kind == SemanticKind::CurtainWall)
-        );
+        assert!(scene
+            .entities
+            .iter()
+            .any(|e| e.kind == SemanticKind::CurtainWall));
     }
 
     #[test]
@@ -219,6 +220,9 @@ mod tests {
     fn unknown_kind_preserved() {
         let objs = vec![make_obj("x1", "x_1", "alien_spaceship")];
         let scene = SemanticScene::from_objects("test".to_string(), &objs);
-        assert_eq!(scene.entities[0].kind, SemanticKind::Unknown("alien_spaceship".to_string()));
+        assert_eq!(
+            scene.entities[0].kind,
+            SemanticKind::Unknown("alien_spaceship".to_string())
+        );
     }
 }

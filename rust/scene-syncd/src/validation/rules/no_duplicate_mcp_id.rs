@@ -17,10 +17,7 @@ impl ValidationRule for NoDuplicateMcpId {
     ) -> Vec<Diagnostic> {
         let mut counts: HashMap<&str, Vec<usize>> = HashMap::new();
         for (idx, obj) in objects.iter().enumerate() {
-            counts
-                .entry(&obj.mcp_id)
-                .or_default()
-                .push(idx);
+            counts.entry(&obj.mcp_id).or_default().push(idx);
         }
 
         let mut results = Vec::new();
@@ -97,11 +94,7 @@ mod tests {
     #[test]
     fn detects_duplicate() {
         let rule = NoDuplicateMcpId;
-        let objs = vec![
-            make_object("dup"),
-            make_object("uniq"),
-            make_object("dup"),
-        ];
+        let objs = vec![make_object("dup"), make_object("uniq"), make_object("dup")];
         let diags = rule.validate(&objs, &[]);
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code, "NO_DUPLICATE_MCP_ID");

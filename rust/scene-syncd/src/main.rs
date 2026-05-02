@@ -209,6 +209,18 @@ async fn main() -> anyhow::Result<()> {
             "/procedural/create-mesh",
             post(scene_syncd::api::routes::create_procedural_mesh_route),
         )
+        .route(
+            "/procedural/sdf-mesh",
+            post(scene_syncd::api::routes::sdf_mesh_route),
+        )
+        .route(
+            "/procedural/superformula-mesh",
+            post(scene_syncd::api::routes::superformula_mesh_route),
+        )
+        .route(
+            "/procedural/lsystem-spline",
+            post(scene_syncd::api::routes::lsystem_spline_route),
+        )
         .layer(axum::extract::DefaultBodyLimit::max(512 * 1024 * 1024))
         .layer(TraceLayer::new_for_http())
         .layer(

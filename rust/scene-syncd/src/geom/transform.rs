@@ -47,7 +47,11 @@ pub fn transform_aabb_corners(t: &Transform) -> [Vec3; 8] {
     let s = to_glam_vec3(&t.scale);
     let loc = to_glam_vec3(&t.location);
 
-    let mut corners: [Vec3; 8] = core::array::from_fn(|_| Vec3 { x: 0.0, y: 0.0, z: 0.0 });
+    let mut corners: [Vec3; 8] = core::array::from_fn(|_| Vec3 {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    });
     for i in 0..8usize {
         let dx = if i & 1 != 0 { 0.5 } else { -0.5 };
         let dy = if i & 2 != 0 { 0.5 } else { -0.5 };

@@ -45,11 +45,8 @@ impl ValidationRule for InstanceSetRequiredRule {
                 .find_map(|t| t.strip_prefix("layout_kind:"))
                 .unwrap_or("unknown")
                 .to_string();
-            let has_instance_set = obj
-                .metadata
-                .get("render_mode")
-                .and_then(|v| v.as_str())
-                == Some("instance_set");
+            let has_instance_set =
+                obj.metadata.get("render_mode").and_then(|v| v.as_str()) == Some("instance_set");
             let entry = groups.entry((mesh, kind)).or_insert((0, 0));
             entry.0 += 1;
             if has_instance_set {
@@ -95,9 +92,21 @@ mod tests {
             actor_type: "StaticMeshActor".to_string(),
             asset_ref: json!({"mesh": mesh}),
             transform: Transform {
-                location: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-                rotation: Rotator { pitch: 0.0, yaw: 0.0, roll: 0.0 },
-                scale: Vec3 { x: 1.0, y: 1.0, z: 1.0 },
+                location: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                rotation: Rotator {
+                    pitch: 0.0,
+                    yaw: 0.0,
+                    roll: 0.0,
+                },
+                scale: Vec3 {
+                    x: 1.0,
+                    y: 1.0,
+                    z: 1.0,
+                },
             },
             visual: json!({}),
             physics: json!({}),
@@ -130,7 +139,14 @@ mod tests {
     #[test]
     fn no_warning_when_all_marked() {
         let objects: Vec<SceneObject> = (0..60)
-            .map(|i| make_obj(&format!("c_{}", i), "/Mesh/Cube", "crenellation", Some("instance_set")))
+            .map(|i| {
+                make_obj(
+                    &format!("c_{}", i),
+                    "/Mesh/Cube",
+                    "crenellation",
+                    Some("instance_set"),
+                )
+            })
             .collect();
         let rule = InstanceSetRequiredRule::default();
         let diags = rule.validate(&objects, &[]);

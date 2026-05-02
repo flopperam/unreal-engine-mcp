@@ -41,27 +41,33 @@ impl Pass for ApplyPlanPass {
             .operations
             .iter()
             .map(|op| match op {
-                crate::ir::sync::SyncOperation::Create { mcp_id, object } => crate::sync::SyncOperation {
-                    action: crate::sync::SyncAction::Create,
-                    mcp_id: mcp_id.clone(),
-                    reason: "Create from SyncIr".to_string(),
-                    desired: Some(serde_json::to_value(object).unwrap_or_default()),
-                    actual: None,
-                },
-                crate::ir::sync::SyncOperation::Update { mcp_id, object } => crate::sync::SyncOperation {
-                    action: crate::sync::SyncAction::UpdateVisual,
-                    mcp_id: mcp_id.clone(),
-                    reason: "Update from SyncIr".to_string(),
-                    desired: Some(serde_json::to_value(object).unwrap_or_default()),
-                    actual: None,
-                },
-                crate::ir::sync::SyncOperation::Delete { mcp_id, object } => crate::sync::SyncOperation {
-                    action: crate::sync::SyncAction::Delete,
-                    mcp_id: mcp_id.clone(),
-                    reason: "Delete from SyncIr".to_string(),
-                    desired: Some(serde_json::to_value(object).unwrap_or_default()),
-                    actual: None,
-                },
+                crate::ir::sync::SyncOperation::Create { mcp_id, object } => {
+                    crate::sync::SyncOperation {
+                        action: crate::sync::SyncAction::Create,
+                        mcp_id: mcp_id.clone(),
+                        reason: "Create from SyncIr".to_string(),
+                        desired: Some(serde_json::to_value(object).unwrap_or_default()),
+                        actual: None,
+                    }
+                }
+                crate::ir::sync::SyncOperation::Update { mcp_id, object } => {
+                    crate::sync::SyncOperation {
+                        action: crate::sync::SyncAction::UpdateVisual,
+                        mcp_id: mcp_id.clone(),
+                        reason: "Update from SyncIr".to_string(),
+                        desired: Some(serde_json::to_value(object).unwrap_or_default()),
+                        actual: None,
+                    }
+                }
+                crate::ir::sync::SyncOperation::Delete { mcp_id, object } => {
+                    crate::sync::SyncOperation {
+                        action: crate::sync::SyncAction::Delete,
+                        mcp_id: mcp_id.clone(),
+                        reason: "Delete from SyncIr".to_string(),
+                        desired: Some(serde_json::to_value(object).unwrap_or_default()),
+                        actual: None,
+                    }
+                }
                 crate::ir::sync::SyncOperation::NoOp { mcp_id } => crate::sync::SyncOperation {
                     action: crate::sync::SyncAction::Noop,
                     mcp_id: mcp_id.clone(),
@@ -79,11 +85,7 @@ impl Pass for ApplyPlanPass {
             warnings: vec![],
         };
 
-        let cell_plan = split_by_cell_availability(
-            &plan,
-            world_cells,
-            &loaded,
-        );
+        let cell_plan = split_by_cell_availability(&plan, world_cells, &loaded);
 
         ctx.add_diagnostics(vec![crate::validation::diagnostic::Diagnostic::info(
             "APPLY_PLAN_SUMMARY",

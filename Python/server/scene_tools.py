@@ -1302,3 +1302,188 @@ def scene_upsert_procedural_mesh(
 
     result = call_scene_syncd("/procedural/create-mesh", payload)
     return _scene_syncd_error_response(result, "scene_upsert_procedural_mesh")
+
+
+@mcp.tool()
+def scene_create_sdf_mesh(
+    mcp_id: str,
+    sdf_tree: Optional[Dict[str, Any]] = None,
+    sdf_type: str = "sphere",
+    center: Optional[Dict[str, float]] = None,
+    radius: float = 100.0,
+    box_min: Optional[Dict[str, float]] = None,
+    box_max: Optional[Dict[str, float]] = None,
+    major_radius: float = 100.0,
+    minor_radius: float = 30.0,
+    frequency: float = 1.0,
+    thickness: float = 10.0,
+    resolution: int = 32,
+    bounds: Optional[Dict[str, Dict[str, float]]] = None,
+    bounds_padding: float = 10.0,
+    actor_name: Optional[str] = None,
+    material_path: str = "",
+    location: Optional[Dict[str, float]] = None,
+    rotation: Optional[Dict[str, float]] = None,
+    scale: Optional[Dict[str, float]] = None,
+    focus_viewport: bool = True,
+) -> Dict[str, Any]:
+    """Generate a procedural mesh from a Signed Distance Function (SDF) using Marching Cubes.
+
+    Supports: sphere, box, torus, gyroid, scherk. SDF meshes do not have UVs —
+    use World-Aligned materials on the Unreal side for texturing.
+    """
+    try:
+        validate_string(mcp_id, "mcp_id")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    sdf_payload = sdf_tree or {
+        "type": sdf_type,
+        "center": [center.get("x", 0.0), center.get("y", 0.0), center.get("z", 0.0)] if center else [0.0, 0.0, 0.0],
+        "radius": radius,
+        "min": [box_min.get("x", -100.0), box_min.get("y", -100.0), box_min.get("z", -100.0)] if box_min else [-100.0, -100.0, -100.0],
+        "max": [box_max.get("x", 100.0), box_max.get("y", 100.0), box_max.get("z", 100.0)] if box_max else [100.0, 100.0, 100.0],
+        "major_radius": major_radius,
+        "minor_radius": minor_radius,
+        "frequency": frequency,
+        "thickness": thickness,
+    }
+
+    payload = {
+        "mcp_id": mcp_id,
+        "sdf": sdf_payload,
+        "resolution": resolution,
+        "bounds_padding": bounds_padding,
+        "actor_name": actor_name or mcp_id,
+        "material_path": material_path,
+        "focus_viewport": focus_viewport,
+    }
+
+    if bounds:
+        payload["bounds"] = {
+            "min": [bounds["min"].get("x", 0.0), bounds["min"].get("y", 0.0), bounds["min"].get("z", 0.0)],
+            "max": [bounds["max"].get("x", 0.0), bounds["max"].get("y", 0.0), bounds["max"].get("z", 0.0)],
+        }
+
+    if location:
+        payload["location"] = [location.get("x", 0.0), location.get("y", 0.0), location.get("z", 0.0)]
+    if rotation:
+        payload["rotation"] = [rotation.get("pitch", 0.0), rotation.get("yaw", 0.0), rotation.get("roll", 0.0)]
+    if scale:
+        payload["scale"] = [scale.get("x", 1.0), scale.get("y", 1.0), scale.get("z", 1.0)]
+
+    result = call_scene_syncd("/procedural/sdf-mesh", payload)
+    return _scene_syncd_error_response(result, "scene_create_sdf_mesh")
+
+
+@mcp.tool()
+def scene_create_superformula_mesh(
+    mcp_id: str,
+    m1: float = 6.0,
+    n1_1: float = 1.0,
+    n2_1: float = 1.0,
+    n3_1: float = 1.0,
+    a1: float = 1.0,
+    b1: float = 1.0,
+    m2: float = 6.0,
+    n1_2: float = 1.0,
+    n2_2: float = 1.0,
+    n3_2: float = 1.0,
+    a2: float = 1.0,
+    b2: float = 1.0,
+    resolution: int = 32,
+    scale: float = 100.0,
+    actor_name: Optional[str] = None,
+    material_path: str = "",
+    location: Optional[Dict[str, float]] = None,
+    rotation: Optional[Dict[str, float]] = None,
+    scale_override: Optional[Dict[str, float]] = None,
+    focus_viewport: bool = True,
+) -> Dict[str, Any]:
+    """Generate a procedural mesh from the 3D Superformula (Gielis).
+
+    The Superformula creates parametric shapes from two 2D superformulas applied
+    in spherical coordinates. UV mapping is derived from (theta, phi).
+    Try m=8, n1=0.5 for star-like shapes, or m=4, n1=10 for rounded squares.
+    """
+    try:
+        validate_string(mcp_id, "mcp_id")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    payload = {
+        "mcp_id": mcp_id,
+        "m1": m1, "n1_1": n1_1, "n2_1": n2_1, "n3_1": n3_1, "a1": a1, "b1": b1,
+        "m2": m2, "n1_2": n1_2, "n2_2": n2_2, "n3_2": n3_2, "a2": a2, "b2": b2,
+        "resolution": resolution,
+        "scale": scale,
+        "actor_name": actor_name or mcp_id,
+        "material_path": material_path,
+        "focus_viewport": focus_viewport,
+    }
+
+    if location:
+        payload["location"] = [location.get("x", 0.0), location.get("y", 0.0), location.get("z", 0.0)]
+    if rotation:
+        payload["rotation"] = [rotation.get("pitch", 0.0), rotation.get("yaw", 0.0), rotation.get("roll", 0.0)]
+    if scale_override:
+        payload["scale_override"] = [scale_override.get("x", 1.0), scale_override.get("y", 1.0), scale_override.get("z", 1.0)]
+
+    result = call_scene_syncd("/procedural/superformula-mesh", payload)
+    return _scene_syncd_error_response(result, "scene_create_superformula_mesh")
+
+
+@mcp.tool()
+def scene_create_lsystem_spline(
+    mcp_id: str,
+    axiom: str = "F",
+    rules: Optional[List[List[str]]] = None,
+    iterations: int = 3,
+    step_length: float = 50.0,
+    angle_degrees: float = 90.0,
+    origin: Optional[Dict[str, float]] = None,
+    heading: Optional[Dict[str, float]] = None,
+    up: Optional[Dict[str, float]] = None,
+    closed_loop: bool = False,
+    tangent_mode: str = "curve",
+    spline_name: Optional[str] = None,
+    focus_viewport: bool = True,
+) -> Dict[str, Any]:
+    """Generate a spline from an L-System grammar and create it in Unreal.
+
+    The L-System turtle produces segments that are sent to Unreal as a
+    create_spline_from_points command. Supports 3D operations: +/- for yaw,
+    &/^ for pitch, \\\\/ for roll, [/] for push/pop branching.
+    Common grammars: Koch curve (F→F+F-F-F+F, angle=90), tree (F→F[+F]F[-F]F).
+    """
+    try:
+        validate_string(mcp_id, "mcp_id")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    rules = rules or [["F", "F+F-F-F+F"]]
+
+    # Step 1: Evaluate L-System via scene-syncd to get segments
+    lsystem_payload = {
+        "mcp_id": mcp_id,
+        "axiom": axiom,
+        "rules": rules,
+        "iterations": iterations,
+        "step_length": step_length,
+        "angle_degrees": angle_degrees,
+        "closed_loop": closed_loop,
+        "tangent_mode": tangent_mode,
+        "spline_name": spline_name or mcp_id,
+        "create_in_unreal": True,
+        "focus_viewport": focus_viewport,
+    }
+
+    if origin:
+        lsystem_payload["origin"] = [origin.get("x", 0.0), origin.get("y", 0.0), origin.get("z", 0.0)]
+    if heading:
+        lsystem_payload["heading"] = [heading.get("x", 1.0), heading.get("y", 0.0), heading.get("z", 0.0)]
+    if up:
+        lsystem_payload["up"] = [up.get("x", 0.0), up.get("y", 0.0), up.get("z", 1.0)]
+
+    result = call_scene_syncd("/procedural/lsystem-spline", lsystem_payload)
+    return _scene_syncd_error_response(result, "scene_create_lsystem_spline")

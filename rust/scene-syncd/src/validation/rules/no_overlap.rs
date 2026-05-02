@@ -26,10 +26,7 @@ impl ValidationRule for NoSameLayerOverlap {
             if obj.deleted {
                 continue;
             }
-            let kind = obj
-                .tags
-                .iter()
-                .find_map(|t| t.strip_prefix("layout_kind:"));
+            let kind = obj.tags.iter().find_map(|t| t.strip_prefix("layout_kind:"));
             let layer = kind
                 .and_then(|k| registry.get(k))
                 .map(|s| s.layer)
@@ -68,14 +65,7 @@ mod tests {
     use crate::domain::{Rotator, SceneObject, Transform, Vec3};
     use serde_json::json;
 
-    fn make_object(
-        mcp_id: &str,
-        x: f64,
-        y: f64,
-        sx: f64,
-        sy: f64,
-        kind_tag: &str,
-    ) -> SceneObject {
+    fn make_object(mcp_id: &str, x: f64, y: f64, sx: f64, sy: f64, kind_tag: &str) -> SceneObject {
         let mut obj = make_rotated_object(mcp_id, x, y, sx, sy, 0.0, kind_tag);
         obj.transform.rotation = Rotator {
             pitch: 0.0,
@@ -160,4 +150,3 @@ mod tests {
         );
     }
 }
-

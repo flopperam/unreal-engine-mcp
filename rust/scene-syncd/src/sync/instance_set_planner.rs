@@ -9,8 +9,10 @@ pub fn plan_instance_set_sync(
     use std::collections::HashMap;
 
     let mut ops = Vec::new();
-    let desired_map: HashMap<&str, &InstanceSet> =
-        desired_sets.iter().map(|s| (s.set_id.as_str(), s)).collect();
+    let desired_map: HashMap<&str, &InstanceSet> = desired_sets
+        .iter()
+        .map(|s| (s.set_id.as_str(), s))
+        .collect();
     let actual_map: HashMap<&str, &InstanceSetState> =
         actual_ism.iter().map(|s| (s.set_id.as_str(), s)).collect();
 
@@ -18,9 +20,9 @@ pub fn plan_instance_set_sync(
     for (id, desired) in &desired_map {
         match actual_map.get(id) {
             Some(actual) => {
-                if desired.transforms.len() != actual.instance_count
-                    || desired.mesh != actual.mesh
-                {
+                let desired_mesh = normalize_unreal_asset_path(&desired.mesh);
+                let actual_mesh = normalize_unreal_asset_path(&actual.mesh);
+                if desired.transforms.len() != actual.instance_count || desired_mesh != actual_mesh {
                     ops.push(InstanceSetOperation::Update {
                         set_id: id.to_string(),
                         mesh: desired.mesh.clone(),
@@ -52,6 +54,16 @@ pub fn plan_instance_set_sync(
     }
 
     ops
+}
+
+fn normalize_unreal_asset_path(path: &str) -> String {
+    let trimmed = path.trim();
+    if let Some((package_path, object_name)) = trimmed.rsplit_once('.') {
+        if package_path.rsplit('/').next() == Some(object_name) {
+            return package_path.to_string();
+        }
+    }
+    trimmed.to_string()
 }
 
 /// Observed state of an ISM/HISM component in Unreal.
@@ -146,6 +158,14 @@ mod tests {
     fn noop_when_matches() {
         let desired = vec![make_set("a", "/Engine/Cube", 2)];
         let actual = vec![make_state("a", "/Engine/Cube", 2)];
+        let ops = plan_instance_set_sync(&desired, &actual);
+        assert!(ops.is_empty());
+    }
+
+    #[test]
+    fn noop_when_unreal_reports_object_qualified_mesh_path() {
+        let desired = vec![make_set("a", "/Engine/BasicShapes/Cube", 2)];
+        let actual = vec![make_state("a", "/Engine/BasicShapes/Cube.Cube", 2)];
         let ops = plan_instance_set_sync(&desired, &actual);
         assert!(ops.is_empty());
     }

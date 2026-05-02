@@ -31,10 +31,7 @@ impl Polygon2 {
     }
 
     /// Exact point-in-polygon test.
-    pub fn contains_point(&self,
-        x: f64,
-        y: f64,
-    ) -> bool {
+    pub fn contains_point(&self, x: f64, y: f64) -> bool {
         let geo_poly = self.to_geo_polygon();
         geo_poly.contains(&Coord { x, y })
     }
@@ -102,7 +99,9 @@ mod tests {
     fn arb_polygon() -> impl Strategy<Value = Polygon2> {
         (any::<f64>(), any::<f64>(), any::<f64>(), any::<f64>())
             .prop_filter("positive size", |(_, _, w, h)| *w > 0.01 && *h > 0.01)
-            .prop_map(|(min_x, min_y, w, h)| Polygon2::from_footprint_rect(min_x, min_y, min_x + w, min_y + h))
+            .prop_map(|(min_x, min_y, w, h)| {
+                Polygon2::from_footprint_rect(min_x, min_y, min_x + w, min_y + h)
+            })
     }
 
     proptest! {

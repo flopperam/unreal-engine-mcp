@@ -20,9 +20,7 @@ impl Pass for DensityPlannerPass {
         "density_lod"
     }
 
-    fn run(&self,
-        ctx: &mut CompilerContext,
-    ) -> Result<(), AppError> {
+    fn run(&self, ctx: &mut CompilerContext) -> Result<(), AppError> {
         if ctx.objects.is_empty() {
             ctx.render_plan = Some(RenderPlan {
                 scene_id: ctx.scene_id.clone(),
@@ -66,7 +64,7 @@ impl Pass for DensityPlannerPass {
                 RenderMode::InstanceSet => RenderItem::Actor(obj.clone()), // placeholder: converted later
                 RenderMode::HlodProxy => RenderItem::Actor(obj.clone()),   // Phase 5+
                 RenderMode::Decal => RenderItem::Actor(obj.clone()),       // Phase 7+
-                RenderMode::Omit => continue,                             // dropped
+                RenderMode::Omit => continue,                              // dropped
             };
 
             decisions.push(decision);
@@ -90,13 +88,11 @@ impl Pass for DensityPlannerPass {
             })
             .collect();
 
-        let instance_sets =
-            group_into_instance_sets(&instance_set_objects, Some(&decisions));
+        let instance_sets = group_into_instance_sets(&instance_set_objects, Some(&decisions));
 
         // Replace Actor placeholders with actual InstanceSet items
         let mut final_items: Vec<RenderItem> = Vec::new();
-        let mut used_in_set: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
+        let mut used_in_set: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         // Add InstanceSets first
         for set in &instance_sets {
@@ -120,10 +116,7 @@ impl Pass for DensityPlannerPass {
             .iter()
             .filter(|i| matches!(i, RenderItem::Actor(_)))
             .count();
-        let instance_count: usize = instance_sets
-            .iter()
-            .map(|s| s.transforms.len())
-            .sum();
+        let instance_count: usize = instance_sets.iter().map(|s| s.transforms.len()).sum();
         let estimated_cost = RenderCostEstimate {
             actor_cost: actor_count as f32,
             instance_cost: instance_count as f32 * 0.01,
@@ -208,11 +201,7 @@ fn build_density_input(
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-    let distance_band = match obj
-        .metadata
-        .get("distance_band")
-        .and_then(|v| v.as_str())
-    {
+    let distance_band = match obj.metadata.get("distance_band").and_then(|v| v.as_str()) {
         Some("near") => DistanceBand::Near,
         Some("mid") => DistanceBand::Mid,
         Some("far") => DistanceBand::Far,
@@ -239,9 +228,7 @@ fn classify_object(source_mcp_id: String, density: &DensityInput) -> RenderDecis
     if density.interaction_required || density.collision_required {
         decision = RenderMode::Actor;
         reason = "interaction or collision required".to_string();
-    } else if density.repetition_count >= 50
-        && !density.interaction_required
-    {
+    } else if density.repetition_count >= 50 && !density.interaction_required {
         decision = RenderMode::InstanceSet;
         reason = format!(
             "repetition_count={} >= 50, no interaction",

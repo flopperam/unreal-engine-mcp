@@ -26,10 +26,7 @@ impl Pass for NormalizePass {
                         deferred_diags.push(
                             crate::validation::diagnostic::Diagnostic::warning(
                                 "HASH_COMPUTE_FAILED",
-                                format!(
-                                    "Failed to compute desired_hash for {}: {}",
-                                    obj.mcp_id, e
-                                ),
+                                format!("Failed to compute desired_hash for {}: {}", obj.mcp_id, e),
                             )
                             .with_mcp_id(obj.mcp_id.clone()),
                         );

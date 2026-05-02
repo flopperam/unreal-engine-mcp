@@ -9,11 +9,11 @@
 
 namespace
 {
-constexpr uint32 MCPM_MAGIC = 0x4D43504D;
-constexpr uint32 MCPM_VERSION = 1;
-constexpr uint32 MCPM_HEADER_SIZE = 104;
-constexpr uint32 FLAG_HAS_UV = 0x01;
-constexpr uint32 FLAG_HAS_COLOR = 0x04;
+constexpr uint32 Spec_MCPM_MAGIC = 0x4D43504D;
+constexpr uint32 Spec_MCPM_VERSION = 1;
+constexpr uint32 Spec_MCPM_HEADER_SIZE = 104;
+constexpr uint32 Spec_FLAG_HAS_UV = 0x01;
+constexpr uint32 Spec_FLAG_HAS_COLOR = 0x04;
 
 void WriteU32(TArray<uint8>& Buffer, int32 Offset, uint32 Value)
 {
@@ -44,7 +44,7 @@ uint32 CalculateCrc32(const uint8* Data, int64 Size)
 
 void RecomputePayloadCrc(TArray<uint8>& Buffer)
 {
-	const uint32 Crc = CalculateCrc32(Buffer.GetData() + MCPM_HEADER_SIZE, Buffer.Num() - MCPM_HEADER_SIZE);
+	const uint32 Crc = CalculateCrc32(Buffer.GetData() + Spec_MCPM_HEADER_SIZE, Buffer.Num() - Spec_MCPM_HEADER_SIZE);
 	WriteU32(Buffer, 24, Crc);
 }
 
@@ -56,11 +56,11 @@ void WriteF32(TArray<uint8>& Buffer, int32 Offset, float Value)
 TArray<uint8> MakeTrianglePayload(uint32 Flags = 0)
 {
 	TArray<uint8> Buffer;
-	Buffer.SetNumZeroed(MCPM_HEADER_SIZE);
+	Buffer.SetNumZeroed(Spec_MCPM_HEADER_SIZE);
 
-	WriteU32(Buffer, 0, MCPM_MAGIC);
-	WriteU32(Buffer, 4, MCPM_VERSION);
-	WriteU32(Buffer, 8, MCPM_HEADER_SIZE);
+	WriteU32(Buffer, 0, Spec_MCPM_MAGIC);
+	WriteU32(Buffer, 4, Spec_MCPM_VERSION);
+	WriteU32(Buffer, 8, Spec_MCPM_HEADER_SIZE);
 	WriteU32(Buffer, 12, Flags);
 	WriteU32(Buffer, 16, 3);
 	WriteU32(Buffer, 20, 3);
@@ -85,7 +85,7 @@ TArray<uint8> MakeTrianglePayload(uint32 Flags = 0)
 		AppendF32(Buffer, 1.0f);
 	}
 
-	if ((Flags & FLAG_HAS_UV) != 0)
+	if ((Flags & Spec_FLAG_HAS_UV) != 0)
 	{
 		const float UVs[6] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f};
 		for (float Value : UVs)
@@ -94,7 +94,7 @@ TArray<uint8> MakeTrianglePayload(uint32 Flags = 0)
 		}
 	}
 
-	if ((Flags & FLAG_HAS_COLOR) != 0)
+	if ((Flags & Spec_FLAG_HAS_COLOR) != 0)
 	{
 		const uint8 Colors[12] = {
 			255, 0, 0, 255,
@@ -117,7 +117,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUnrealMCPProceduralMeshParserValidTest, "Unrea
 
 bool FUnrealMCPProceduralMeshParserValidTest::RunTest(const FString& Parameters)
 {
-	TArray<uint8> Buffer = MakeTrianglePayload(FLAG_HAS_UV | FLAG_HAS_COLOR);
+	TArray<uint8> Buffer = MakeTrianglePayload(Spec_FLAG_HAS_UV | Spec_FLAG_HAS_COLOR);
 	FProceduralMeshPayload Payload;
 	Payload.McpId = TEXT("parser_test_mesh");
 	Payload.ActorName = TEXT("ParserTestMesh");
@@ -190,7 +190,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUnrealMCPProceduralMeshParserRejectsNanPositio
 bool FUnrealMCPProceduralMeshParserRejectsNanPositionTest::RunTest(const FString& Parameters)
 {
 	TArray<uint8> Buffer = MakeTrianglePayload();
-	WriteF32(Buffer, MCPM_HEADER_SIZE + sizeof(float), std::numeric_limits<float>::quiet_NaN());
+	WriteF32(Buffer, Spec_MCPM_HEADER_SIZE + sizeof(float), std::numeric_limits<float>::quiet_NaN());
 	RecomputePayloadCrc(Buffer);
 
 	FProceduralMeshPayload Payload;
@@ -208,7 +208,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUnrealMCPProceduralMeshParserRejectsInfNormalT
 bool FUnrealMCPProceduralMeshParserRejectsInfNormalTest::RunTest(const FString& Parameters)
 {
 	TArray<uint8> Buffer = MakeTrianglePayload();
-	const int32 FirstNormalOffset = MCPM_HEADER_SIZE + static_cast<int32>(sizeof(float) * 9);
+	const int32 FirstNormalOffset = Spec_MCPM_HEADER_SIZE + static_cast<int32>(sizeof(float) * 9);
 	WriteF32(Buffer, FirstNormalOffset, std::numeric_limits<float>::infinity());
 	RecomputePayloadCrc(Buffer);
 
@@ -227,7 +227,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUnrealMCPProceduralMeshParserRejectsBoundsTest
 bool FUnrealMCPProceduralMeshParserRejectsBoundsTest::RunTest(const FString& Parameters)
 {
 	TArray<uint8> Buffer = MakeTrianglePayload();
-	WriteF32(Buffer, MCPM_HEADER_SIZE, 10000001.0f);
+	WriteF32(Buffer, Spec_MCPM_HEADER_SIZE, 10000001.0f);
 	RecomputePayloadCrc(Buffer);
 
 	FProceduralMeshPayload Payload;

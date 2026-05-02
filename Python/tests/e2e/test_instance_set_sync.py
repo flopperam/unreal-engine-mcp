@@ -19,13 +19,15 @@ import pytest
 from .conftest import api_post, api_get, unreal_command, assert_success
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def crenellation_scene(scene_syncd_available):
     """Create a scene with 60 crenellation objects (same mesh) for InstanceSet grouping."""
     if not scene_syncd_available:
         pytest.skip("scene-syncd not available")
 
-    suffix = time.strftime("%Y%m%d%H%M%S")
+    suffix = f"{time.strftime('%Y%m%d%H%M%S')}_{time.time_ns()}"
+    kind = f"crenellation_{suffix}"
+    set_id = f"{kind}__Engine_BasicShapes_Cube_instances"
     scene_id = f"instset_e2e_{suffix}"
 
     assert_success(
@@ -52,7 +54,7 @@ def crenellation_scene(scene_syncd_available):
                 "rotation": {"pitch": 0.0, "yaw": 0.0, "roll": 0.0},
                 "scale": {"x": 0.5, "y": 0.5, "z": 0.5},
             },
-            "tags": ["layout_kind:crenellation", "detail:wall_top"],
+            "tags": [f"layout_kind:{kind}", "detail:wall_top"],
         })
 
     assert_success(
@@ -63,6 +65,8 @@ def crenellation_scene(scene_syncd_available):
     yield {
         "scene_id": scene_id,
         "suffix": suffix,
+        "kind": kind,
+        "set_id": set_id,
         "objects": objects,
         "object_count": len(objects),
     }
@@ -114,11 +118,8 @@ class TestInstanceSetDBOnly:
         data = assert_success(apply, "sync apply")
         summary = data["summary"]
 
-        # Unreal is not available in DB-only mode, so instance_set_* should be 0
-        # But the apply should still succeed (it falls back to empty actual state)
-        isc = summary.get("instance_set_creates", 0)
-        assert isc == 0, \
-            f"Without Unreal, instance set creates should be 0, got {isc}"
+        assert summary.get("failed", 0) == 0, \
+            f"Apply should not fail in planner/basic apply coverage: {summary}"
 
 
 @pytest.mark.requires_unreal
@@ -163,13 +164,13 @@ class TestInstanceSetWithUnreal:
         assert_success(apply, "sync apply")
 
         # Query Unreal for instance set state
-        # The set_id is derived from kind + mesh: "crenellation_{mesh}_instances"
-        set_id = "crenellation__Engine_BasicShapes_Cube_instances"
+        # The set_id is derived from kind + mesh: "{kind}_{mesh}_instances"
+        set_id = scene["set_id"]
 
         resp = unreal_command("get_instance_set_state", {"set_id": set_id})
         result = resp.get("result", {})
         if result.get("success"):
-            state = result.get("state", {})
+            state = result.get("state") or result
             assert state.get("instance_count", 0) == 60, \
                 f"Expected 60 instances, got {state.get('instance_count', 0)}"
             assert "/Engine/BasicShapes/Cube" in state.get("mesh_path", ""), \
@@ -183,6 +184,8 @@ class TestInstanceSetWithUnreal:
                 cren_sets = [s for s in sets if "crenellation" in s.get("set_id", "")]
                 assert len(cren_sets) >= 1, \
                     f"Expected >=1 crenellation instance set, found {len(cren_sets)}"
+                assert any(s.get("instance_count") == 60 for s in cren_sets), \
+                    f"Expected a 60-instance crenellation set, found {cren_sets}"
 
     def test_list_instance_sets_includes_crenellation(self, crenellation_scene):
         """list_instance_sets should return the crenellation instance set."""

@@ -33,7 +33,9 @@ impl ValidationRule for NoNaNTransform {
                         format!("Object {} has NaN in transform", obj.mcp_id),
                     )
                     .with_mcp_id(obj.mcp_id.clone())
-                    .with_suggestion("Reset transform to default (location=0, rotation=0, scale=1)".to_string()),
+                    .with_suggestion(
+                        "Reset transform to default (location=0, rotation=0, scale=1)".to_string(),
+                    ),
                 );
             }
         }

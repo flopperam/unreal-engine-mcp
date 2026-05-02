@@ -1,7 +1,9 @@
 use crate::db::SurrealSceneRepository;
 use crate::error::AppError;
 use crate::ir::instance_set::InstanceSet;
-use crate::sync::instance_set_planner::{plan_instance_set_sync, InstanceSetOperation, InstanceSetState};
+use crate::sync::instance_set_planner::{
+    plan_instance_set_sync, InstanceSetOperation, InstanceSetState,
+};
 use crate::sync::{SyncAction, SyncOperation, SyncPlan};
 use crate::unreal::client::UnrealClient;
 use serde::{Deserialize, Serialize};
@@ -237,7 +239,9 @@ pub async fn apply_sync(
         let actual_sets = match unreal.list_instance_sets().await {
             Ok(resp) => parse_instance_set_list(&resp),
             Err(e) => {
-                result.warnings.push(format!("Could not list instance sets from Unreal: {e}"));
+                result
+                    .warnings
+                    .push(format!("Could not list instance sets from Unreal: {e}"));
                 Vec::new()
             }
         };
@@ -255,7 +259,10 @@ pub async fn apply_sync(
                 } => {
                     let json_transforms = transforms_to_json(transforms);
                     let mat_ref = material.as_deref();
-                    match unreal.spawn_instance_set(set_id, mesh, mat_ref, json_transforms).await {
+                    match unreal
+                        .spawn_instance_set(set_id, mesh, mat_ref, json_transforms)
+                        .await
+                    {
                         Ok(resp) => {
                             let success = resp
                                 .get("success")
@@ -276,11 +283,23 @@ pub async fn apply_sync(
                                     error: None,
                                 });
                                 // Mark all member mcp_ids as synced
-                                if let Some(desired) = desired_sets.iter().find(|s| s.set_id == *set_id) {
+                                if let Some(desired) =
+                                    desired_sets.iter().find(|s| s.set_id == *set_id)
+                                {
                                     for mcp_id in &desired.source_mcp_ids {
-                                        let hash = mcp_id_to_hash.get(mcp_id).cloned().unwrap_or_default();
-                                        instance_sync_marks.push((mcp_id.clone(), hash, actor_name.clone()));
-                                        instance_op_records.push((mcp_id.clone(), "create".to_string(), "success".to_string(), "applied via instance set".to_string()));
+                                        let hash =
+                                            mcp_id_to_hash.get(mcp_id).cloned().unwrap_or_default();
+                                        instance_sync_marks.push((
+                                            mcp_id.clone(),
+                                            hash,
+                                            actor_name.clone(),
+                                        ));
+                                        instance_op_records.push((
+                                            mcp_id.clone(),
+                                            "create".to_string(),
+                                            "success".to_string(),
+                                            "applied via instance set".to_string(),
+                                        ));
                                     }
                                 }
                             } else {
@@ -334,11 +353,19 @@ pub async fn apply_sync(
                                     unreal_actor_name: None,
                                     error: None,
                                 });
-                                if let Some(desired) = desired_sets.iter().find(|s| s.set_id == *set_id) {
+                                if let Some(desired) =
+                                    desired_sets.iter().find(|s| s.set_id == *set_id)
+                                {
                                     for mcp_id in &desired.source_mcp_ids {
-                                        let hash = mcp_id_to_hash.get(mcp_id).cloned().unwrap_or_default();
+                                        let hash =
+                                            mcp_id_to_hash.get(mcp_id).cloned().unwrap_or_default();
                                         instance_sync_marks.push((mcp_id.clone(), hash, None));
-                                        instance_op_records.push((mcp_id.clone(), "update_transform".to_string(), "success".to_string(), "applied via instance set".to_string()));
+                                        instance_op_records.push((
+                                            mcp_id.clone(),
+                                            "update_transform".to_string(),
+                                            "success".to_string(),
+                                            "applied via instance set".to_string(),
+                                        ));
                                     }
                                 }
                             } else {
@@ -385,10 +412,21 @@ pub async fn apply_sync(
                                     unreal_actor_name: None,
                                     error: None,
                                 });
-                                if let Some(desired) = desired_sets.iter().find(|s| s.set_id == *set_id) {
+                                if let Some(desired) =
+                                    desired_sets.iter().find(|s| s.set_id == *set_id)
+                                {
                                     for mcp_id in &desired.source_mcp_ids {
-                                        instance_sync_marks.push((mcp_id.clone(), "".to_string(), None));
-                                        instance_op_records.push((mcp_id.clone(), "delete".to_string(), "success".to_string(), "applied via instance set".to_string()));
+                                        instance_sync_marks.push((
+                                            mcp_id.clone(),
+                                            "".to_string(),
+                                            None,
+                                        ));
+                                        instance_op_records.push((
+                                            mcp_id.clone(),
+                                            "delete".to_string(),
+                                            "success".to_string(),
+                                            "applied via instance set".to_string(),
+                                        ));
                                     }
                                 }
                             } else {
@@ -427,7 +465,9 @@ pub async fn apply_sync(
         plan.clone()
     } else {
         let mut filtered = plan.clone();
-        filtered.operations.retain(|op| !instance_set_mcp_ids.contains(&op.mcp_id));
+        filtered
+            .operations
+            .retain(|op| !instance_set_mcp_ids.contains(&op.mcp_id));
         filtered
     };
     result.summary.total = filtered_plan.operations.len();
@@ -453,13 +493,15 @@ pub async fn apply_sync(
                 } else {
                     result.summary.failed += 1;
                 }
-                match ao.action.as_str() {
-                    "create" => result.summary.creates += 1,
-                    "update_transform" => result.summary.update_transforms += 1,
-                    "update_visual" => result.summary.update_visuals += 1,
-                    "delete" => result.summary.deletes += 1,
-                    "noop" => result.summary.noops += 1,
-                    _ => {}
+                if ao.status == "success" {
+                    match ao.action.as_str() {
+                        "create" => result.summary.creates += 1,
+                        "update_transform" => result.summary.update_transforms += 1,
+                        "update_visual" => result.summary.update_visuals += 1,
+                        "delete" => result.summary.deletes += 1,
+                        "noop" => result.summary.noops += 1,
+                        _ => {}
+                    }
                 }
                 result.operations.push(ao);
             }
@@ -482,13 +524,23 @@ pub async fn apply_sync(
 
     // --- Persist instance set sync marks and operation records ------------
     if !instance_sync_marks.is_empty() {
-        if let Err(e) = db.mark_objects_synced_batch(&plan.scene_id, &instance_sync_marks).await {
-            result.warnings.push(format!("Failed to mark instance set objects as synced: {e}"));
+        if let Err(e) = db
+            .mark_objects_synced_batch(&plan.scene_id, &instance_sync_marks)
+            .await
+        {
+            result.warnings.push(format!(
+                "Failed to mark instance set objects as synced: {e}"
+            ));
         }
     }
     if !instance_op_records.is_empty() {
-        if let Err(e) = db.record_operations_batch(&run_id, &plan.scene_id, &instance_op_records).await {
-            result.warnings.push(format!("Failed to record instance set operations: {e}"));
+        if let Err(e) = db
+            .record_operations_batch(&run_id, &plan.scene_id, &instance_op_records)
+            .await
+        {
+            result
+                .warnings
+                .push(format!("Failed to record instance set operations: {e}"));
         }
     }
 

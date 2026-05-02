@@ -21,11 +21,22 @@ pub enum HardConstraint {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum SoftConstraint {
     /// Gate should face south (or preferred direction).
-    GateFacing { gatehouse_id: String, preferred_yaw: f64 },
+    GateFacing {
+        gatehouse_id: String,
+        preferred_yaw: f64,
+    },
     /// Keep should be near the weighted center.
-    KeepNearCenter { keep_id: String, center_x: f64, center_y: f64 },
+    KeepNearCenter {
+        keep_id: String,
+        center_x: f64,
+        center_y: f64,
+    },
     /// Road should connect gatehouse to keep.
-    RoadConnects { road_id: String, from: String, to: String },
+    RoadConnects {
+        road_id: String,
+        from: String,
+        to: String,
+    },
     /// Nav walkable surface should cover required area.
     NavCoverage { region_id: String },
 }
@@ -58,10 +69,8 @@ pub fn evaluate_hard_constraints(
         .map(|fp| (fp.mcp_id.as_str(), fp))
         .collect();
 
-    let object_by_id: std::collections::HashMap<&str, &SceneObject> = objects
-        .iter()
-        .map(|o| (o.mcp_id.as_str(), o))
-        .collect();
+    let object_by_id: std::collections::HashMap<&str, &SceneObject> =
+        objects.iter().map(|o| (o.mcp_id.as_str(), o)).collect();
 
     for c in constraints {
         match c {
@@ -107,15 +116,30 @@ pub fn evaluate_hard_constraints(
                         .collect();
 
                     if !boundary_fps.is_empty() {
-                        let min_x = boundary_fps.iter().map(|fp| fp.min_x).fold(f64::INFINITY, f64::min);
-                        let max_x = boundary_fps.iter().map(|fp| fp.max_x).fold(f64::NEG_INFINITY, f64::max);
-                        let min_y = boundary_fps.iter().map(|fp| fp.min_y).fold(f64::INFINITY, f64::min);
-                        let max_y = boundary_fps.iter().map(|fp| fp.max_y).fold(f64::NEG_INFINITY, f64::max);
+                        let min_x = boundary_fps
+                            .iter()
+                            .map(|fp| fp.min_x)
+                            .fold(f64::INFINITY, f64::min);
+                        let max_x = boundary_fps
+                            .iter()
+                            .map(|fp| fp.max_x)
+                            .fold(f64::NEG_INFINITY, f64::max);
+                        let min_y = boundary_fps
+                            .iter()
+                            .map(|fp| fp.min_y)
+                            .fold(f64::INFINITY, f64::min);
+                        let max_y = boundary_fps
+                            .iter()
+                            .map(|fp| fp.max_y)
+                            .fold(f64::NEG_INFINITY, f64::max);
 
                         let keep_cx = (keep_fp.min_x + keep_fp.max_x) / 2.0;
                         let keep_cy = (keep_fp.min_y + keep_fp.max_y) / 2.0;
 
-                        let inside = keep_cx >= min_x && keep_cx <= max_x && keep_cy >= min_y && keep_cy <= max_y;
+                        let inside = keep_cx >= min_x
+                            && keep_cx <= max_x
+                            && keep_cy >= min_y
+                            && keep_cy <= max_y;
 
                         if !inside {
                             results.push(RepairSuggestion {
@@ -124,7 +148,9 @@ pub fn evaluate_hard_constraints(
                                     "Keep {} is outside the castle wall boundary.",
                                     keep_id
                                 ),
-                                suggested_action: "Move the keep inside the perimeter or expand walls.".to_string(),
+                                suggested_action:
+                                    "Move the keep inside the perimeter or expand walls."
+                                        .to_string(),
                                 suggested_transform: None,
                             });
                         }
@@ -231,10 +257,7 @@ mod tests {
             make_object("t1", 0.0, 0.0, 4.0, 4.0, "tower"),
             make_object("k1", 5000.0, 5000.0, 4.0, 4.0, "keep"),
         ];
-        let footprints = vec![
-            footprint_for(&objects[0]),
-            footprint_for(&objects[1]),
-        ];
+        let footprints = vec![footprint_for(&objects[0]), footprint_for(&objects[1])];
         let suggestions = evaluate_hard_constraints(&constraints, &objects, &footprints);
         assert_eq!(suggestions.len(), 2);
         assert_eq!(suggestions[0].constraint_code, "TOWER_CONNECTED_TO_WALL");

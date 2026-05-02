@@ -11,11 +11,7 @@ impl ValidationRule for WallSelfIntersection {
         "WALL_SELF_INTERSECTION"
     }
 
-    fn validate(
-        &self,
-        _objects: &[SceneObject],
-        footprints: &[Footprint2],
-    ) -> Vec<Diagnostic> {
+    fn validate(&self, _objects: &[SceneObject], footprints: &[Footprint2]) -> Vec<Diagnostic> {
         let mut results = Vec::new();
         let walls: Vec<&Footprint2> = footprints
             .iter()

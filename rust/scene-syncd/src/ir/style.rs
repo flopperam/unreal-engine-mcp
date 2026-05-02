@@ -47,12 +47,22 @@ impl WorldStyleProfile {
                 .and_then(|v| v.as_str())
                 .unwrap_or("temperate")
                 .to_string(),
-            faction: style.get("faction").and_then(|v| v.as_str()).map(String::from),
-            district: style.get("district").and_then(|v| v.as_str()).map(String::from),
+            faction: style
+                .get("faction")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            district: style
+                .get("district")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             history: style
                 .get("history")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default(),
             wealth_level: style
                 .get("wealth_level")
@@ -83,7 +93,12 @@ impl WorldStyleProfile {
 
     /// Returns a weathering factor based on decay_level and history.
     pub fn weathering_factor(&self) -> f32 {
-        self.decay_level * 0.7 + if self.history.contains(&"ancient".to_string()) { 0.3 } else { 0.0 }
+        self.decay_level * 0.7
+            + if self.history.contains(&"ancient".to_string()) {
+                0.3
+            } else {
+                0.0
+            }
     }
 }
 

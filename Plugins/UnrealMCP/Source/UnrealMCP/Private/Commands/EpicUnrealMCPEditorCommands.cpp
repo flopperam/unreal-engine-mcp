@@ -66,6 +66,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCommand(const FStrin
         {TEXT("clone_actor"), &FEpicUnrealMCPEditorCommands::HandleCloneActor},
         {TEXT("create_nav_mesh_volume"), &FEpicUnrealMCPEditorCommands::HandleCreateNavMeshVolume},
         {TEXT("create_patrol_route"), &FEpicUnrealMCPEditorCommands::HandleCreatePatrolRoute},
+        {TEXT("create_spline_from_points"), &FEpicUnrealMCPEditorCommands::HandleCreateSplineFromPoints},
         {TEXT("set_ai_behavior"), &FEpicUnrealMCPEditorCommands::HandleSetAIBehavior},
         {TEXT("create_draft_proxy"), &FEpicUnrealMCPEditorCommands::HandleCreateDraftProxy},
         {TEXT("update_draft_proxy"), &FEpicUnrealMCPEditorCommands::HandleUpdateDraftProxy},
@@ -1200,6 +1201,299 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleSetAIBehavior(const 
     return ResultObj;
 }
 
+TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCreateSplineFromPoints(const TSharedPtr<FJsonObject>& Params)
+{
+    FString SplineName = TEXT("SplineFromPoints");
+    Params->TryGetStringField(TEXT("spline_name"), SplineName);
+
+    FString McpId = SplineName;
+    Params->TryGetStringField(TEXT("mcp_id"), McpId);
+
+    bool bClosedLoop = false;
+    Params->TryGetBoolField(TEXT("closed_loop"), bClosedLoop);
+
+    bool bFocusViewport = true;
+    Params->TryGetBoolField(TEXT("focus_viewport"), bFocusViewport);
+
+    double MergeTolerance = 0.01;
+    Params->TryGetNumberField(TEXT("point_merge_tolerance"), MergeTolerance);
+    const double MergeToleranceSq = FMath::Square(FMath::Max(MergeTolerance, 0.0));
+
+    FString TangentModeStr = TEXT("curve");
+    Params->TryGetStringField(TEXT("tangent_mode"), TangentModeStr);
+    const ESplinePointType::Type PointType = TangentModeStr.Equals(TEXT("linear"), ESearchCase::IgnoreCase)
+        ? ESplinePointType::Linear
+        : ESplinePointType::Curve;
+
+    auto TryParsePointObject = [](const TSharedPtr<FJsonObject>& Obj, FVector& OutPoint, FString& OutError) -> bool
+    {
+        if (!Obj.IsValid())
+        {
+            OutError = TEXT("point must be an object");
+            return false;
+        }
+
+        double X = 0.0;
+        double Y = 0.0;
+        double Z = 0.0;
+        if (!Obj->TryGetNumberField(TEXT("x"), X) ||
+            !Obj->TryGetNumberField(TEXT("y"), Y) ||
+            !Obj->TryGetNumberField(TEXT("z"), Z))
+        {
+            OutError = TEXT("point requires numeric x, y, and z fields");
+            return false;
+        }
+
+        OutPoint = FVector(X, Y, Z);
+        if (!FMath::IsFinite(OutPoint.X) || !FMath::IsFinite(OutPoint.Y) || !FMath::IsFinite(OutPoint.Z))
+        {
+            OutError = TEXT("point contains NaN or Infinity");
+            return false;
+        }
+        return true;
+    };
+
+    auto TryParsePointValue = [&TryParsePointObject](const TSharedPtr<FJsonValue>& Value, FVector& OutPoint, FString& OutError) -> bool
+    {
+        const TSharedPtr<FJsonObject>* Obj = nullptr;
+        if (Value.IsValid() && Value->TryGetObject(Obj) && Obj && Obj->IsValid())
+        {
+            return TryParsePointObject(*Obj, OutPoint, OutError);
+        }
+        OutError = TEXT("point value must be an object");
+        return false;
+    };
+
+    auto MakeVecJson = [](const FVector& V)
+    {
+        TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+        Obj->SetNumberField(TEXT("x"), V.X);
+        Obj->SetNumberField(TEXT("y"), V.Y);
+        Obj->SetNumberField(TEXT("z"), V.Z);
+        return Obj;
+    };
+
+    auto PointsNearlyEqual = [MergeToleranceSq](const FVector& A, const FVector& B) -> bool
+    {
+        return FVector::DistSquared(A, B) <= MergeToleranceSq;
+    };
+
+    TArray<TArray<FVector>> PointChains;
+    int32 SegmentCount = 0;
+
+    const TArray<TSharedPtr<FJsonValue>>* PointsArray = nullptr;
+    if (Params->TryGetArrayField(TEXT("points"), PointsArray) && PointsArray)
+    {
+        if (PointsArray->Num() < 2)
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("create_spline_from_points requires at least 2 points"));
+        }
+
+        TArray<FVector> Chain;
+        Chain.Reserve(PointsArray->Num());
+        for (int32 i = 0; i < PointsArray->Num(); ++i)
+        {
+            FVector Point;
+            FString Error;
+            if (!TryParsePointValue((*PointsArray)[i], Point, Error))
+            {
+                return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid points[%d]: %s"), i, *Error));
+            }
+            Chain.Add(Point);
+        }
+        SegmentCount = FMath::Max(0, Chain.Num() - 1);
+        PointChains.Add(MoveTemp(Chain));
+    }
+    else
+    {
+        const TArray<TSharedPtr<FJsonValue>>* SegmentsArray = nullptr;
+        if (!Params->TryGetArrayField(TEXT("segments"), SegmentsArray) || !SegmentsArray || SegmentsArray->Num() < 1)
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("create_spline_from_points requires 'points' or at least 1 segment"));
+        }
+
+        TArray<FVector> CurrentChain;
+        for (int32 i = 0; i < SegmentsArray->Num(); ++i)
+        {
+            const TSharedPtr<FJsonObject>* SegObj = nullptr;
+            if (!(*SegmentsArray)[i].IsValid() || !(*SegmentsArray)[i]->TryGetObject(SegObj) || !SegObj || !SegObj->IsValid())
+            {
+                return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid segments[%d]: segment must be an object"), i));
+            }
+
+            const TSharedPtr<FJsonObject>* StartObj = nullptr;
+            const TSharedPtr<FJsonObject>* EndObj = nullptr;
+            if (!(*SegObj)->TryGetObjectField(TEXT("start"), StartObj) || !(*SegObj)->TryGetObjectField(TEXT("end"), EndObj))
+            {
+                return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid segments[%d]: requires start and end"), i));
+            }
+
+            FVector StartPt;
+            FVector EndPt;
+            FString Error;
+            if (!TryParsePointObject(*StartObj, StartPt, Error))
+            {
+                return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid segments[%d].start: %s"), i, *Error));
+            }
+            if (!TryParsePointObject(*EndObj, EndPt, Error))
+            {
+                return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid segments[%d].end: %s"), i, *Error));
+            }
+            if (PointsNearlyEqual(StartPt, EndPt))
+            {
+                continue;
+            }
+
+            if (CurrentChain.Num() == 0)
+            {
+                CurrentChain.Add(StartPt);
+                CurrentChain.Add(EndPt);
+            }
+            else if (PointsNearlyEqual(CurrentChain.Last(), StartPt))
+            {
+                CurrentChain.Add(EndPt);
+            }
+            else
+            {
+                PointChains.Add(MoveTemp(CurrentChain));
+                CurrentChain.Add(StartPt);
+                CurrentChain.Add(EndPt);
+            }
+            ++SegmentCount;
+        }
+
+        if (CurrentChain.Num() > 0)
+        {
+            PointChains.Add(MoveTemp(CurrentChain));
+        }
+    }
+
+    int32 TotalPointCount = 0;
+    for (const TArray<FVector>& Chain : PointChains)
+    {
+        TotalPointCount += Chain.Num();
+    }
+    if (TotalPointCount < 2 || PointChains.Num() == 0)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("create_spline_from_points produced no drawable spline points"));
+    }
+
+    UWorld* World = GetEditorWorld();
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get editor world"));
+    }
+
+    FScopedTransaction Transaction(FText::FromString(FString::Printf(TEXT("UnrealMCP: Create Spline %s"), *SplineName)));
+    AActor* SplineActor = FindActorByMcpId(World, McpId);
+    bool bCreatedActor = false;
+    if (!SplineActor)
+    {
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.Name = MakeUniqueObjectName(World, AActor::StaticClass(), FName(*SplineName));
+        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        SplineActor = World->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+        if (!SplineActor)
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to spawn spline actor"));
+        }
+        bCreatedActor = true;
+    }
+
+    SplineActor->SetFlags(RF_Transactional);
+    SplineActor->Modify();
+    SplineActor->SetActorLabel(*SplineName);
+
+    if (!SplineActor->GetRootComponent())
+    {
+        USceneComponent* RootComp = NewObject<USceneComponent>(SplineActor, USceneComponent::StaticClass(), TEXT("DefaultSceneRoot"));
+        RootComp->RegisterComponent();
+        SplineActor->SetRootComponent(RootComp);
+    }
+
+    TArray<USplineComponent*> ExistingSplineComponents;
+    SplineActor->GetComponents<USplineComponent>(ExistingSplineComponents);
+    for (USplineComponent* ExistingComp : ExistingSplineComponents)
+    {
+        if (ExistingComp)
+        {
+            ExistingComp->DestroyComponent();
+        }
+    }
+
+    TArray<TSharedPtr<FJsonValue>> PointJsonArray;
+    TArray<TSharedPtr<FJsonValue>> ChainLengthsJson;
+    int32 ComponentCount = 0;
+    for (int32 ChainIndex = 0; ChainIndex < PointChains.Num(); ++ChainIndex)
+    {
+        const TArray<FVector>& Chain = PointChains[ChainIndex];
+        if (Chain.Num() < 2)
+        {
+            continue;
+        }
+
+        const FName ComponentName(*FString::Printf(TEXT("ProceduralSpline_%d"), ChainIndex));
+        USplineComponent* SplineComp = NewObject<USplineComponent>(SplineActor, USplineComponent::StaticClass(), ComponentName, RF_Transactional);
+        if (!SplineComp)
+        {
+            if (bCreatedActor)
+            {
+                SplineActor->Destroy();
+            }
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create SplineComponent"));
+        }
+
+        SplineComp->SetFlags(RF_Transactional);
+        SplineComp->AttachToComponent(SplineActor->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+        SplineActor->AddInstanceComponent(SplineComp);
+        SplineComp->RegisterComponent();
+        SplineComp->ClearSplinePoints(false);
+
+        for (int32 PointIndex = 0; PointIndex < Chain.Num(); ++PointIndex)
+        {
+            SplineComp->AddSplinePoint(Chain[PointIndex], ESplineCoordinateSpace::World, false);
+            SplineComp->SetSplinePointType(PointIndex, PointType, false);
+            PointJsonArray.Add(MakeShared<FJsonValueObject>(MakeVecJson(Chain[PointIndex])));
+        }
+
+        SplineComp->SetClosedLoop(bClosedLoop && PointChains.Num() == 1);
+        SplineComp->UpdateSpline();
+        ChainLengthsJson.Add(MakeShared<FJsonValueNumber>(Chain.Num()));
+        ++ComponentCount;
+    }
+
+    SplineActor->Tags.AddUnique(FName(TEXT("managed_by_mcp")));
+    if (!McpId.IsEmpty())
+    {
+        SplineActor->Tags.AddUnique(FName(*FString::Printf(TEXT("mcp_id:%s"), *McpId)));
+    }
+    GetActorIndex().AddActor(SplineActor);
+    SplineActor->MarkPackageDirty();
+
+    if (bFocusViewport && GEditor)
+    {
+        GEditor->SelectNone(false, true, false);
+        GEditor->SelectActor(SplineActor, true, true, true, true);
+        GEditor->MoveViewportCamerasToActor(*SplineActor, false);
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetStringField(TEXT("spline_name"), SplineName);
+    ResultObj->SetStringField(TEXT("mcp_id"), McpId);
+    ResultObj->SetStringField(TEXT("actor_name"), SplineActor->GetName());
+    ResultObj->SetStringField(TEXT("actor_label"), SplineActor->GetActorLabel());
+    ResultObj->SetArrayField(TEXT("points"), PointJsonArray);
+    ResultObj->SetArrayField(TEXT("chain_lengths"), ChainLengthsJson);
+    ResultObj->SetBoolField(TEXT("closed_loop"), bClosedLoop && PointChains.Num() == 1);
+    ResultObj->SetStringField(TEXT("tangent_mode"), TangentModeStr);
+    ResultObj->SetNumberField(TEXT("point_count"), TotalPointCount);
+    ResultObj->SetNumberField(TEXT("segment_count"), SegmentCount);
+    ResultObj->SetNumberField(TEXT("component_count"), ComponentCount);
+    ResultObj->SetBoolField(TEXT("created_actor"), bCreatedActor);
+    ResultObj->SetBoolField(TEXT("success"), true);
+    return ResultObj;
+}
+
 TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleApplySceneDelta(const TSharedPtr<FJsonObject>& Params)
 {
     FString TransactionId = TEXT("batch");
@@ -2081,6 +2375,21 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleGetInstanceSetState(
     {
         ResultObj->SetStringField(TEXT("material_path"), MaterialPath);
     }
+
+    TSharedPtr<FJsonObject> StateObj = MakeShared<FJsonObject>();
+    StateObj->SetStringField(TEXT("set_id"), SetId);
+    StateObj->SetStringField(TEXT("actor_name"), SetActor->GetName());
+    StateObj->SetNumberField(TEXT("instance_count"), InstanceCount);
+    StateObj->SetBoolField(TEXT("use_hism"), bIsHism);
+    if (!MeshPath.IsEmpty())
+    {
+        StateObj->SetStringField(TEXT("mesh_path"), MeshPath);
+    }
+    if (!MaterialPath.IsEmpty())
+    {
+        StateObj->SetStringField(TEXT("material_path"), MaterialPath);
+    }
+    ResultObj->SetObjectField(TEXT("state"), StateObj);
     return ResultObj;
 }
 

@@ -586,7 +586,7 @@ impl SurrealSceneRepository {
         description: Option<String>,
     ) -> Result<SceneSnapshot, AppError> {
         let now = Datetime::from(chrono::Utc::now());
-        let snapshot_key = format!("{}_{}", scene_id, chrono::Utc::now().format("%Y%m%d%H%M%S"));
+        let snapshot_key = format!("{}_{}", scene_id, ulid::Ulid::new());
         let objects = self
             .list_desired_objects(scene_id, false, None, None)
             .await?;
@@ -685,6 +685,10 @@ impl SurrealSceneRepository {
             "restore_mode": restore_mode,
             "restored_objects": restored,
             "tombstoned_objects": tombstoned,
+            "summary": {
+                "restored_objects": restored,
+                "tombstoned_objects": tombstoned,
+            },
         }))
     }
 
@@ -1191,7 +1195,8 @@ impl SurrealSceneRepository {
         entity_id: Option<&str>,
         component_type: Option<&str>,
     ) -> Result<Vec<SceneComponent>, AppError> {
-        let mut query = "SELECT * FROM scene_component WHERE scene = $scene".to_string();
+        let mut query =
+            "SELECT * FROM scene_component WITH NOINDEX WHERE scene = $scene".to_string();
         if entity_id.is_some() {
             query.push_str(" AND entity_id = $entity_id");
         }
@@ -1361,7 +1366,8 @@ impl SurrealSceneRepository {
         entity_id: Option<&str>,
         policy: Option<&str>,
     ) -> Result<Vec<SceneRealization>, AppError> {
-        let mut query = "SELECT * FROM scene_realization WHERE scene = $scene".to_string();
+        let mut query =
+            "SELECT * FROM scene_realization WITH NOINDEX WHERE scene = $scene".to_string();
         if entity_id.is_some() {
             query.push_str(" AND entity_id = $entity_id");
         }
@@ -1393,7 +1399,7 @@ impl SurrealSceneRepository {
     ) -> Result<Option<SceneRealization>, AppError> {
         let realizations: Vec<SceneRealization> = self
             .db
-            .query("SELECT * FROM scene_realization WHERE scene = $scene AND entity_id = $entity_id LIMIT 1")
+            .query("SELECT * FROM scene_realization WITH NOINDEX WHERE scene = $scene AND entity_id = $entity_id LIMIT 1")
             .bind(("scene", format!("scene:{scene_id}")))
             .bind(("entity_id", entity_id.to_string()))
             .await
@@ -1416,7 +1422,7 @@ impl SurrealSceneRepository {
         let realizations: Vec<SceneRealization> = self
             .db
             .query(
-                "SELECT * FROM scene_realization WHERE scene = $scene AND entity_id IN $entity_ids",
+                "SELECT * FROM scene_realization WITH NOINDEX WHERE scene = $scene AND entity_id IN $entity_ids",
             )
             .bind(("scene", format!("scene:{scene_id}")))
             .bind(("entity_ids", ids))

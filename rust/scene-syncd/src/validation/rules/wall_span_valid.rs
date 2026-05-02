@@ -13,11 +13,7 @@ impl ValidationRule for WallSpanValid {
         "WALL_SPAN_INVALID"
     }
 
-    fn validate(
-        &self,
-        objects: &[SceneObject],
-        _footprints: &[Footprint2],
-    ) -> Vec<Diagnostic> {
+    fn validate(&self, objects: &[SceneObject], _footprints: &[Footprint2]) -> Vec<Diagnostic> {
         let mut results = Vec::new();
         for obj in objects {
             if obj.deleted {
@@ -83,13 +79,21 @@ mod tests {
             actor_type: "StaticMeshActor".to_string(),
             asset_ref: json!({}),
             transform: Transform {
-                location: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+                location: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
                 rotation: Rotator {
                     pitch: 0.0,
                     yaw: 0.0,
                     roll: 0.0,
                 },
-                scale: Vec3 { x: sx, y: sy, z: 1.0 },
+                scale: Vec3 {
+                    x: sx,
+                    y: sy,
+                    z: 1.0,
+                },
             },
             visual: json!({}),
             physics: json!({}),
@@ -128,7 +132,8 @@ mod tests {
         let objs = vec![make_wall(0.0, 50.0)];
         let diags = rule.validate(&objs, &[]);
         assert!(diags.iter().any(|d| {
-            d.code == "WALL_SPAN_INVALID" && matches!(d.severity, crate::validation::diagnostic::Severity::Error)
+            d.code == "WALL_SPAN_INVALID"
+                && matches!(d.severity, crate::validation::diagnostic::Severity::Error)
         }));
     }
 }

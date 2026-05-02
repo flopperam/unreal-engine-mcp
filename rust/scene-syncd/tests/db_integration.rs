@@ -1,13 +1,17 @@
 use scene_syncd::db::SurrealSceneRepository;
 use scene_syncd::domain::*;
+use std::sync::atomic::{AtomicU64, Ordering};
 use surrealdb::engine::any::Any;
 use surrealdb::sql::Datetime;
 use surrealdb::Surreal;
 
+static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 async fn setup_db() -> Surreal<Any> {
     let db: Surreal<Any> = Surreal::init();
     db.connect("memory").await.unwrap();
-    db.use_ns("test").use_db("test").await.unwrap();
+    let db_name = format!("test_{}", DB_COUNTER.fetch_add(1, Ordering::Relaxed));
+    db.use_ns("test").use_db(db_name).await.unwrap();
     db
 }
 

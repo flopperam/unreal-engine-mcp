@@ -183,14 +183,23 @@ fn fallback_parse(line: &str) -> (String, String, String) {
         let msg = line[idx + 1..].trim().to_string();
         (prefix.to_string(), "Display".to_string(), msg)
     } else {
-        ("General".to_string(), "Display".to_string(), line.to_string())
+        (
+            "General".to_string(),
+            "Display".to_string(),
+            line.to_string(),
+        )
     }
 }
 
 /// Extract diagnostics from Unreal log events.
 pub fn extract_diagnostics(logs: &[UnrealLogEvent]) -> Vec<UnrealDiagnostic> {
     logs.iter()
-        .filter(|log| matches!(log.verbosity.to_lowercase().as_str(), "error" | "warning" | "fatal"))
+        .filter(|log| {
+            matches!(
+                log.verbosity.to_lowercase().as_str(),
+                "error" | "warning" | "fatal"
+            )
+        })
         .map(|log| UnrealDiagnostic {
             severity: UnrealDiagnostic::severity_from_verbosity(&log.verbosity),
             code: log.category.clone(),

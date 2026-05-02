@@ -24,14 +24,8 @@ impl RoofTileConfig {
             return None;
         }
         Some(Self {
-            tile_rows: roof
-                .get("rows")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(4) as usize,
-            tile_columns: roof
-                .get("columns")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(6) as usize,
+            tile_rows: roof.get("rows").and_then(|v| v.as_u64()).unwrap_or(4) as usize,
+            tile_columns: roof.get("columns").and_then(|v| v.as_u64()).unwrap_or(6) as usize,
             tile_width: roof
                 .get("tile_width")
                 .and_then(|v| v.as_f64())
@@ -175,8 +169,16 @@ mod tests {
             }),
         );
         let span = Span {
-            from: Vec3 { x: -400.0, y: 0.0, z: 0.0 },
-            to: Vec3 { x: 400.0, y: 0.0, z: 0.0 },
+            from: Vec3 {
+                x: -400.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            to: Vec3 {
+                x: 400.0,
+                y: 0.0,
+                z: 0.0,
+            },
         };
         let tiles = generate_roof_tiles("test", &entity, spec, "keep_1", &span).unwrap();
         assert_eq!(tiles.len(), 6, "2 rows x 3 cols = 6 tiles");
@@ -196,8 +198,16 @@ mod tests {
             }),
         );
         let span = Span {
-            from: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-            to: Vec3 { x: 800.0, y: 0.0, z: 0.0 },
+            from: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            to: Vec3 {
+                x: 800.0,
+                y: 0.0,
+                z: 0.0,
+            },
         };
         let tiles = generate_roof_tiles("test", &entity, spec, "keep_1", &span).unwrap();
         assert!(tiles.is_empty());

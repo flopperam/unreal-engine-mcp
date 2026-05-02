@@ -13,17 +13,10 @@ impl ValidationRule for TowerWallConnectivity {
         "TOWER_WALL_CONNECTIVITY"
     }
 
-    fn validate(
-        &self,
-        _objects: &[SceneObject],
-        footprints: &[Footprint2],
-    ) -> Vec<Diagnostic> {
+    fn validate(&self, _objects: &[SceneObject], footprints: &[Footprint2]) -> Vec<Diagnostic> {
         let mut results = Vec::new();
 
-        let towers: Vec<&Footprint2> = footprints
-            .iter()
-            .filter(|fp| fp.kind == "tower")
-            .collect();
+        let towers: Vec<&Footprint2> = footprints.iter().filter(|fp| fp.kind == "tower").collect();
 
         let walls: Vec<&Footprint2> = footprints
             .iter()
@@ -41,9 +34,7 @@ impl ValidationRule for TowerWallConnectivity {
                     "Curtain walls exist but no towers found. Towers must anchor wall endpoints."
                         .to_string(),
                 )
-                .with_suggestion(
-                    "Add tower entities at wall corners or endpoints.".to_string(),
-                ),
+                .with_suggestion("Add tower entities at wall corners or endpoints.".to_string()),
             );
             return results;
         }
@@ -156,6 +147,9 @@ mod tests {
         let footprints = vec![footprint_for(&wall)];
         let diags = rule.validate(&[wall], &footprints);
         assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].severity, crate::validation::diagnostic::Severity::Error);
+        assert_eq!(
+            diags[0].severity,
+            crate::validation::diagnostic::Severity::Error
+        );
     }
 }

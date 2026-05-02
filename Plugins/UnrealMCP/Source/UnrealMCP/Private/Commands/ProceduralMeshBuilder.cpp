@@ -574,7 +574,10 @@ TSharedPtr<FJsonObject> FProceduralMeshBuilder::BuildAndSpawnOnGameThread(const 
 
 	if (!Actor)
 	{
-		Actor = World->SpawnActor<AActor>(AActor::StaticClass(), SpawnTransform);
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.Name = MakeUniqueObjectName(World, AActor::StaticClass(), FName(*Payload.ActorName));
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		Actor = World->SpawnActor<AActor>(AActor::StaticClass(), SpawnTransform, SpawnParams);
 		if (!Actor)
 		{
 			return MakeErrorResponse(Payload, Warnings, TEXT("SPAWN_FAILED"), TEXT("failed to spawn actor"));
@@ -693,7 +696,8 @@ TSharedPtr<FJsonObject> FProceduralMeshBuilder::BuildAndSpawnOnGameThread(const 
 	}
 
 	TSharedPtr<FJsonObject> Result = MakeSuccessResponse(Payload, Warnings);
-	Result->SetStringField(TEXT("actor_name"), Actor->GetName());
+	Result->SetStringField(TEXT("actor_name"), Actor->GetActorLabel());
+	Result->SetStringField(TEXT("actor_object_name"), Actor->GetName());
 	Result->SetStringField(TEXT("actor_label"), Actor->GetActorLabel());
 	Result->SetStringField(TEXT("component_name"), MeshComp->GetName());
 	Result->SetNumberField(TEXT("bytes"), static_cast<double>(Payload.PayloadByteSize));

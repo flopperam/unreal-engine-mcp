@@ -10,25 +10,14 @@ impl ValidationRule for KeepInsideBoundary {
         "KEEP_INSIDE_BOUNDARY"
     }
 
-    fn validate(
-        &self,
-        _objects: &[SceneObject],
-        footprints: &[Footprint2],
-    ) -> Vec<Diagnostic> {
+    fn validate(&self, _objects: &[SceneObject], footprints: &[Footprint2]) -> Vec<Diagnostic> {
         let mut results = Vec::new();
 
-        let keeps: Vec<&Footprint2> = footprints
-            .iter()
-            .filter(|fp| fp.kind == "keep")
-            .collect();
+        let keeps: Vec<&Footprint2> = footprints.iter().filter(|fp| fp.kind == "keep").collect();
 
         let boundary_parts: Vec<&Footprint2> = footprints
             .iter()
-            .filter(|fp| {
-                fp.kind == "curtain_wall"
-                    || fp.kind == "tower"
-                    || fp.kind == "gatehouse"
-            })
+            .filter(|fp| fp.kind == "curtain_wall" || fp.kind == "tower" || fp.kind == "gatehouse")
             .collect();
 
         if keeps.is_empty() || boundary_parts.is_empty() {
@@ -79,7 +68,14 @@ mod tests {
     use crate::domain::{Rotator, SceneObject, Transform, Vec3};
     use serde_json::json;
 
-    fn make_obj(mcp_id: &str, x: f64, y: f64, sx: f64, sy: f64, kind: &str) -> (SceneObject, Footprint2) {
+    fn make_obj(
+        mcp_id: &str,
+        x: f64,
+        y: f64,
+        sx: f64,
+        sy: f64,
+        kind: &str,
+    ) -> (SceneObject, Footprint2) {
         let obj = SceneObject {
             id: String::new(),
             scene: "scene:test".to_string(),

@@ -28,10 +28,10 @@ impl Segment2 {
     pub fn intersects(&self, other: &Segment2, epsilon: Cm) -> bool {
         let e = epsilon.value();
         // Orientation tests using robust cross products.
-        let cross1 = (self.x2 - self.x1) * (other.y1 - self.y1)
-            - (self.y2 - self.y1) * (other.x1 - self.x1);
-        let cross2 = (self.x2 - self.x1) * (other.y2 - self.y1)
-            - (self.y2 - self.y1) * (other.x2 - self.x1);
+        let cross1 =
+            (self.x2 - self.x1) * (other.y1 - self.y1) - (self.y2 - self.y1) * (other.x1 - self.x1);
+        let cross2 =
+            (self.x2 - self.x1) * (other.y2 - self.y1) - (self.y2 - self.y1) * (other.x2 - self.x1);
         let cross3 = (other.x2 - other.x1) * (self.y1 - other.y1)
             - (other.y2 - other.y1) * (self.x1 - other.x1);
         let cross4 = (other.x2 - other.x1) * (self.y2 - other.y1)
@@ -47,10 +47,7 @@ impl Segment2 {
         d1 <= e * e && d2 <= e * e
     }
 
-    fn bbox_overlaps(&self,
-        other: &Segment2,
-        epsilon: Cm,
-    ) -> bool {
+    fn bbox_overlaps(&self, other: &Segment2, epsilon: Cm) -> bool {
         let e = epsilon.value();
         self.x1.max(other.x1) - e <= self.x2.min(other.x2) + e
             && self.y1.max(other.y1) - e <= self.y2.min(other.y2) + e
