@@ -1,0 +1,34 @@
+{
+  "name": "flopperam-unreal-engine",
+  "displayName": "Flopperam — Unreal Engine MCP",
+  "version": "1.0.0",
+  "description": "The most advanced MCP server for Unreal Engine. 50+ tools for Blueprint authoring, scene manipulation, materials, VFX, animation, landscape, AI behavior trees, cinematics, and more. Control a live Unreal Editor through natural language.",
+  "author": {
+    "name": "Flopperam",
+    "email": "team@flopperam.com"
+  },
+  "homepage": "https://flopperam.com",
+  "repository": "https://github.com/flopperam/unreal-engine-mcp",
+  "license": "MIT",
+  "keywords": [
+    "unreal-engine",
+    "game-development",
+    "blueprints",
+    "3d",
+    "mcp",
+    "level-design",
+    "materials",
+    "animation",
+    "niagara",
+    "vfx",
+    "landscape",
+    "behavior-tree",
+    "cinematics",
+    "pcg",
+    "widgets",
+    "umg"
+  ],
+  "logo": "assets/logo.png",
+  "skills": "skills",
+  "rules": "rules"
+}

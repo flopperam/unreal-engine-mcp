@@ -1,0 +1,23 @@
+---
+description: >
+  Error recovery patterns for Flopperam Unreal Engine MCP tools. Applies when 
+  a tool call returns an error, unexpected result, or partial failure.
+alwaysApply: false
+globs: "**/*"
+---
+
+Connection errors: The Unreal Editor is not reachable. Ask the user to verify the editor and FlopAI plugin are running.
+
+"Asset not found": Double-check the path with `search_assets`. Paths are case-sensitive and require `PackageName.AssetName` format.
+
+Blueprint compile errors after edits: Use `bp_inspect` to see current state, submit a NARROW follow-up (`bp_wire` for missing edges, `bp_nodes` for missing nodes, `bp_variable`/`bp_component` for missing declarations), then `bp_commit` again. Do NOT re-submit the whole spec — that duplicates successful intents.
+
+Partial apply / missing_intents: batched tools return per-sub-op status. Read the `sub_results` and patch just the failures.
+
+"pin 'execute' not found" on a pure node: pure functions (`variable_get`, math, `K2_GetActorLocation`, `make_struct`, `break_struct`) have no exec pins. Wire only data.
+
+"Function 'X' not found": K2_ prefix mismatch — some AActor getters have it (`K2_GetActorLocation`, `K2_SetActorLocation`, `K2_DestroyActor`), some don't (`GetActorForwardVector`, `GetOwner`, `GetWorld`). Use `bp_dry_run` to confirm.
+
+Silent `NodesCreated=0` / UNVERIFIED: look at the `Errors[]` array in the response — the real per-node failure reason is there, not in the summary.
+
+After 3 failed attempts on the same operation, stop and ask the user what they want to do.
