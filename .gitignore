@@ -139,6 +139,9 @@ dotnet-install.ps1
 # benchmarks results
 tests/benchmarks/
 
+# Worktrees
+.worktrees/
+
 #docx
 docs/desin.md
 docs/research
