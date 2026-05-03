@@ -1,135 +1,53 @@
-# AGENTS.md
+# Agent Instructions for Unreal MCP Project
 
-## Purpose
+このプロジェクトは **Unreal Engine 5.7** をターゲットにしており、最新のAPI仕様とMCPブリッジ特有のアーキテクチャに厳格に従う必要があります。
 
-This repository contains an unofficial Unreal Engine MCP fork. Coding agents must treat it as a mixed Python, Rust, and Unreal C++ project with two different execution environments:
+## 1. Unreal Engine 5.7 API 準拠ルール
 
-- **Local Windows development** can run Unreal Editor, build the plugin against the installed engine, and perform live MCP bridge tests.
-- **Cloud coding agents such as Jules** run in an ephemeral Ubuntu VM. They can edit source, run Python and Rust tests, and perform static C++ checks, but they cannot launch the local Windows Unreal Editor or rely on `C:\...` paths.
+LLMの学習データに含まれる古いAPI（UE4やUE5.0〜5.3）は、5.7では廃止または非推奨になっていることが多いです。以下のルールを遵守してください。
 
-If code, docs, and this file disagree, verify the current repository state from source and tests before editing.
+- **不明な点は必ず検索:** 少しでもAPIの挙動や存在に疑問がある場合は、必ず `google_web_search` 等を用いて最新のドキュメント、フォーラム、またはGitHub上のUE5.7ソースコードを調査してください。学習データのみに頼った実装は、ほぼ確実にコンパイルエラーを引き起こします。
+- **設定保存の最新化**
+- **非推奨:** `UpdateDefaultConfigFile()`
+- **推奨:** `TryUpdateDefaultConfigFile()`
+  - 理由: 5.7では古いメソッドはコンパイル警告またはエラーになります。
 
-## Source Of Truth
+### B. プロパティへの直接アクセスの回避
+- **現象:** `UGameMapsSettings` の `GameDefaultMap` など、以前はパブリックだったメンバが `private` になっている場合があります。
+- **対策:** プロパティに直接アクセスできない場合は、`GConfig->SetString()` を使用して `GEngineIni` に直接書き込み、`GConfig->Flush()` を呼ぶ手法をとってください。
+  ```cpp
+  GConfig->SetString(TEXT("/Script/EngineSettings.GameMapsSettings"), TEXT("GameDefaultMap"), *MapPath, GEngineIni);
+  GConfig->Flush(false, GEngineIni);
+  ```
 
-- MCP server entrypoint: `Python/unreal_mcp_server_advanced.py`
-- Python tool modules: `Python/server/*_tools.py`
-- Python connection, framing, and FastMCP setup: `Python/server/core.py`
-- Python validation helpers: `Python/server/validation.py`
-- Unreal plugin source currently present in this checkout: `Plugins/UnrealMCP/Source/UnrealMCP/`
-- Rust scene sync service: `rust/scene-syncd/`
-- Feature backlog and coverage checklist: `docs/superpowers/plans/tasks.md`
-- Jules implementation slice guide: `docs/superpowers/plans/jules-implementation-brief.md`
-- Public tool docs: `README.md` and `Guides/tools-reference.md`
-- Change history: `CHANGELOG.md`
+### C. ヘッダーの選択
+- **アセット保存:** `EditorLoadingAndSavingUtils.h` が見つからない場合は `FileHelpers.h` を使用してください。`FEditorLoadingAndSavingUtils` 名前空間の関数が最新です。
 
-Do not recreate a second Unreal plugin source tree. If another project directory contains only `Intermediate/`, `Binaries/`, or generated files, do not treat it as the canonical plugin source.
+## 2. スレッド安全性（GameThread）の厳守
 
-## General Rules
+MCPブリッジは別スレッドでリクエストを受信しますが、**UEのエディタ操作やアセット操作は必ず GameThread で実行しなければなりません。**
 
-- Read relevant code, tests, and docs before editing.
-- Prefer small, reviewable changes scoped to one feature area.
-- Keep code, tests, docs, and `CHANGELOG.md` in sync for meaningful behavior changes.
-- Do not silently change public MCP command names, parameter names, response shapes, socket framing, retry behavior, or scene-sync API contracts.
-- Source-code comments and docstrings must be in English.
-- Do not hardcode secrets, API keys, local absolute paths, or machine-specific Unreal install paths.
-- Do not claim a UE-dependent feature is fully verified unless Unreal Editor or an Unreal build actually ran in an environment that has Unreal installed.
+- **ルール:** `EpicUnrealMCPBridge.cpp` の `ExecuteCommand` は既に `AsyncTask` を使って GameThread にディスパッチしていますが、コマンドハンドラ内で重い処理や、エンジンを不安定にする操作を行う際は特に注意してください。
+- **PIEの停止:** `GEditor->EndPlayMap()` は即時実行のためクラッシュを誘発しやすいです。必ず `GEditor->RequestEndPlayMap()` を使用して、エンジンの次フレームで安全にクリーンアップさせてください。
 
-## Jules Cloud Workflow
+## 3. モジュール依存関係の管理
 
-Jules is useful for asynchronous implementation branches, but tasks must be shaped for its Ubuntu VM constraints.
+新しいツールを実装する際は、`Plugins/UnrealMCP/Source/UnrealMCP/UnrealMCP.Build.cs` に必要なモジュールが追加されているか確認してください。
 
-When running in Jules:
+- **Project Settings 操作:** `EngineSettings` モジュールが必須です。
+- **Blueprint 操作:** `UnrealEd`, `BlueprintGraph`, `KismetCompiler` が必要です。
 
-- Use the setup script in `scripts/jules-setup.sh` as the Initial Setup command.
-- Assume no Unreal Engine installation and no Windows filesystem paths.
-- Do not run `UnrealEditor.exe`, `Build.bat`, `.uproject` editor launches, or commands that depend on `C:\Program Files\Epic Games\...`.
-- Do not mark live MCP bridge behavior, editor startup, C++ plugin compilation, or asset creation inside Unreal as fully verified.
-- For UE-facing C++ changes, compile-level verification must be deferred to local Windows unless a task explicitly provides a Linux Unreal Engine environment.
-- Still add or update Python/Rust contract tests and static mapping tests whenever the change affects tool contracts.
-- End each task with a clear "Local Windows verification required" note when Unreal runtime/editor coverage remains.
+## 4. コマンド実装の整合性
 
-Recommended Jules branch shape:
+新機能を追加する際は、以下の3箇所をセットで更新してください。
 
-- Use one branch per backlog slice, for example `jules/umg-widget-tools`, `jules/asset-management-tools`, or `jules/datatable-tools`.
-- Keep branches independent. Avoid multiple Jules tasks editing the same files at the same time, especially `Python/server/scene_tools.py`, bridge dispatch files, and shared docs.
-- Prefer implementing one MCP tool group at a time: Python facade, C++ command handler if needed, unit/contract tests, docs, changelog.
+1.  **C++ ハンドラ:** `EpicUnrealMCPProjectEditorCommands.cpp` 等にロジックを追加。
+2.  **C++ ルーター:** `EpicUnrealMCPBridge.cpp` の `RouteCommand` にコマンド名を登録。
+3.  **Python ツール:** `Python/server/` 内の対応するツール定義に `action` を追加。
 
-Good Jules task prompt pattern:
+## 5. テスト駆動の推奨
 
-```text
-Read AGENTS.md, docs/superpowers/plans/tasks.md, and docs/superpowers/plans/jules-implementation-brief.md. Implement only the <feature area> slice.
-Respect the Jules cloud constraints: do not attempt to launch Unreal Editor.
-Add/adjust Python tool mapping tests and docs. If C++ changes are needed, keep them minimal and note that local Windows UE build verification is required.
-Run scripts/jules-setup.sh, then run the narrow relevant pytest/cargo tests.
-```
-
-## Required Checks
-
-For Python-side tool changes:
-
-```bash
-cd Python
-python -m pytest tests/unit/test_tool_registration_and_mapping.py -v
-python -m pytest tests/unit tests/contract -v
-```
-
-For scene-sync Rust changes:
-
-```bash
-cd rust/scene-syncd
-cargo test --locked
-```
-
-For docs-only changes:
-
-```bash
-cd Python
-python -m pytest tests/unit/test_docs_consistency.py -v
-```
-
-For Unreal C++ plugin changes on local Windows with Unreal installed:
-
-```powershell
-& 'C:\Program Files\Epic Games\UE_5.7\Engine\Build\BatchFiles\Build.bat' FlopperamUnrealMCPEditor Win64 Development -Project='C:\development\unreal-engine-mcp\FlopperamUnrealMCP\FlopperamUnrealMCP.uproject' -WaitMutex -NoHotReload
-```
-
-If the project path or engine path differs, record the exact path used in the verification notes.
-
-## Tool Contract Rules
-
-- Every public MCP tool must use `@mcp.tool()` explicitly.
-- If adding a Python MCP tool that sends a C++ command, update `TestPythonToCppCommandMapping.known_mapping` in `Python/tests/unit/test_tool_registration_and_mapping.py`.
-- If adding a C++ command without a Python MCP facade, either add the facade or document and whitelist the intentional gap in the drift test.
-- Preserve canonical request field names across Python, C++, docs, and tests.
-- Material and Blueprint graph JSON tools must be tested for both command routing and JSON-to-command expansion.
-
-## Backlog Guidance For `docs/superpowers/plans/tasks.md`
-
-The checklist is broad. Treat unchecked items as backlog candidates, not as proof that a feature is required in one branch.
-
-Best next Jules-friendly slices:
-
-1. **Content Browser / Asset Management**: folder operations, asset listing/search, rename/move/delete wrappers, docs, and tests. Mostly editor API design plus contract tests; local UE verification required for runtime behavior.
-2. **Data Tables / Data Assets**: CSV/JSON DataTable creation and export contracts. Strong LLM value and easy to test at the Python contract layer.
-3. **UMG / UI**: Widget Blueprint creation and basic widget tree JSON. High product value, but UE verification is mandatory.
-4. **Project / Editor Control**: read-only project settings, dirty asset listing, save operations, editor logs. Useful operational base, but be careful with destructive editor commands.
-5. **Testing / Validation**: commands that compile Blueprints, validate missing references, and produce structured reports. Good support layer for later autonomous work.
-
-Avoid starting with large runtime-only areas in Jules unless the task is limited to scaffolding and tests: Landscape, Niagara, Animation, Sequencer, Movie Render Queue, platform packaging, GAS, and multiplayer runtime validation.
-
-## Manual Verification Notes
-
-When automation cannot run in the current environment, include:
-
-- environment used
-- exact commands run
-- exact MCP tool inputs if applicable
-- expected result
-- actual observed result
-- remaining verification gap
-
-Example:
-
-```text
-Local Windows verification required: Jules could not launch Unreal Editor. On a Windows machine with UE 5.7, build the plugin, launch the canonical project, call create_widget_blueprint with the sample JSON payload, and confirm the Widget Blueprint is created and compiles.
-```
+変更を加えた後は、必ず `Python/tests/integration/test_project_editor_tools.py` のような統合テストを実行（または作成）してください。
+- UEエディタを `scripts/launch-dev-stack.py --unreal` で起動。
+- `python Python/tests/integration/your_test.py` で検証。
+- **「コンパイルが通る」ことと「UEがクラッシュしない」ことは別物**であることを常に意識してください。

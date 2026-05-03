@@ -15,6 +15,7 @@
 #include "Engine/DirectionalLight.h"
 #include "Engine/PointLight.h"
 #include "Engine/SpotLight.h"
+#include "Engine/SkyLight.h"
 #include "Camera/CameraActor.h"
 #include "Components/StaticMeshComponent.h"
 #include "EditorSubsystem.h"
@@ -208,10 +209,26 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleSpawnActor(const TSh
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Actor with name '%s' already exists"), *ActorName));
     }
 
+    // Also check the actual world for actors with this FName.
+    // The index only tracks MCP-spawned actors within this session;
+    // saved actors from previous runs won't be in the index.
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (It->GetFName() == FName(*ActorName))
+        {
+            // Backfill the index so subsequent lookups are O(1)
+            GetActorIndex().AddActor(*It);
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("Actor with name '%s' already exists in the level"), *ActorName));
+        }
+    }
+
     FScopedTransaction Transaction(FText::FromString(TEXT("UnrealMCP: Spawn Actor")));
 
     FActorSpawnParameters SpawnParams;
     SpawnParams.Name = *ActorName;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    SpawnParams.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
 
     if (ActorType == TEXT("StaticMeshActor"))
     {
@@ -246,6 +263,10 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleSpawnActor(const TSh
     else if (ActorType == TEXT("DirectionalLight"))
     {
         NewActor = World->SpawnActor<ADirectionalLight>(ADirectionalLight::StaticClass(), Location, Rotation, SpawnParams);
+    }
+    else if (ActorType == TEXT("SkyLight"))
+    {
+        NewActor = World->SpawnActor<ASkyLight>(ASkyLight::StaticClass(), Location, Rotation, SpawnParams);
     }
     else if (ActorType == TEXT("CameraActor"))
     {
@@ -476,6 +497,17 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::ExecuteCreateActor(const F
             FString::Printf(TEXT("Actor with name '%s' already exists"), *Parsed.Name));
     }
 
+    // Also check the actual world for actors with this FName
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (It->GetFName() == FName(*Parsed.Name))
+        {
+            GetActorIndex().AddActor(*It);
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("Actor with name '%s' already exists in the level"), *Parsed.Name));
+        }
+    }
+
     // Wrap in a transaction unless the caller already provides one (batch mode).
     TUniquePtr<FScopedTransaction> Transaction;
     if (!bSuppressTransaction)
@@ -487,6 +519,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::ExecuteCreateActor(const F
     // avoiding a redundant SetActorTransform + re-registration cycle.
     FActorSpawnParameters SpawnParams;
     SpawnParams.Name = *Parsed.Name;
+    SpawnParams.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
     SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
     AActor* NewActor = nullptr;
@@ -638,6 +671,22 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleDeleteActor(const TS
     }
 
     AActor* Actor = GetActorIndex().FindByName(FName(*ActorName));
+    if (!Actor)
+    {
+        // Fallback: scan the world for actors not in the index (e.g. from previous sessions)
+        UWorld* World = GetEditorWorld();
+        if (World)
+        {
+            for (TActorIterator<AActor> It(World); It; ++It)
+            {
+                if (It->GetFName() == FName(*ActorName))
+                {
+                    Actor = *It;
+                    break;
+                }
+            }
+        }
+    }
     if (!Actor)
     {
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Actor not found: %s"), *ActorName));

@@ -82,6 +82,7 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
     BlueprintCommands = MakeShared<FEpicUnrealMCPBlueprintCommands>();
     BlueprintGraphCommands = MakeShared<FEpicUnrealMCPBlueprintGraphCommands>();
     MaterialCommands = MakeShared<FEpicUnrealMCPMaterialCommands>();
+    ProjectEditorCommands = MakeShared<FEpicUnrealMCPProjectEditorCommands>();
 
     const UUnrealMCPSettings* Settings = GetDefault<UUnrealMCPSettings>();
     FString HostStr = Settings ? Settings->Host : TEXT(MCP_SERVER_HOST);
@@ -133,6 +134,7 @@ UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
     BlueprintCommands.Reset();
     BlueprintGraphCommands.Reset();
     MaterialCommands.Reset();
+    ProjectEditorCommands.Reset();
 }
 
 void UEpicUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
@@ -277,7 +279,7 @@ void UEpicUnrealMCPBridge::EnsureActorIndexInitialized()
 
 namespace
 {
-    // Command routing: 0=ping, 1=EditorCommands, 2=BlueprintCommands, 3=BlueprintGraphCommands, 4=MaterialCommands
+    // Command routing: 0=ping, 1=EditorCommands, 2=BlueprintCommands, 3=BlueprintGraphCommands, 4=MaterialCommands, 5=ProjectEditorCommands
     int32 RouteCommand(const FString& CommandType)
     {
         static const TMap<FString, int32> Router = {
@@ -337,6 +339,74 @@ namespace
             {TEXT("analyze_material_graph"), 4},
             {TEXT("add_material_node"), 4},
             {TEXT("connect_material_nodes"), 4},
+            // Project / Editor Commands (5)
+            {TEXT("get_project_settings"), 5},
+            {TEXT("set_project_setting"), 5},
+            {TEXT("set_default_map"), 5},
+            {TEXT("set_game_default_map"), 5},
+            {TEXT("set_editor_startup_map"), 5},
+            {TEXT("set_project_description"), 5},
+            {TEXT("set_maps_and_modes"), 5},
+            {TEXT("list_plugins"), 5},
+            {TEXT("set_plugin_enabled"), 5},
+            {TEXT("set_engine_scalability"), 5},
+            {TEXT("set_rendering_setting"), 5},
+            {TEXT("set_physics_setting"), 5},
+            {TEXT("set_input_setting"), 5},
+            {TEXT("set_collision_setting"), 5},
+            {TEXT("set_ai_setting"), 5},
+            {TEXT("set_navigation_setting"), 5},
+            {TEXT("set_packaging_setting"), 5},
+            {TEXT("get_world_settings"), 5},
+            {TEXT("set_world_setting"), 5},
+            {TEXT("create_level"), 5},
+            {TEXT("save_level"), 5},
+            {TEXT("load_level"), 5},
+            {TEXT("duplicate_level"), 5},
+            {TEXT("rename_level"), 5},
+            {TEXT("delete_level"), 5},
+            {TEXT("get_current_level"), 5},
+            {TEXT("list_levels"), 5},
+            {TEXT("get_persistent_level"), 5},
+            {TEXT("add_sublevel"), 5},
+            {TEXT("remove_sublevel"), 5},
+            {TEXT("set_sublevel_visible"), 5},
+            {TEXT("set_sublevel_loaded"), 5},
+            {TEXT("create_streaming_volume"), 5},
+            {TEXT("set_level_streaming_settings"), 5},
+            {TEXT("enable_world_partition"), 5},
+            {TEXT("set_world_partition_grid"), 5},
+            {TEXT("get_world_partition_cells"), 5},
+            {TEXT("load_world_partition_cell"), 5},
+            {TEXT("unload_world_partition_cell"), 5},
+            {TEXT("create_data_layer"), 5},
+            {TEXT("add_actors_to_data_layer"), 5},
+            {TEXT("remove_actors_from_data_layer"), 5},
+            {TEXT("set_data_layer_enabled"), 5},
+            {TEXT("create_hlod_layer"), 5},
+            {TEXT("build_hlod"), 5},
+            {TEXT("rebuild_hlod"), 5},
+            {TEXT("set_one_file_per_actor"), 5},
+            {TEXT("set_level_bounds"), 5},
+            {TEXT("set_world_origin_rebasing"), 5},
+            {TEXT("undo"), 5},
+            {TEXT("redo"), 5},
+            {TEXT("get_dirty_assets"), 5},
+            {TEXT("save_all"), 5},
+            {TEXT("save_asset"), 5},
+            {TEXT("get_editor_log"), 5},
+            {TEXT("create_utility_widget"), 5},
+            {TEXT("create_utility_blueprint"), 5},
+            {TEXT("execute_python_script"), 5},
+            {TEXT("execute_commandlet"), 5},
+            {TEXT("start_pie"), 5},
+            {TEXT("stop_pie"), 5},
+            {TEXT("get_play_state"), 5},
+            {TEXT("start_standalone_game"), 5},
+            {TEXT("start_simulate"), 5},
+            {TEXT("get_camera_position"), 5},
+            {TEXT("set_camera_position"), 5},
+            {TEXT("viewport_action"), 5},
         };
         const int32* Found = Router.Find(CommandType);
         return Found ? *Found : -1;
@@ -349,7 +419,7 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
 
     const int32 Route = RouteCommand(CommandType);
 
-    auto ExecuteOnCurrentThread = [this, &CommandType, &Params, Route]() -> FString
+    auto ExecuteOnCurrentThread = [this, CommandType, Params, Route]() -> FString
     {
         EnsureActorIndexInitialized();
 
@@ -376,6 +446,9 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 break;
             case 4: // MaterialCommands
                 ResultJson = MaterialCommands->HandleCommand(CommandType, Params);
+                break;
+            case 5: // ProjectEditorCommands
+                ResultJson = ProjectEditorCommands->HandleCommand(CommandType, Params);
                 break;
             default:
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));

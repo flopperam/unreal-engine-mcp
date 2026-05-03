@@ -111,6 +111,16 @@ from server.scene_tools import (
     scene_create_lsystem_spline,
 )
 
+from server.project_editor_tools import (
+    project_settings_tool,
+    plugin_tool,
+    engine_settings_tool,
+    world_settings_tool,
+    editor_control_tool,
+    play_tool,
+    viewport_tool,
+)
+
 
 # Explicitly bootstrap tool registration to avoid heavy import side-effects.
 from server import bootstrap
@@ -193,6 +203,13 @@ __all__ = [
     "scene_create_sdf_mesh",
     "scene_create_superformula_mesh",
     "scene_create_lsystem_spline",
+    "project_settings_tool",
+    "plugin_tool",
+    "engine_settings_tool",
+    "world_settings_tool",
+    "editor_control_tool",
+    "play_tool",
+    "viewport_tool",
 ]
 
 

@@ -123,6 +123,9 @@ FlopperamUnrealMCP 5.7 - 3/
 .omc
 .claude/
 
+# Agent instructions
+AGENTS.md
+
 #claude
 CLAUDE.md
 
