@@ -132,48 +132,55 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateBlueprint(c
     // Default to Actor if no parent class specified
     UClass* SelectedParentClass = AActor::StaticClass();
     
-    // Try to find the specified parent class
+    // Try to find the specified parent class.
+    //
+    // UE runtime class names do NOT carry the C++ A/U prefix — `/Script/Engine.Character`
+    // is the path, NOT `/Script/Engine.ACharacter`. Try the bare name first, then the
+    // A-prefixed name as a courtesy, then a global FindFirstObject fallback.
     if (!ParentClass.IsEmpty())
     {
-        FString ClassName = ParentClass;
-        if (!ClassName.StartsWith(TEXT("A")))
-        {
-            ClassName = TEXT("A") + ClassName;
-        }
-        
-        // First try direct StaticClass lookup for common classes
         UClass* FoundClass = nullptr;
-        if (ClassName == TEXT("APawn"))
+        const FString BareName = ParentClass.StartsWith(TEXT("A")) && ParentClass.Len() > 1 && FChar::IsUpper(ParentClass[1])
+            ? ParentClass.RightChop(1) // strip leading 'A' if user passed "ACharacter"
+            : ParentClass;
+        const FString PrefixedName = TEXT("A") + BareName;
+
+        // Hardcoded fast-paths for the two we use most
+        if (BareName == TEXT("Pawn"))      FoundClass = APawn::StaticClass();
+        else if (BareName == TEXT("Actor")) FoundClass = AActor::StaticClass();
+
+        // Path lookups: try /Script/Engine + /Script/Game with both bare and prefixed
+        const TArray<FString> Candidates = {
+            FString::Printf(TEXT("/Script/Engine.%s"), *BareName),
+            FString::Printf(TEXT("/Script/Engine.%s"), *PrefixedName),
+            FString::Printf(TEXT("/Script/Game.%s"),   *BareName),
+            FString::Printf(TEXT("/Script/Game.%s"),   *PrefixedName),
+        };
+        for (const FString& Path : Candidates)
         {
-            FoundClass = APawn::StaticClass();
+            if (FoundClass) break;
+            FoundClass = LoadClass<AActor>(nullptr, *Path);
         }
-        else if (ClassName == TEXT("AActor"))
+
+        // Last resort: scan all loaded classes by name (catches plugin/module classes)
+        if (!FoundClass)
         {
-            FoundClass = AActor::StaticClass();
-        }
-        else
-        {
-            // Try loading the class using LoadClass which is more reliable than FindObject
-            const FString ClassPath = FString::Printf(TEXT("/Script/Engine.%s"), *ClassName);
-            FoundClass = LoadClass<AActor>(nullptr, *ClassPath);
-            
-            if (!FoundClass)
+            FoundClass = FindFirstObjectSafe<UClass>(*BareName, EFindFirstObjectOptions::None);
+            if (FoundClass && !FoundClass->IsChildOf(AActor::StaticClass()))
             {
-                // Try alternate paths if not found
-                const FString GameClassPath = FString::Printf(TEXT("/Script/Game.%s"), *ClassName);
-                FoundClass = LoadClass<AActor>(nullptr, *GameClassPath);
+                FoundClass = nullptr; // must be Actor-derived for a Blueprint parent
             }
         }
 
         if (FoundClass)
         {
             SelectedParentClass = FoundClass;
-            UE_LOG(LogTemp, Log, TEXT("Successfully set parent class to '%s'"), *ClassName);
+            UE_LOG(LogTemp, Log, TEXT("Set parent class to '%s' (resolved from input '%s')"), *FoundClass->GetName(), *ParentClass);
         }
         else
         {
-            UE_LOG(LogTemp, Warning, TEXT("Could not find specified parent class '%s' at paths: /Script/Engine.%s or /Script/Game.%s, defaulting to AActor"), 
-                *ClassName, *ClassName, *ClassName);
+            UE_LOG(LogTemp, Warning, TEXT("Could not find parent class '%s' (tried bare/prefixed in /Script/Engine, /Script/Game, and global scan), defaulting to AActor"),
+                *ParentClass);
         }
     }
     
@@ -228,31 +235,42 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleAddComponentToBlu
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
     }
 
-    // Create the component - dynamically find the component class by name
+    // Create the component - dynamically find the component class by name.
+    //
+    // FindObject<UClass>(nullptr, X) only resolves bare names if they live in the
+    // transient package. Engine components live in /Script/Engine.*, so a bare name
+    // search misses them. Use FindFirstObjectSafe (global, name-only) plus path
+    // candidates to handle every common form: "StaticMeshComponent",
+    // "StaticMesh", "UStaticMeshComponent", or "/Script/Engine.StaticMeshComponent".
     UClass* ComponentClass = nullptr;
 
-    // Try to find the class with exact name first
-    ComponentClass = FindObject<UClass>(nullptr, *ComponentType);
-    
-    // If not found, try with "Component" suffix
-    if (!ComponentClass && !ComponentType.EndsWith(TEXT("Component")))
+    auto TryResolve = [&](const FString& Name) -> UClass*
     {
-        FString ComponentTypeWithSuffix = ComponentType + TEXT("Component");
-        ComponentClass = FindObject<UClass>(nullptr, *ComponentTypeWithSuffix);
-    }
-    
-    // If still not found, try with "U" prefix
-    if (!ComponentClass && !ComponentType.StartsWith(TEXT("U")))
-    {
-        FString ComponentTypeWithPrefix = TEXT("U") + ComponentType;
-        ComponentClass = FindObject<UClass>(nullptr, *ComponentTypeWithPrefix);
-        
-        // Try with both prefix and suffix
-        if (!ComponentClass && !ComponentType.EndsWith(TEXT("Component")))
+        if (Name.IsEmpty()) return nullptr;
+        // Full path? Let the engine resolve it.
+        if (Name.Contains(TEXT(".")))
         {
-            FString ComponentTypeWithBoth = TEXT("U") + ComponentType + TEXT("Component");
-            ComponentClass = FindObject<UClass>(nullptr, *ComponentTypeWithBoth);
+            if (UClass* C = LoadObject<UClass>(nullptr, *Name)) return C;
         }
+        // Global name scan across all loaded classes.
+        if (UClass* C = FindFirstObjectSafe<UClass>(*Name, EFindFirstObjectOptions::None)) return C;
+        // Path lookup in /Script/Engine — handles cold-loaded engine modules.
+        if (UClass* C = LoadObject<UClass>(nullptr, *FString::Printf(TEXT("/Script/Engine.%s"), *Name))) return C;
+        return nullptr;
+    };
+
+    // Strip leading 'U' prefix if the caller wrote it C++-style.
+    FString BareType = ComponentType.StartsWith(TEXT("U")) && ComponentType.Len() > 1 && FChar::IsUpper(ComponentType[1])
+        ? ComponentType.RightChop(1)
+        : ComponentType;
+
+    // Try in priority order: exact (preserves full paths), bare-stripped,
+    // then with "Component" suffix.
+    ComponentClass = TryResolve(ComponentType);
+    if (!ComponentClass) ComponentClass = TryResolve(BareType);
+    if (!ComponentClass && !BareType.EndsWith(TEXT("Component")))
+    {
+        ComponentClass = TryResolve(BareType + TEXT("Component"));
     }
     
     // Verify that the class is a valid component type
