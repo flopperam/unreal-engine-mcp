@@ -4,6 +4,21 @@ All notable changes in this fork, relative to the upstream [flopperam/unreal-eng
 
 ---
 
+## [2026-05-03] - Jules cloud agent onboarding
+
+### Added
+
+- Added a root `AGENTS.md` with repository operating rules for local agents and Jules cloud tasks.
+- Added `scripts/jules-setup.sh` for Jules Initial Setup on Ubuntu VMs, covering Python dependency setup, tool mapping/doc consistency smoke tests, and Rust dependency fetch.
+- Added `docs/superpowers/plans/jules-implementation-brief.md` to convert the broad superpowers backlog into Jules-friendly branch slices.
+- Updated `.gitignore` so `AGENTS.md`, `docs/superpowers/plans/tasks.md`, and the Jules implementation brief can be committed and read by cloud agents after cloning the repository.
+
+### Notes
+
+- Jules cannot launch the local Windows Unreal Editor or use `C:\...` Unreal paths, so UE build/editor/live MCP verification remains a local Windows responsibility.
+
+---
+
 ## [2026-05-03] - PR #6/#8 functional verification fixes
 
 ### Fixed

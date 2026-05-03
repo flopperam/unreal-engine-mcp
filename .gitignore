@@ -113,8 +113,8 @@ scripts/__pycache__/
 .clang-format
 .clangd
 
-#AGETNS.md
-AGENTS.md
+# Agent instructions used by Codex, Jules, and other coding agents.
+!AGENTS.md
 FlopperamUnrealMCP 5.7/
 FlopperamUnrealMCP 5.7 - 2/
 FlopperamUnrealMCP 5.7 - 3/
@@ -145,4 +145,6 @@ tests/benchmarks/
 #docx
 docs/desin.md
 docs/research
-docs/superpowers/plans
+docs/superpowers/plans/*
+!docs/superpowers/plans/tasks.md
+!docs/superpowers/plans/jules-implementation-brief.md
