@@ -76,6 +76,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCommand(const FStrin
         {TEXT("delete_instance_set"), &FEpicUnrealMCPEditorCommands::HandleDeleteInstanceSet},
         {TEXT("get_instance_set_state"), &FEpicUnrealMCPEditorCommands::HandleGetInstanceSetState},
         {TEXT("list_instance_sets"), &FEpicUnrealMCPEditorCommands::HandleListInstanceSets},
+        {TEXT("request_cognitive_processing"), &FEpicUnrealMCPEditorCommands::HandleRequestCognitiveProcessing},
     };
 
     const Handler* H = Dispatch.Find(CommandType);
@@ -252,7 +253,37 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleSpawnActor(const TSh
     }
     else
     {
-        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown actor type: %s"), *ActorType));
+        // Try to resolve generic class by name
+        UClass* FoundClass = nullptr;
+        
+        // Try common prefixes
+        TArray<FString> Candidates;
+        Candidates.Add(ActorType);
+        if (!ActorType.StartsWith(TEXT("A"))) Candidates.Add(TEXT("A") + ActorType);
+        
+        for (const FString& ClassName : Candidates)
+        {
+            // Try FlopperamUnrealMCP (game module)
+            FoundClass = LoadClass<AActor>(nullptr, *FString::Printf(TEXT("/Script/FlopperamUnrealMCP.%s"), *ClassName));
+            if (FoundClass) break;
+            
+            // Try Engine
+            FoundClass = LoadClass<AActor>(nullptr, *FString::Printf(TEXT("/Script/Engine.%s"), *ClassName));
+            if (FoundClass) break;
+            
+            // Try generic FindObject
+            FoundClass = FindObject<UClass>(nullptr, *ClassName);
+            if (FoundClass && FoundClass->IsChildOf(AActor::StaticClass())) break;
+        }
+
+        if (FoundClass)
+        {
+            NewActor = World->SpawnActor<AActor>(FoundClass, Location, Rotation, SpawnParams);
+        }
+        else
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown actor type: %s"), *ActorType));
+        }
     }
 
     if (NewActor)
@@ -319,14 +350,17 @@ FParsedCreateParams FEpicUnrealMCPEditorCommands::ParseCreateParams(const TShare
         return Parsed;
     }
 
-    // Validate actor type
-    static const TSet<FString> ValidTypes = {
+    // Validate actor type (hardcoded list for common types, others resolved dynamically)
+    static const TSet<FString> HardcodedTypes = {
         TEXT("StaticMeshActor"), TEXT("PointLight"), TEXT("SpotLight"),
         TEXT("DirectionalLight"), TEXT("CameraActor")
     };
-    if (!ValidTypes.Contains(Parsed.Type))
+    
+    // If it's not a hardcoded type, we'll try to resolve it during execution.
+    // We only fail here if it's empty.
+    if (Parsed.Type.IsEmpty())
     {
-        Parsed.ErrorString = FString::Printf(TEXT("Unknown actor type: %s"), *Parsed.Type);
+        Parsed.ErrorString = TEXT("Missing or empty 'type' parameter");
         return Parsed;
     }
 
@@ -504,6 +538,38 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::ExecuteCreateActor(const F
             ACameraActor::StaticClass(), SpawnTransform, nullptr, nullptr,
             ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
         if (NewActor) { NewActor->FinishSpawning(SpawnTransform); }
+    }
+    else
+    {
+        // Try to resolve generic class by name
+        UClass* FoundClass = nullptr;
+        
+        TArray<FString> Candidates;
+        Candidates.Add(Parsed.Type);
+        if (!Parsed.Type.StartsWith(TEXT("A"))) Candidates.Add(TEXT("A") + Parsed.Type);
+        
+        for (const FString& ClassName : Candidates)
+        {
+            // Try FlopperamUnrealMCP
+            FoundClass = LoadClass<AActor>(nullptr, *FString::Printf(TEXT("/Script/FlopperamUnrealMCP.%s"), *ClassName));
+            if (FoundClass) break;
+            
+            // Try Engine
+            FoundClass = LoadClass<AActor>(nullptr, *FString::Printf(TEXT("/Script/Engine.%s"), *ClassName));
+            if (FoundClass) break;
+            
+            // Try generic FindObject
+            FoundClass = FindObject<UClass>(nullptr, *ClassName);
+            if (FoundClass && FoundClass->IsChildOf(AActor::StaticClass())) break;
+        }
+
+        if (FoundClass)
+        {
+            NewActor = World->SpawnActorDeferred<AActor>(
+                FoundClass, SpawnTransform, nullptr, nullptr,
+                ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+            if (NewActor) { NewActor->FinishSpawning(SpawnTransform); }
+        }
     }
 
     if (NewActor)
@@ -2466,3 +2532,70 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleListInstanceSets(con
     ResultObj->SetArrayField(TEXT("sets"), SetArray);
     return ResultObj;
 }
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleRequestCognitiveProcessing(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName;
+    if (!Params->TryGetStringField(TEXT("actor_name"), ActorName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing required parameter: actor_name"));
+    }
+
+    FString Context;
+    Params->TryGetStringField(TEXT("context"), Context);
+
+    UWorld* World = GetEditorWorld();
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get editor world"));
+    }
+
+    // Find the actor (can be an AI Controller or any actor with the function)
+    AActor* TargetActor = nullptr;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (It->GetName() == ActorName || It->GetActorLabel() == ActorName)
+        {
+            TargetActor = *It;
+            break;
+        }
+    }
+
+    if (!TargetActor)
+    {
+        // Try mcp_id lookup
+        TargetActor = FindActorByMcpId(World, ActorName);
+    }
+
+    if (!TargetActor)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Actor not found: %s"), *ActorName));
+    }
+
+    // Use reflection to call RequestCognitiveProcessing(EnvironmentalContext)
+    UFunction* Func = TargetActor->FindFunction(FName(TEXT("RequestCognitiveProcessing")));
+    if (!Func)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Actor '%s' does not have a RequestCognitiveProcessing function"), *ActorName));
+    }
+
+    // Set up parameters for the function call
+    struct FRequestCognitiveProcessingParams
+    {
+        FString EnvironmentalContext;
+    };
+
+    FRequestCognitiveProcessingParams FuncParams;
+    FuncParams.EnvironmentalContext = Context;
+
+    TargetActor->ProcessEvent(Func, &FuncParams);
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("actor_name"), TargetActor->GetName());
+    ResultObj->SetStringField(TEXT("message"), TEXT("Cognitive processing requested asynchronously"));
+    return ResultObj;
+}
+

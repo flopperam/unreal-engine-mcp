@@ -523,6 +523,79 @@ Set a color on a mesh component via material parameter.
 
 ---
 
+## Material Graph
+
+### create_material
+
+Create an empty Material asset.
+
+**Parameters:**
+- `name` (str, required): Material asset name.
+- `package_path` (str, default `"/Game/Materials/"`): Package folder for the new asset.
+
+**Returns:** `success` and the created Material `path`.
+
+---
+
+### add_material_node
+
+Add a node to a Material graph.
+
+**Parameters:**
+- `material_path` (str, required): Material asset path, for example `"/Game/Materials/M_Test"`.
+- `node_type` (str, required): Material expression type such as `"Constant"`, `"Multiply"`, `"Add"`, `"VectorParameter"`, or `"TextureSample"`.
+- `pos_x` (float, default `0`): Editor graph X position.
+- `pos_y` (float, default `0`): Editor graph Y position.
+- `node_params` (dict, optional): Node-specific parameters. Supported examples include `{"value": 0.8}` for `Constant`, `{"parameter_name": "Tint", "default_value": [1, 0, 0, 1]}` for `VectorParameter`, and `{"texture": "/Game/Textures/T_Wood"}` for `TextureSample`.
+
+---
+
+### connect_material_nodes
+
+Connect Material expression outputs to expression inputs or Material root properties.
+
+**Parameters:**
+- `material_path` (str, required): Material asset path.
+- `source_node_id` (str, required): Source expression object name returned by `add_material_node` or `export_material_json`.
+- `source_pin_name` (str, default `""`): Source output pin. Empty string uses output index `0`.
+- `target_node_id` (str, required): Target expression object name, or `"Material"` for root Material properties.
+- `target_pin_name` (str, required): Target expression input or root property such as `"A"`, `"B"`, `"BaseColor"`, or `"Roughness"`.
+
+---
+
+### apply_material_json
+
+Apply a JSON Material graph description by creating nodes first, then connecting them.
+
+**Parameters:**
+- `material_path` (str, required): Material asset path.
+- `json_data` (str, required): JSON string with `nodes` and `connections` arrays.
+
+**JSON shape:**
+```json
+{
+  "nodes": [
+    {"id": "roughness", "type": "Constant", "params": {"value": 0.8}}
+  ],
+  "connections": [
+    {"source_id": "roughness", "source_pin": "", "target_id": "Material", "target_pin": "Roughness"}
+  ]
+}
+```
+
+---
+
+### export_material_json
+
+Export a Material graph to a standardized JSON representation.
+
+**Parameters:**
+- `material_path` (str, required): Material asset path.
+
+**Returns:** `json_data` and `raw_data` containing `nodes` and `connections`.
+
+---
+
 ## World Building
 
 ### create_pyramid
@@ -719,6 +792,64 @@ Spawn a single actor with physics, color, and a specified mesh.
 - `gravity_enabled` (bool, default `True`)
 - `color` (list[float], optional): `[R, G, B, A]` color.
 - `scale` (list[float], optional): `[X, Y, Z]` scale.
+
+---
+
+## Scene Synchronization & AI
+
+### scene_create
+
+Initialize a new scene for synchronization.
+
+**Parameters:**
+- `scene_id` (str, required): Unique scene identifier.
+- `name` (str, required): Display name for the scene.
+
+---
+
+### scene_create_navmesh_volume
+
+Create a NavMesh Bounds Volume and sync with DB.
+
+**Parameters:**
+- `scene_id` (str, required): Target scene.
+- `volume_name` (str, required): Name for the volume.
+- `location` (dict, required): `{"x": X, "y": Y, "z": Z}`.
+- `extent` (dict, required): `{"x": X, "y": Y, "z": Z}`.
+
+---
+
+### scene_create_patrol_route
+
+Create a patrol route spline actor and sync with DB.
+
+**Parameters:**
+- `scene_id` (str, required): Target scene.
+- `route_name` (str, required): Name for the route.
+- `points` (list[dict], required): List of `{"x": X, "y": Y, "z": Z}` points.
+- `closed_loop` (bool, default `True`)
+
+---
+
+### scene_set_ai_behavior
+
+Configure AI behavior properties for an entity.
+
+**Parameters:**
+- `scene_id` (str, required): Target scene.
+- `entity_id` (str, required): Entity to configure.
+- `perception_radius` (float, optional)
+- `faction` (str, optional)
+
+---
+
+### scene_sync
+
+Perform a full synchronization between DB and Unreal.
+
+**Parameters:**
+- `scene_id` (str, required): Scene to sync.
+- `dry_run` (bool, default `False`)
 
 ---
 

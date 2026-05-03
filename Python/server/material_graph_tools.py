@@ -11,8 +11,31 @@ logger = logging.getLogger("UnrealMCP_Advanced")
 
 
 @mcp.tool()
+def create_material(
+    name: str,
+    package_path: str = "/Game/Materials/"
+) -> Dict[str, Any]:
+    """Create an empty Material asset."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {
+            "name": name,
+            "package_path": package_path,
+        }
+        result = unreal.send_command("create_material", params)
+        return result or make_error_response("No response from Unreal")
+
+    except Exception as e:
+        logger.error(f"create_material error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
 def add_material_node(
-    material_name: str,
+    material_path: str,
     node_type: str,
     pos_x: float = 0,
     pos_y: float = 0,
@@ -25,7 +48,7 @@ def add_material_node(
 
     try:
         params = {
-            "material_name": material_name,
+            "material_path": material_path,
             "node_type": node_type,
             "pos_x": pos_x,
             "pos_y": pos_y,
@@ -42,7 +65,7 @@ def add_material_node(
 
 @mcp.tool()
 def connect_material_nodes(
-    material_name: str,
+    material_path: str,
     source_node_id: str,
     source_pin_name: str,
     target_node_id: str,
@@ -55,7 +78,7 @@ def connect_material_nodes(
 
     try:
         params = {
-            "material_name": material_name,
+            "material_path": material_path,
             "source_node_id": source_node_id,
             "source_pin_name": source_pin_name,
             "target_node_id": target_node_id,
@@ -71,7 +94,7 @@ def connect_material_nodes(
 
 
 @mcp.tool()
-def apply_material_json(material_name: str, json_data: str) -> Dict[str, Any]:
+def apply_material_json(material_path: str, json_data: str) -> Dict[str, Any]:
     """Apply a JSON string to create Material nodes and connections.
 
     The JSON structure should be:
@@ -98,7 +121,7 @@ def apply_material_json(material_name: str, json_data: str) -> Dict[str, Any]:
         for node in data.get("nodes", []):
             try:
                 params = {
-                    "material_name": material_name,
+                    "material_path": material_path,
                     "node_type": node.get("type"),
                     "pos_x": node.get("pos_x", 0),
                     "pos_y": node.get("pos_y", 0),
@@ -117,7 +140,7 @@ def apply_material_json(material_name: str, json_data: str) -> Dict[str, Any]:
                 target_unreal_id = node_id_map.get(conn.get("target_id"), conn.get("target_id"))
 
                 params = {
-                    "material_name": material_name,
+                    "material_path": material_path,
                     "source_node_id": source_unreal_id,
                     "source_pin_name": conn.get("source_pin", ""),
                     "target_node_id": target_unreal_id,

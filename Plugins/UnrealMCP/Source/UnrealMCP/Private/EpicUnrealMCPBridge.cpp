@@ -50,6 +50,7 @@
 #include "Commands/EpicUnrealMCPEditorCommands.h"
 #include "Commands/EpicUnrealMCPBlueprintCommands.h"
 #include "Commands/EpicUnrealMCPBlueprintGraphCommands.h"
+#include "Commands/EpicUnrealMCPMaterialCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "UnrealMCPSettings.h"
 
@@ -80,6 +81,7 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
     EditorCommands = MakeShared<FEpicUnrealMCPEditorCommands>();
     BlueprintCommands = MakeShared<FEpicUnrealMCPBlueprintCommands>();
     BlueprintGraphCommands = MakeShared<FEpicUnrealMCPBlueprintGraphCommands>();
+    MaterialCommands = MakeShared<FEpicUnrealMCPMaterialCommands>();
 
     const UUnrealMCPSettings* Settings = GetDefault<UUnrealMCPSettings>();
     FString HostStr = Settings ? Settings->Host : TEXT(MCP_SERVER_HOST);
@@ -130,6 +132,7 @@ UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
     EditorCommands.Reset();
     BlueprintCommands.Reset();
     BlueprintGraphCommands.Reset();
+    MaterialCommands.Reset();
 }
 
 void UEpicUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
@@ -274,7 +277,7 @@ void UEpicUnrealMCPBridge::EnsureActorIndexInitialized()
 
 namespace
 {
-    // Command routing: 0=ping, 1=EditorCommands, 2=BlueprintCommands, 3=BlueprintGraphCommands
+    // Command routing: 0=ping, 1=EditorCommands, 2=BlueprintCommands, 3=BlueprintGraphCommands, 4=MaterialCommands
     int32 RouteCommand(const FString& CommandType)
     {
         static const TMap<FString, int32> Router = {
@@ -302,6 +305,7 @@ namespace
             {TEXT("delete_instance_set"), 1},
             {TEXT("get_instance_set_state"), 1},
             {TEXT("list_instance_sets"), 1},
+            {TEXT("request_cognitive_processing"), 1},
             {TEXT("create_blueprint"), 2},
             {TEXT("add_component_to_blueprint"), 2},
             {TEXT("set_physics_properties"), 2},
@@ -329,6 +333,10 @@ namespace
             {TEXT("add_function_output"), 3},
             {TEXT("delete_function"), 3},
             {TEXT("rename_function"), 3},
+            {TEXT("create_material"), 4},
+            {TEXT("analyze_material_graph"), 4},
+            {TEXT("add_material_node"), 4},
+            {TEXT("connect_material_nodes"), 4},
         };
         const int32* Found = Router.Find(CommandType);
         return Found ? *Found : -1;
@@ -365,6 +373,9 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 break;
             case 3: // BlueprintGraphCommands
                 ResultJson = BlueprintGraphCommands->HandleCommand(CommandType, Params);
+                break;
+            case 4: // MaterialCommands
+                ResultJson = MaterialCommands->HandleCommand(CommandType, Params);
                 break;
             default:
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));

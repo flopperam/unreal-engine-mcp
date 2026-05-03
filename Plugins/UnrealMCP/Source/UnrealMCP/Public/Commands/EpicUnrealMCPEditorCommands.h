@@ -100,4 +100,5 @@ private:
     TSharedPtr<FJsonObject> HandleDeleteInstanceSet(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleGetInstanceSetState(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleListInstanceSets(const TSharedPtr<FJsonObject>& Params);
-}; 
+    TSharedPtr<FJsonObject> HandleRequestCognitiveProcessing(const TSharedPtr<FJsonObject>& Params);
+    }; 

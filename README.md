@@ -119,7 +119,7 @@ Check out these examples of the MCP server in action on our channel:
 ```bash
 # Create complex Blueprint logic with control flow, variables, and functions
 > "Create a Blueprint with a health system that tracks damage and triggers a death event"
-→ create_blueprint() + create_variable() + add_node() + connect_nodes()
+→ create_blueprint(name="BP_HealthSystem") + create_variable() + add_node() + connect_nodes()
 
 # Support for 23+ node types across 6 categories:
 # Control Flow: Branch, Comparison, Switch (Byte/Enum/Integer), ExecutionSequence
@@ -157,12 +157,13 @@ Check out these examples of the MCP server in action on our channel:
 
 ---
 
-## Complete Tool Arsenal (46 tools)
+## Complete Tool Arsenal (96 registered tools)
 
 | **Category** | **Tools** | **Description** |
 |--------------|-----------|-----------------|
-| **Blueprint Visual Scripting** | `add_node`, `add_event_node`, `connect_nodes`, `delete_node`, `set_node_property`, `create_variable`, `set_blueprint_variable_properties`, `create_function`, `add_function_input`, `add_function_output`, `delete_function`, `rename_function` | Complete Blueprint programming with 23+ node types, variables with full property control, custom functions, and dynamic graph management |
+| **Blueprint Visual Scripting** | `add_node`, `add_event_node`, `connect_nodes`, `delete_node`, `set_node_property`, `create_variable`, `set_blueprint_variable_properties`, `create_function`, `add_function_input`, `add_function_output`, `delete_function`, `rename_function`, `apply_blueprint_json`, `export_blueprint_json` | Complete Blueprint programming with 23+ node types, variables with full property control, custom functions, JSON graph injection, and dynamic graph management |
 | **Blueprint Analysis** | `read_blueprint_content`, `analyze_blueprint_graph`, `get_blueprint_variable_details`, `get_blueprint_function_details` | Deep inspection of Blueprint structure, event graphs, execution flow, variables, and functions |
+| **Material Graph** | `create_material`, `add_material_node`, `connect_material_nodes`, `apply_material_json`, `export_material_json` | Create Materials and programmatically edit Material graphs with JSON, nodes, and connections |
 | **World Building** | `create_town`, `construct_house`, `construct_mansion`, `create_tower`, `create_arch`, `create_staircase` | Build complex architectural structures and entire settlements |
 | **Epic Structures** | `create_castle_fortress`, `create_suspension_bridge`, `create_aqueduct` | Massive engineering marvels and medieval fortresses |
 | **Level Design** | `create_maze`, `create_pyramid`, `create_wall` | Design challenging game levels and puzzles |

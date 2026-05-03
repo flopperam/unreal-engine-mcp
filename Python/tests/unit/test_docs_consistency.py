@@ -136,7 +136,11 @@ class TestDocsToolConsistency:
                       "value_range_min", "default_value", "expose_to_cinematics",
                       "tiers", "source_node_id", "cable_sag_ratio", "variable_type",
                       "is_blueprint_readable", "event_type", "param_name",
-                      "old_function_name", "variable_name"}
+                      "old_function_name", "variable_name",
+                      # scene-sync and JSON graph parameter names
+                      "closed_loop", "entity_id", "extent", "faction", "json_data",
+                      "node_params", "package_path", "perception_radius", "points",
+                      "route_name", "scene_id", "volume_name"}
         missing -= whitelist
         assert not missing, f"Tools mentioned in docs but not in implementation: {missing}"
 

@@ -60,6 +60,7 @@ from server.blueprint_graph_tools import (
 )
 
 from server.material_graph_tools import (
+    create_material,
     add_material_node,
     connect_material_nodes,
     apply_material_json,
@@ -158,6 +159,7 @@ __all__ = [
     "get_actor_material_info",
     "get_blueprint_material_info",
     "set_mesh_material_color",
+    "create_material",
     "add_material_node",
     "connect_material_nodes",
     "apply_material_json",

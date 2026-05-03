@@ -317,6 +317,31 @@ def set_actor_transform_by_mcp_id(
 
 
 @mcp.tool()
+def request_cognitive_processing(
+    actor_name: str,
+    context: str = ""
+) -> Dict[str, Any]:
+    """
+    Request cognitive processing (simulated LLM inference) for an AI actor.
+    Target actor should be a CognitiveAIController or an actor that has 
+    the RequestCognitiveProcessing function.
+    
+    :param actor_name: The name or MCP ID of the AI agent/controller.
+    :param context: Environmental context for the AI to process.
+    """
+    try:
+        unreal = get_unreal_connection()
+        response = unreal.send_command("request_cognitive_processing", {
+            "actor_name": actor_name,
+            "context": context
+        })
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"request_cognitive_processing error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
 def delete_actor_by_mcp_id(mcp_id: str) -> Dict[str, Any]:
     """Delete an actor by its mcp_id tag. Idempotent: returns success if actor is already missing."""
     try:

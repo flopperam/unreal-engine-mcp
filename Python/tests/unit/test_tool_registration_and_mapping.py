@@ -23,7 +23,7 @@ import pytest
 
 import unreal_mcp_server_advanced as srv
 from unreal_mcp_server_advanced import mcp, get_unreal_connection
-from server import actor_tools, blueprint_tools, blueprint_graph_tools, material_tools, world_building_tools
+from server import actor_tools, blueprint_tools, blueprint_graph_tools, material_graph_tools, material_tools, world_building_tools
 
 
 def _collect_source_tools():
@@ -49,6 +49,7 @@ def _patch_tool_connections(fake_conn):
         actor_tools,
         blueprint_tools,
         blueprint_graph_tools,
+        material_graph_tools,
         material_tools,
         world_building_tools,
     ]:
@@ -106,6 +107,10 @@ class TestToolCommandMapping:
         ("get_actor_material_info", "get_actor_material_info"),
         ("get_blueprint_material_info", "get_blueprint_material_info"),
         ("set_mesh_material_color", "set_mesh_material_color"),
+        ("create_material", "create_material"),
+        ("add_material_node", "add_material_node"),
+        ("connect_material_nodes", "connect_material_nodes"),
+        ("export_material_json", "analyze_material_graph"),
         ("find_actor_by_mcp_id", "find_actor_by_mcp_id"),
         ("set_actor_transform_by_mcp_id", "set_actor_transform_by_mcp_id"),
         ("delete_actor_by_mcp_id", "delete_actor_by_mcp_id"),
@@ -350,10 +355,7 @@ class TestPythonToCppCommandMapping:
             "scene_create_lsystem_spline",
             "apply_blueprint_json",
             "export_blueprint_json",
-            "add_material_node",
-            "connect_material_nodes",
             "apply_material_json",
-            "export_material_json",
         }
         registered = self._collect_registered_tool_names()
         missing = []
@@ -443,9 +445,56 @@ class TestPythonToCppCommandMapping:
             "add_function_output": "add_function_output",
             "delete_function": "delete_function",
             "rename_function": "rename_function",
+            "create_material": "create_material",
+            "add_material_node": "add_material_node",
+            "connect_material_nodes": "connect_material_nodes",
+            "export_material_json": "analyze_material_graph",
         }
         registered = self._collect_registered_tool_names()
         for tool_name, cmd in known_mapping.items():
             assert tool_name in registered, (
                 f"Tool '{tool_name}' in known mapping but not registered in FastMCP"
             )
+
+
+class TestJsonInjectionTools:
+    def test_apply_material_json_uses_cpp_material_contract(self, fake_conn_factory):
+        fake_conn = fake_conn_factory(responses={
+            "add_material_node": {"success": True, "node_id": "MaterialExpressionConstant_0"},
+            "connect_material_nodes": {"success": True},
+        })
+        payload = json.dumps({
+            "nodes": [
+                {"id": "constant", "type": "Constant", "params": {"value": 0.8}},
+            ],
+            "connections": [
+                {"source_id": "constant", "source_pin": "", "target_id": "Material", "target_pin": "Roughness"},
+            ],
+        })
+
+        with _patch_tool_connections(fake_conn):
+            result = srv.apply_material_json("/Game/Materials/M_Test", payload)
+
+        assert result["success"] is True
+        assert fake_conn.history[0]["command"] == "add_material_node"
+        assert fake_conn.history[0]["params"]["material_path"] == "/Game/Materials/M_Test"
+        assert fake_conn.history[0]["params"]["node_params"] == {"value": 0.8}
+        assert fake_conn.history[1]["command"] == "connect_material_nodes"
+        assert fake_conn.history[1]["params"] == {
+            "material_path": "/Game/Materials/M_Test",
+            "source_node_id": "MaterialExpressionConstant_0",
+            "source_pin_name": "",
+            "target_node_id": "Material",
+            "target_pin_name": "Roughness",
+        }
+
+    def test_create_material_exposes_package_path(self, fake_conn):
+        with _patch_tool_connections(fake_conn):
+            srv.create_material("M_Test", package_path="/Game/TestMaterials/")
+
+        last = fake_conn.history[-1]
+        assert last["command"] == "create_material"
+        assert last["params"] == {
+            "name": "M_Test",
+            "package_path": "/Game/TestMaterials/",
+        }

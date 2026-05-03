@@ -4,6 +4,36 @@ All notable changes in this fork, relative to the upstream [flopperam/unreal-eng
 
 ---
 
+## [2026-05-03] - PR #6/#8 functional verification fixes
+
+### Fixed
+
+- Fixed Material graph JSON tool wiring from PR #8:
+  - added the missing `create_material` Python MCP tool for the C++ `create_material` command
+  - aligned Python Material graph tools on the C++ `material_path`, `source_node_id`, `source_pin_name`, `target_node_id`, and `target_pin_name` contract
+  - fixed `EpicUnrealMCPBridge.h` after a duplicate `UEpicUnrealMCPBridge` class declaration was introduced locally while wiring Material graph commands
+- Implemented real basic Material graph connections in C++ instead of returning success without linking pins. Connections now support expression inputs and Material root pins such as `BaseColor` and `Roughness`.
+- Added Material graph export of connection data in addition to node data.
+
+### Added
+
+- Added unit regression coverage for `apply_material_json` parameter mapping and `create_material` package path handling.
+- Added Material graph JSON tool documentation to `README.md` and `Guides/tools-reference.md`.
+
+### Verification
+
+- Ran `python -m pytest tests/unit/test_tool_registration_and_mapping.py -v` before the fix; it failed because `create_material` was routable in C++ but unreachable from Python.
+- Ran `python -m pytest tests/unit/test_tool_registration_and_mapping.py -v`; 41 passed.
+- Ran `python -m pytest tests/unit/test_docs_consistency.py -v`; 6 passed.
+- Ran `python -m pytest tests/unit tests/contract -v`; 305 passed.
+- Built `FlopperamUnrealMCPEditor Win64 Development` with UE 5.7; build succeeded. Existing warnings remain for the Visual Studio compiler preference, plugin dependency declarations, and deprecated `NetUpdateFrequency`/`ClassDefaultObject` access.
+- Launched the canonical `FlopperamUnrealMCP/FlopperamUnrealMCP.uproject`; the MCP bridge listened on `127.0.0.1:55557`, and logs showed `DynamicBandwidthManager Initialized` and `ServerMeshManager Initialized`.
+- Ran a live MCP bridge smoke test for PR #8:
+  - `create_material`, `apply_material_json`, and `export_material_json` created `/Game/Materials/M_PR8_Verify_*` and exported one node plus one `Roughness` connection.
+  - `create_blueprint`, `apply_blueprint_json`, and `export_blueprint_json` created `/Game/Blueprints/BP_PR8_Verify_*` and exported graph nodes after JSON injection.
+
+---
+
 ## [2026-05-01] - Procedural mesh visibility fix
 
 ### Fixed

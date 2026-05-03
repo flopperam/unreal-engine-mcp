@@ -58,6 +58,7 @@ public class UnrealMCP : ModuleRules
 				"Kismet",
 				"Projects",
 				"AssetRegistry",
+				"AssetTools",
 				"NavigationSystem",
 				"Navmesh"
 			}
@@ -92,4 +93,4 @@ public class UnrealMCP : ModuleRules
 			}
 		);
 	}
-} 
+}
