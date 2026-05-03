@@ -11,7 +11,7 @@ dependencies = [
   "fastapi",
   "pydantic>=2.6.1",
   "requests",
-  "PyYAML>=6.0"
+  "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]

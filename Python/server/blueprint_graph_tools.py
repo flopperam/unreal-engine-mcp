@@ -426,3 +426,121 @@ def rename_function(
     except Exception as e:
         logger.error(f"rename_function error: {e}")
         return make_error_response(str(e))
+
+import json
+
+@mcp.tool()
+def apply_blueprint_json(blueprint_name: str, json_data: str) -> Dict[str, Any]:
+    """Apply a JSON string to create Blueprint variables, nodes, and connections.
+
+    The JSON structure should be:
+    {
+      "variables": [
+        {"name": "VarName", "type": "Boolean", "default": false}
+      ],
+      "nodes": [
+        {"id": "node1", "type": "Event", "params": {"event_type": "BeginPlay", "pos_x": 0, "pos_y": 0}},
+        {"id": "node2", "type": "Print", "params": {"message": "Hello", "pos_x": 200, "pos_y": 0}}
+      ],
+      "connections": [
+        {"source_id": "node1", "source_pin": "then", "target_id": "node2", "target_pin": "execute"}
+      ]
+    }
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        data = json.loads(json_data)
+        results = {"variables": [], "nodes": [], "connections": [], "errors": []}
+        node_id_map = {} # Maps JSON string IDs to Unreal GUIDs
+
+        # 1. Create variables
+        for var in data.get("variables", []):
+            try:
+                res = variable_manager.create_variable(
+                    unreal,
+                    blueprint_name,
+                    var.get("name"),
+                    var.get("type", "Boolean"),
+                    var.get("default"),
+                    var.get("is_public", False)
+                )
+                results["variables"].append(res)
+            except Exception as e:
+                results["errors"].append(f"Variable error {var.get('name')}: {str(e)}")
+
+        # 2. Create nodes
+        for node in data.get("nodes", []):
+            try:
+                # Use node_manager.add_node
+                res = node_manager.add_node(
+                    unreal,
+                    blueprint_name,
+                    node.get("type"),
+                    node.get("params", {})
+                )
+                if res and res.get("success") and res.get("node_id"):
+                    node_id_map[node.get("id")] = res.get("node_id")
+                results["nodes"].append(res)
+            except Exception as e:
+                results["errors"].append(f"Node error {node.get('id')}: {str(e)}")
+
+        # 3. Create connections
+        for conn in data.get("connections", []):
+            try:
+                source_unreal_id = node_id_map.get(conn.get("source_id"), conn.get("source_id"))
+                target_unreal_id = node_id_map.get(conn.get("target_id"), conn.get("target_id"))
+
+                res = connector_manager.connect_nodes(
+                    unreal,
+                    blueprint_name,
+                    source_unreal_id,
+                    conn.get("source_pin"),
+                    target_unreal_id,
+                    conn.get("target_pin"),
+                    conn.get("function_name")
+                )
+                results["connections"].append(res)
+            except Exception as e:
+                results["errors"].append(f"Connection error: {str(e)}")
+
+        return {
+            "success": len(results["errors"]) == 0,
+            "results": results,
+            "node_mapping": node_id_map
+        }
+
+    except Exception as e:
+        logger.error(f"apply_blueprint_json error: {e}")
+        return make_error_response(str(e))
+
+@mcp.tool()
+def export_blueprint_json(blueprint_path: str, graph_name: str = "EventGraph") -> Dict[str, Any]:
+    """Export a Blueprint graph to a standardized JSON representation.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        # We reuse the analyze_blueprint_graph command which already returns graph data
+        params = {
+            "blueprint_path": blueprint_path,
+            "graph_name": graph_name,
+            "include_node_details": True,
+            "include_pin_connections": True
+        }
+        response = unreal.send_command("analyze_blueprint_graph", params)
+        if response and response.get("success"):
+            # Format as JSON string for easy copying
+            return {
+                "success": True,
+                "json_data": json.dumps(response.get("graph_data", {}), indent=2),
+                "raw_data": response.get("graph_data", {})
+            }
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"export_blueprint_json error: {e}")
+        return make_error_response(str(e))

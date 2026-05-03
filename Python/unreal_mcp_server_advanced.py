@@ -55,6 +55,15 @@ from server.blueprint_graph_tools import (
     add_function_output,
     delete_function,
     rename_function,
+    apply_blueprint_json,
+    export_blueprint_json,
+)
+
+from server.material_graph_tools import (
+    add_material_node,
+    connect_material_nodes,
+    apply_material_json,
+    export_material_json,
 )
 
 from server.material_tools import (
@@ -141,12 +150,18 @@ __all__ = [
     "add_function_output",
     "delete_function",
     "rename_function",
+    "apply_blueprint_json",
+    "export_blueprint_json",
     "get_available_materials",
     "apply_material_to_actor",
     "apply_material_to_blueprint",
     "get_actor_material_info",
     "get_blueprint_material_info",
     "set_mesh_material_color",
+    "add_material_node",
+    "connect_material_nodes",
+    "apply_material_json",
+    "export_material_json",
     "create_pyramid",
     "create_wall",
     "create_tower",

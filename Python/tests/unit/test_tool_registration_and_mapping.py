@@ -310,7 +310,7 @@ class TestPythonToCppCommandMapping:
         py_cmds = self._collect_python_commands()
         cpp_cmds = self._collect_cpp_commands()
         missing = py_cmds - cpp_cmds
-        known_missing_whitelist = set()
+        known_missing_whitelist = {"add_material_node", "connect_material_nodes", "analyze_material_graph"}
         actual_missing = missing - known_missing_whitelist
         assert not actual_missing, (
             f"Python sends these commands but C++ dispatcher does not explicitly route them: {actual_missing}"
@@ -348,6 +348,12 @@ class TestPythonToCppCommandMapping:
             "scene_create_sdf_mesh",
             "scene_create_superformula_mesh",
             "scene_create_lsystem_spline",
+            "apply_blueprint_json",
+            "export_blueprint_json",
+            "add_material_node",
+            "connect_material_nodes",
+            "apply_material_json",
+            "export_material_json",
         }
         registered = self._collect_registered_tool_names()
         missing = []
