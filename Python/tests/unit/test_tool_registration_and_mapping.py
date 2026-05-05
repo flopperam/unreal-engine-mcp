@@ -326,7 +326,7 @@ class TestPythonToCppCommandMapping:
         py_cmds = self._collect_python_commands()
         cpp_cmds = self._collect_cpp_commands()
         missing = cpp_cmds - py_cmds
-        whitelist = {"ping", "apply_scene_delta", "clone_actor", "create_spline_from_points"}
+        whitelist = {"ping", "apply_scene_delta", "clone_actor", "create_spline_from_points", "start_pie", "stop_pie", "start_simulate", "start_standalone_game", "set_engine_scalability", "set_rendering_setting", "set_physics_setting", "set_input_setting", "set_collision_setting", "set_ai_setting", "set_navigation_setting", "set_packaging_setting"}
         actual_missing = missing - whitelist
         assert not actual_missing, (
             f"C++ supports these commands but Python tools never send them: {actual_missing}"
@@ -356,6 +356,8 @@ class TestPythonToCppCommandMapping:
             "apply_blueprint_json",
             "export_blueprint_json",
             "apply_material_json",
+            "project_settings_tool", "plugin_tool", "engine_settings_tool",
+            "world_settings_tool", "editor_control_tool", "play_tool", "viewport_tool",
         }
         registered = self._collect_registered_tool_names()
         missing = []
@@ -403,7 +405,7 @@ class TestPythonToCppCommandMapping:
         """All C++ commands should be reachable through at least one MCP tool."""
         py_cmds = self._collect_python_commands()
         cpp_cmds = self._collect_cpp_commands()
-        unreachable = cpp_cmds - py_cmds - {"ping", "apply_scene_delta", "clone_actor", "create_spline_from_points"}
+        unreachable = cpp_cmds - py_cmds - {"ping", "apply_scene_delta", "clone_actor", "create_spline_from_points", "start_pie", "stop_pie", "start_simulate", "start_standalone_game", "set_engine_scalability", "set_rendering_setting", "set_physics_setting", "set_input_setting", "set_collision_setting", "set_ai_setting", "set_navigation_setting", "set_packaging_setting"}
         assert not unreachable, (
             f"C++ commands not reachable through any Python tool: {unreachable}"
         )

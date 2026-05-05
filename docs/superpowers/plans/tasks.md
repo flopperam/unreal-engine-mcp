@@ -1111,3 +1111,8 @@ Python/Rust側のテストはあります。
 
 ---
 
+
+## 2026-05-05 capability/CI audit note
+- Added automated Python unit routing coverage for project/editor control actions in `Python/tests/unit/test_project_editor_tools_routing.py`.
+- Verified existing implemented surface includes: project settings read/write, default maps, plugin enable/list, world settings get/set, save/log/undo/redo, PIE/simulate control, viewport camera control, level/sublevel/world-partition operations.
+- Noted gaps still requiring new tool work: dedicated content-browser bulk operations and dedicated import/export toolchain.

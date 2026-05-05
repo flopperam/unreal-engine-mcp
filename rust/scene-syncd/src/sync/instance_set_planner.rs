@@ -22,7 +22,8 @@ pub fn plan_instance_set_sync(
             Some(actual) => {
                 let desired_mesh = normalize_unreal_asset_path(&desired.mesh);
                 let actual_mesh = normalize_unreal_asset_path(&actual.mesh);
-                if desired.transforms.len() != actual.instance_count || desired_mesh != actual_mesh {
+                if desired.transforms.len() != actual.instance_count || desired_mesh != actual_mesh
+                {
                     ops.push(InstanceSetOperation::Update {
                         set_id: id.to_string(),
                         mesh: desired.mesh.clone(),

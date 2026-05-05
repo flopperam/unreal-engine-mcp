@@ -134,8 +134,10 @@ class TestSceneSyncLifecycleWithUnreal:
 class TestSceneSyncDBOnly:
     """Tests that only require scene-syncd and SurrealDB (no Unreal)."""
 
-    def test_health_check(self):
-        """scene-syncd health endpoint must be reachable."""
+    def test_health_check(self, scene_syncd_available):
+        """scene-syncd health endpoint must be reachable when service is up."""
+        if not scene_syncd_available:
+            pytest.skip("scene-syncd not available")
         result = api_get("/health")
         assert result.get("success") is True or "status" in result, f"Health check failed: {result}"
 
