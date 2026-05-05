@@ -45,7 +45,10 @@ public class UnrealMCP : ModuleRules
 				"EngineSettings",     // For Project/Game Maps settings
 				"UnrealEd",           // For Blueprint editing
 				"BlueprintGraph",     // For K2Node classes (F15-F22)
-				"KismetCompiler"      // For Blueprint compilation (F15-F22)
+				"KismetCompiler",     // For Blueprint compilation (F15-F22)
+				"GeometryScriptingCore",
+				"DynamicMesh",
+				"GeometryFramework"
 			}
 		);
 		
@@ -88,7 +91,8 @@ public class UnrealMCP : ModuleRules
 					"PropertyEditor",      // For property editing
 					"ToolMenus",           // For editor UI
 					"BlueprintEditorLibrary", // For Blueprint utilities
-					"LevelEditor"          // For level/map management operations
+					"LevelEditor",         // For level/map management operations
+					"StaticMeshEditor"     // For StaticMeshEditorSubsystem
 				}
 			);
 		}

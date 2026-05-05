@@ -132,6 +132,10 @@ from server.asset_import_tools import (
     asset_export_tool,
 )
 
+from server.mesh_editing_tools import (
+    asset_mesh_editing_tool,
+)
+
 
 # Explicitly bootstrap tool registration to avoid heavy import side-effects.
 from server import bootstrap
@@ -226,6 +230,7 @@ __all__ = [
     "texture_import_tool",
     "audio_import_tool",
     "asset_export_tool",
+    "asset_mesh_editing_tool",
 ]
 
 

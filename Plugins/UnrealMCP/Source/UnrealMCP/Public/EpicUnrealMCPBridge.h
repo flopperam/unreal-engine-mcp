@@ -15,6 +15,7 @@
 #include "Commands/EpicUnrealMCPProjectEditorCommands.h"
 #include "Commands/EpicUnrealMCPContentBrowserCommands.h"
 #include "Commands/EpicUnrealMCPAssetImportCommands.h"
+#include "Commands/EpicUnrealMCPMeshEditingCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "MCPServerRunnable.h"
 #include "EpicUnrealMCPBridge.generated.h"
@@ -76,6 +77,7 @@ private:
 	TSharedPtr<FEpicUnrealMCPProjectEditorCommands> ProjectEditorCommands;
 	TSharedPtr<FEpicUnrealMCPContentBrowserCommands> ContentBrowserCommands;
 	TSharedPtr<FEpicUnrealMCPAssetImportCommands> AssetImportCommands;
+	TSharedPtr<FEpicUnrealMCPMeshEditingCommands> MeshEditingCommands;
 };
 
 #endif // WITH_EDITOR

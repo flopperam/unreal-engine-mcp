@@ -85,6 +85,7 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
     ProjectEditorCommands = MakeShared<FEpicUnrealMCPProjectEditorCommands>();
     ContentBrowserCommands = MakeShared<FEpicUnrealMCPContentBrowserCommands>();
     AssetImportCommands = MakeShared<FEpicUnrealMCPAssetImportCommands>();
+    MeshEditingCommands = MakeShared<FEpicUnrealMCPMeshEditingCommands>();
 
     const UUnrealMCPSettings* Settings = GetDefault<UUnrealMCPSettings>();
     FString HostStr = Settings ? Settings->Host : TEXT(MCP_SERVER_HOST);
@@ -282,7 +283,7 @@ void UEpicUnrealMCPBridge::EnsureActorIndexInitialized()
 
 namespace
 {
-    // Command routing: 0=ping, 1=EditorCommands, 2=BlueprintCommands, 3=BlueprintGraphCommands, 4=MaterialCommands, 5=ProjectEditorCommands, 6=ContentBrowserCommands, 7=AssetImportCommands
+    // Command routing: 0=ping, 1=EditorCommands, 2=BlueprintCommands, 3=BlueprintGraphCommands, 4=MaterialCommands, 5=ProjectEditorCommands, 6=ContentBrowserCommands, 7=AssetImportCommands, 8=MeshEditingCommands
     int32 RouteCommand(const FString& CommandType)
     {
         static const TMap<FString, int32> Router = {
@@ -460,6 +461,24 @@ namespace
             {TEXT("save_import_preset"), 7},
             {TEXT("load_import_preset"), 7},
             {TEXT("export_asset"), 7},
+
+            // Mesh Editing Commands (8)
+            {TEXT("get_static_mesh_details"), 8},
+            {TEXT("set_nanite_settings"), 8},
+            {TEXT("set_lightmap_settings"), 8},
+            {TEXT("edit_mesh_bounds"), 8},
+            {TEXT("generate_collision"), 8},
+            {TEXT("set_collision_complexity"), 8},
+            {TEXT("add_simple_collision"), 8},
+            {TEXT("remove_collisions"), 8},
+            {TEXT("set_lod_group"), 8},
+            {TEXT("add_socket"), 8},
+            {TEXT("remove_socket"), 8},
+            {TEXT("update_socket"), 8},
+            {TEXT("mesh_boolean"), 8},
+            {TEXT("mesh_remesh"), 8},
+            {TEXT("mesh_simplify"), 8},
+            {TEXT("mesh_uv_unwrap"), 8}
         };
         const int32* Found = Router.Find(CommandType);
         return Found ? *Found : -1;
@@ -508,6 +527,9 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 break;
             case 7: // AssetImportCommands
                 ResultJson = AssetImportCommands->HandleCommand(CommandType, Params);
+                break;
+            case 8: // MeshEditingCommands
+                ResultJson = MeshEditingCommands->HandleCommand(CommandType, Params);
                 break;
             default:
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));

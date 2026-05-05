@@ -28,6 +28,7 @@ def bootstrap():
     from server import world_building_tools  # noqa: F401
     from server import asset_management_tools  # noqa: F401
     from server import asset_import_tools        # noqa: F401
+    from server import mesh_editing_tools        # noqa: F401
 
 
 if __name__ == "__main__":
