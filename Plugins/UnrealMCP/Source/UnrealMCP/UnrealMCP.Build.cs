@@ -64,7 +64,9 @@ public class UnrealMCP : ModuleRules
 				"Navmesh",
 				"AudioEditor",			// For USoundFactory (WAV/OGG import)
 				"RenderCore",			// For FlushRenderingCommands()
-				"ImageWrapper"			// For IImageWrapper texture export fallback
+				"ImageWrapper",			// For IImageWrapper texture export fallback
+				"UMGEditor",				// For UWidgetBlueprint and Editor Utility Widget creation
+				"UMG"					// For UUserWidget class reference
 			}
 		);
 

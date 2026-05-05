@@ -389,3 +389,194 @@ def test_comprehensive_import_workflow():
                 _send("delete_asset", asset_path=asset_path)
             except Exception:
                 pass
+
+
+class TestNewTextureAudioParams:
+    """Tests for newly wired texture/audio params (Phase 1)."""
+
+    def test_import_texture_flip_green_channel(self):
+        """Test importing a normal map with flip_green_channel=True."""
+        source_path = f"{TEST_ASSETS_DIR}/normal.png"
+        dest_path = "/Game/MCP_TestImport/Textures"
+
+        result = _send(
+            "import_texture",
+            source_path=source_path,
+            destination_path=dest_path,
+            texture_type="normal",
+            flip_green_channel=True,
+        )
+
+        try:
+            assert result.get("success"), f"Import failed: {result.get('error')}"
+        finally:
+            _cleanup_assets([dest_path])
+
+    def test_import_texture_mip_gen_settings(self):
+        """Test importing a texture with custom mip_gen_settings."""
+        source_path = f"{TEST_ASSETS_DIR}/texture.png"
+        dest_path = "/Game/MCP_TestImport/Textures"
+
+        result = _send(
+            "import_texture",
+            source_path=source_path,
+            destination_path=dest_path,
+            mip_gen_settings="NoMipmaps",
+        )
+
+        try:
+            assert result.get("success"), f"Import failed: {result.get('error')}"
+        finally:
+            _cleanup_assets([dest_path])
+
+    def test_import_audio_include_modulator(self):
+        """Test importing audio with include_modulator=True."""
+        source_path = f"{TEST_ASSETS_DIR}/sound.wav"
+        dest_path = "/Game/MCP_TestImport/Audio"
+
+        result = _send(
+            "import_audio",
+            source_path=source_path,
+            destination_path=dest_path,
+            auto_create_cue=True,
+            include_modulator=True,
+        )
+
+        imported_assets = []
+        try:
+            assert result.get("success"), f"Import failed: {result.get('error')}"
+            imported_assets = result.get("imported_assets", [])
+        finally:
+            _cleanup_assets(imported_assets if imported_assets else [dest_path])
+
+
+class TestReimport:
+    """Tests for reimport functionality (Phase 4)."""
+
+    def test_reimport_existing_asset(self):
+        """Test reimporting an existing asset."""
+        import_path = "/Game/MCP_TestImport/ReimportTest"
+
+        # First import
+        import_result = _send(
+            "import_fbx_mesh",
+            source_path=f"{TEST_ASSETS_DIR}/cube.fbx",
+            destination_path=import_path,
+            asset_name="ReimportCube",
+            import_type="static",
+        )
+
+        if not import_result.get("success"):
+            pytest.skip("Failed to import initial mesh for reimport test")
+
+        imported_assets = import_result.get("imported_assets", [])
+        if not imported_assets:
+            pytest.skip("No imported assets returned")
+        asset_path = imported_assets[0]
+
+        try:
+            result = _send("reimport_asset", asset_path=asset_path)
+            assert result.get("success"), f"Reimport failed: {result.get('error')}"
+        finally:
+            _cleanup_assets([asset_path])
+
+    def test_reimport_nonexistent_asset(self):
+        """Test error handling for reimporting a non-existent asset."""
+        result = _send("reimport_asset", asset_path="/Game/NonExistent/Asset")
+        assert not result.get("success")
+        assert "error" in result
+
+
+class TestScreenshot:
+    """Tests for screenshot export (Phase 4)."""
+
+    def test_take_screenshot_default_path(self):
+        """Test taking a screenshot with default path."""
+        result = _send("take_screenshot")
+
+        assert result.get("success"), f"Screenshot failed: {result.get('error')}"
+        assert "output_path" in result
+        assert os.path.exists(result["output_path"]), "Screenshot file not found"
+        assert result.get("width", 0) > 0
+        assert result.get("height", 0) > 0
+
+        # Cleanup
+        if os.path.exists(result["output_path"]):
+            os.remove(result["output_path"])
+
+    def test_take_screenshot_custom_path(self):
+        """Test taking a screenshot with a custom output path."""
+        output_path = f"{TEST_OUTPUT_DIR}/custom_screenshot.png"
+
+        result = _send("take_screenshot", output_path=output_path)
+
+        assert result.get("success"), f"Screenshot failed: {result.get('error')}"
+        assert result.get("output_path") == output_path
+        assert os.path.exists(output_path), "Custom screenshot file not found"
+
+        # Cleanup
+        if os.path.exists(output_path):
+            os.remove(output_path)
+
+
+class TestLevelExport:
+    """Tests for level export (Phase 4)."""
+
+    def test_export_level_default_path(self):
+        """Test exporting the current level with default path."""
+        result = _send("export_level")
+
+        assert result.get("success"), f"Level export failed: {result.get('error')}"
+        assert "output_path" in result
+        assert os.path.exists(result["output_path"]), "Level export file not found"
+        assert result.get("format") == "json"
+        assert result.get("actor_count", 0) >= 0
+
+        # Cleanup
+        if os.path.exists(result["output_path"]):
+            os.remove(result["output_path"])
+
+    def test_export_level_custom_path(self):
+        """Test exporting the current level to a custom path."""
+        output_path = f"{TEST_OUTPUT_DIR}/level_export.json"
+
+        result = _send("export_level", output_path=output_path)
+
+        assert result.get("success"), f"Level export failed: {result.get('error')}"
+        assert result.get("output_path") == output_path
+        assert os.path.exists(output_path), "Custom level export file not found"
+
+        # Cleanup
+        if os.path.exists(output_path):
+            os.remove(output_path)
+
+
+class TestImportPreset:
+    """Tests for import preset save/load (Phase 4)."""
+
+    def test_save_and_load_preset(self):
+        """Test saving and loading an import preset."""
+        preset_name = "test_preset_fbx"
+        preset_data = {"scale": 2.0, "nanite_enabled": True}
+
+        # Save
+        save_result = _send(
+            "save_import_preset",
+            preset_name=preset_name,
+            preset_data=preset_data,
+        )
+        assert save_result.get("success"), f"Save preset failed: {save_result.get('error')}"
+
+        # Load
+        load_result = _send("load_import_preset", preset_name=preset_name)
+        assert load_result.get("success"), f"Load preset failed: {load_result.get('error')}"
+        assert load_result.get("preset_name") == preset_name
+        loaded_data = load_result.get("preset_data", {})
+        assert loaded_data.get("scale") == 2.0
+        assert loaded_data.get("nanite_enabled") is True
+
+    def test_load_nonexistent_preset(self):
+        """Test error handling for loading a non-existent preset."""
+        result = _send("load_import_preset", preset_name="nonexistent_preset_xyz")
+        assert not result.get("success")
+        assert "error" in result

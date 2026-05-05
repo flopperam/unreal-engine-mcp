@@ -410,6 +410,8 @@ namespace
             {TEXT("get_camera_position"), 5},
             {TEXT("set_camera_position"), 5},
             {TEXT("viewport_action"), 5},
+            {TEXT("take_screenshot"), 5},
+            {TEXT("export_level"), 5},
             // Content Browser Commands (6)
             {TEXT("create_folder"), 6},
             {TEXT("delete_folder"), 6},
@@ -448,6 +450,15 @@ namespace
             {TEXT("import_fbx_mesh"), 7},
             {TEXT("import_texture"), 7},
             {TEXT("import_audio"), 7},
+            {TEXT("import_gltf"), 7},
+            {TEXT("import_obj"), 7},
+            {TEXT("import_usd"), 7},
+            {TEXT("import_mp3"), 7},
+            {TEXT("import_alembic"), 7},
+            {TEXT("import_datasmith"), 7},
+            {TEXT("reimport_asset"), 7},
+            {TEXT("save_import_preset"), 7},
+            {TEXT("load_import_preset"), 7},
             {TEXT("export_asset"), 7},
         };
         const int32* Found = Router.Find(CommandType);

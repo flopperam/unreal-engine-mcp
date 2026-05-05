@@ -26,11 +26,14 @@ def fbx_mesh_import_tool(
     generate_lightmap_uv: bool = True,
     nanite_enabled: bool = False,
     lod_group: Optional[str] = None,
+    lod_screen_sizes: Optional[list] = None,
+    lod_count: Optional[int] = None,
+    auto_generate_materials: bool = False,
 ) -> Dict[str, Any]:
     """Import an FBX file as a Static or Skeletal Mesh into Unreal Engine.
 
-    Supports FBX files containing either static meshes (geometry only) or 
-    skeletal meshes (with bones/rigging). Auto-detects type if import_type 
+    Supports FBX files containing either static meshes (geometry only) or
+    skeletal meshes (with bones/rigging). Auto-detects type if import_type
     is 'auto'.
 
     Args:
@@ -44,6 +47,9 @@ def fbx_mesh_import_tool(
         generate_lightmap_uv: Auto-generate lightmap UV channel (default True)
         nanite_enabled: Enable Nanite for static meshes (UE5.7+, default False)
         lod_group: LOD group preset name (e.g., "SmallProp", "LargeProp")
+        lod_screen_sizes: Optional list of screen-size thresholds for custom LODs.
+        lod_count: Optional explicit LOD count override.
+        auto_generate_materials: Create placeholder materials for each mesh slot (default False)
 
     Returns:
         Dict with success status, imported_assets list, count, source_path, destination_path
@@ -77,6 +83,11 @@ def fbx_mesh_import_tool(
             params["asset_name"] = asset_name
         if lod_group is not None:
             params["lod_group"] = lod_group
+        if lod_screen_sizes is not None:
+            params["lod_screen_sizes"] = lod_screen_sizes
+        if lod_count is not None:
+            params["lod_count"] = lod_count
+        params["auto_generate_materials"] = auto_generate_materials
 
         return unreal.send_command("import_fbx_mesh", params)
     except Exception as e:
@@ -254,4 +265,379 @@ def asset_export_tool(
         return unreal.send_command("export_asset", params)
     except Exception as e:
         logger.error(f"asset_export_tool error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def gltf_import_tool(
+    source_path: str,
+    destination_path: str,
+    asset_name: Optional[str] = None,
+    auto_generate_materials: bool = False,
+) -> Dict[str, Any]:
+    """Import a GLTF/GLB file into Unreal Engine.
+
+    Requires the GLTFImporter plugin to be enabled in the project.
+
+    Args:
+        source_path: Absolute disk path to the .gltf or .glb file.
+        destination_path: Package path where the asset will be imported.
+        asset_name: Optional name for the imported asset.
+        auto_generate_materials: Create placeholder materials for each mesh slot (default False)
+
+    Returns:
+        Dict with success status, imported_assets list, count, source_path, destination_path
+    """
+    try:
+        validate_string(source_path, "source_path")
+        validate_string(destination_path, "destination_path")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {
+            "source_path": source_path,
+            "destination_path": destination_path,
+            "auto_generate_materials": auto_generate_materials,
+        }
+        if asset_name is not None:
+            params["asset_name"] = asset_name
+        return unreal.send_command("import_gltf", params)
+    except Exception as e:
+        logger.error(f"gltf_import_tool error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def obj_import_tool(
+    source_path: str,
+    destination_path: str,
+    asset_name: Optional[str] = None,
+    auto_generate_materials: bool = False,
+) -> Dict[str, Any]:
+    """Import an OBJ file into Unreal Engine as a Static Mesh.
+
+    Uses the FBX SDK under the hood for OBJ parsing.
+
+    Args:
+        source_path: Absolute disk path to the .obj file.
+        destination_path: Package path where the asset will be imported.
+        asset_name: Optional name for the imported asset.
+        auto_generate_materials: Create placeholder materials for each mesh slot (default False)
+
+    Returns:
+        Dict with success status, imported_assets list, count, source_path, destination_path
+    """
+    try:
+        validate_string(source_path, "source_path")
+        validate_string(destination_path, "destination_path")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {
+            "source_path": source_path,
+            "destination_path": destination_path,
+            "auto_generate_materials": auto_generate_materials,
+        }
+        if asset_name is not None:
+            params["asset_name"] = asset_name
+        return unreal.send_command("import_obj", params)
+    except Exception as e:
+        logger.error(f"obj_import_tool error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def usd_import_tool(
+    source_path: str,
+    destination_path: str,
+    asset_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Import a USD file (.usd, .usda, .usdc) into Unreal Engine.
+
+    Requires the USDImporter plugin to be enabled in the project.
+
+    Args:
+        source_path: Absolute disk path to the USD file.
+        destination_path: Package path where the asset will be imported.
+        asset_name: Optional name for the imported asset.
+
+    Returns:
+        Dict with success status, imported_assets list, count, source_path, destination_path
+    """
+    try:
+        validate_string(source_path, "source_path")
+        validate_string(destination_path, "destination_path")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {"source_path": source_path, "destination_path": destination_path}
+        if asset_name is not None:
+            params["asset_name"] = asset_name
+        return unreal.send_command("import_usd", params)
+    except Exception as e:
+        logger.error(f"usd_import_tool error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def mp3_import_tool(
+    source_path: str,
+    destination_path: str,
+    asset_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """MP3 import is not supported.
+
+    Unreal Engine's USoundFactory does not natively support MP3.
+    Please convert the file to WAV or OGG before importing.
+
+    Args:
+        source_path: Absolute disk path to the .mp3 file.
+        destination_path: Package path where the asset would be imported.
+        asset_name: Optional name for the imported asset.
+
+    Returns:
+        Error response explaining the conversion requirement.
+    """
+    return make_error_response(
+        "MP3 import is not supported. Please convert the file to WAV or OGG before importing."
+    )
+
+
+@mcp.tool()
+def alembic_import_tool(
+    source_path: str,
+    destination_path: str,
+    asset_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Import an Alembic file (.abc) into Unreal Engine.
+
+    Requires the AlembicImporter plugin to be enabled in the project.
+
+    Args:
+        source_path: Absolute disk path to the .abc file.
+        destination_path: Package path where the asset will be imported.
+        asset_name: Optional name for the imported asset.
+
+    Returns:
+        Dict with success status, imported_assets list, count, source_path, destination_path
+    """
+    try:
+        validate_string(source_path, "source_path")
+        validate_string(destination_path, "destination_path")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {"source_path": source_path, "destination_path": destination_path}
+        if asset_name is not None:
+            params["asset_name"] = asset_name
+        return unreal.send_command("import_alembic", params)
+    except Exception as e:
+        logger.error(f"alembic_import_tool error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def datasmith_import_tool(
+    source_path: str,
+    destination_path: str,
+    asset_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Import a Datasmith file (.udatasmith) into Unreal Engine.
+
+    Requires the DatasmithImporter plugin to be enabled in the project.
+
+    Args:
+        source_path: Absolute disk path to the .udatasmith file.
+        destination_path: Package path where the asset will be imported.
+        asset_name: Optional name for the imported asset.
+
+    Returns:
+        Dict with success status, imported_assets list, count, source_path, destination_path
+    """
+    try:
+        validate_string(source_path, "source_path")
+        validate_string(destination_path, "destination_path")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {"source_path": source_path, "destination_path": destination_path}
+        if asset_name is not None:
+            params["asset_name"] = asset_name
+        return unreal.send_command("import_datasmith", params)
+    except Exception as e:
+        logger.error(f"datasmith_import_tool error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def reimport_asset_tool(
+    asset_path: str,
+) -> Dict[str, Any]:
+    """Reimport an existing Unreal Engine asset from its original source file.
+
+    Args:
+        asset_path: Unreal asset path (e.g., "/Game/Imported/MyMesh")
+
+    Returns:
+        Dict with success status, asset_path, and error message if reimport failed.
+    """
+    try:
+        validate_string(asset_path, "asset_path")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        return unreal.send_command("reimport_asset", {"asset_path": asset_path})
+    except Exception as e:
+        logger.error(f"reimport_asset_tool error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def take_screenshot_tool(
+    output_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Take a screenshot of the active Unreal Engine editor viewport.
+
+    Args:
+        output_path: Optional absolute disk path for the screenshot. If not provided,
+                     saves to ProjectSavedDir/Screenshots/MCP_Screenshot_YYYYMMDD_HHMMSS.png
+
+    Returns:
+        Dict with success status, output_path, width, height.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {}
+        if output_path is not None:
+            params["output_path"] = output_path
+        return unreal.send_command("take_screenshot", params)
+    except Exception as e:
+        logger.error(f"take_screenshot_tool error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def save_import_preset_tool(
+    preset_name: str,
+    preset_data: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Save an import preset JSON blob for later reuse.
+
+    Presets are stored in the project's Saved/MCP_ImportPresets/ directory.
+    They can be referenced by name in subsequent import calls.
+
+    Args:
+        preset_name: Unique name for the preset (e.g., "hero_character_fbx")
+        preset_data: JSON-serializable dict with factory settings overrides.
+
+    Returns:
+        Dict with success status and preset_path.
+    """
+    try:
+        validate_string(preset_name, "preset_name")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        return unreal.send_command("save_import_preset", {
+            "preset_name": preset_name,
+            "preset_data": preset_data,
+        })
+    except Exception as e:
+        logger.error(f"save_import_preset_tool error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def load_import_preset_tool(
+    preset_name: str,
+) -> Dict[str, Any]:
+    """Load a previously saved import preset by name.
+
+    Args:
+        preset_name: Name of the preset to load.
+
+    Returns:
+        Dict with success status, preset_name, and preset_data.
+    """
+    try:
+        validate_string(preset_name, "preset_name")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        return unreal.send_command("load_import_preset", {"preset_name": preset_name})
+    except Exception as e:
+        logger.error(f"load_import_preset_tool error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def export_level_tool(
+    output_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Export the current level as a JSON manifest.
+
+    Iterates all actors in the persistent level and writes their
+    name, class, transform, and static mesh info to disk.
+
+    Args:
+        output_path: Optional absolute disk path for the JSON file.
+                     Defaults to ProjectSavedDir/LevelExports/<LevelName>_<timestamp>.json
+
+    Returns:
+        Dict with success status, output_path, actor_count, and format.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {}
+        if output_path is not None:
+            params["output_path"] = output_path
+        return unreal.send_command("export_level", params)
+    except Exception as e:
+        logger.error(f"export_level_tool error: {e}")
         return make_error_response(str(e))

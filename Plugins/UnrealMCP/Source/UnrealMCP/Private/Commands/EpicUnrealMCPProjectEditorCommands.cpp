@@ -37,6 +37,14 @@
 #include "GameFramework/Volume.h"
 #include "UObject/Package.h"
 #include "WorldPartition/WorldPartition.h"
+#include "WorldPartition/DataLayer/DataLayerAsset.h"
+#include "WorldPartition/HLOD/HLODLayer.h"
+#include "Kismet2/KismetEditorUtilities.h"
+#include "Engine/BlueprintGeneratedClass.h"
+#include "WidgetBlueprint.h"
+#include "Blueprint/UserWidget.h"
+#include "FileHelpers.h"
+#include "ImageUtils.h"
 
 FEpicUnrealMCPProjectEditorCommands::FEpicUnrealMCPProjectEditorCommands() {}
 
@@ -111,6 +119,8 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleCommand(const
         {TEXT("get_camera_position"), &FEpicUnrealMCPProjectEditorCommands::HandleGetCameraPosition},
         {TEXT("set_camera_position"), &FEpicUnrealMCPProjectEditorCommands::HandleSetCameraPosition},
         {TEXT("viewport_action"), &FEpicUnrealMCPProjectEditorCommands::HandleViewportAction},
+        {TEXT("take_screenshot"), &FEpicUnrealMCPProjectEditorCommands::HandleTakeScreenshot},
+        {TEXT("export_level"), &FEpicUnrealMCPProjectEditorCommands::HandleExportLevel},
     };
     const Handler* H = Dispatch.Find(CommandType);
     if (H) { return (this->*(*H))(Params); }
@@ -673,19 +683,101 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleGetEditorLog(
 TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleCreateUtilityWidget(const TSharedPtr<FJsonObject>& Params)
 {
     FString AssetPath; if (!Params->TryGetStringField(TEXT("asset_path"), AssetPath)) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing asset_path")); }
+
+    FString AssetName = FPaths::GetBaseFilename(AssetPath);
+    FString PackagePath = FPaths::GetPath(AssetPath);
+    if (PackagePath.IsEmpty())
+    {
+        PackagePath = TEXT("/Game/EditorWidgets");
+    }
+
+    FString FullPackagePath = PackagePath / AssetName;
+    UPackage* Package = CreatePackage(*FullPackagePath);
+    if (!Package)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create package for utility widget"));
+    }
+
+    UWidgetBlueprint* WidgetBP = Cast<UWidgetBlueprint>(
+        FKismetEditorUtilities::CreateBlueprint(
+            UUserWidget::StaticClass(),
+            Package,
+            FName(*AssetName),
+            BPTYPE_Normal,
+            UWidgetBlueprint::StaticClass(),
+            UBlueprintGeneratedClass::StaticClass(),
+            FName("MCP")
+        )
+    );
+
+    if (!WidgetBP)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create Widget Blueprint"));
+    }
+
+    FAssetRegistryModule::AssetCreated(WidgetBP);
+    Package->MarkPackageDirty();
+
+    TArray<UPackage*> PackagesToSave;
+    PackagesToSave.Add(Package);
+    FEditorFileUtils::PromptForCheckoutAndSave(PackagesToSave, false, false);
+
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
-    R->SetBoolField(TEXT("success"), false);
-    R->SetStringField(TEXT("error"), TEXT("Editor Utility Widget creation not yet implemented. Requires UMGEditor module."));
-    R->SetStringField(TEXT("asset_path"), AssetPath); return R;
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("asset_path"), FullPackagePath);
+    R->SetStringField(TEXT("asset_name"), AssetName);
+    R->SetStringField(TEXT("parent_class"), UUserWidget::StaticClass()->GetName());
+    return R;
 }
 
 TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleCreateUtilityBlueprint(const TSharedPtr<FJsonObject>& Params)
 {
     FString AssetPath; if (!Params->TryGetStringField(TEXT("asset_path"), AssetPath)) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing asset_path")); }
+
+    FString AssetName = FPaths::GetBaseFilename(AssetPath);
+    FString PackagePath = FPaths::GetPath(AssetPath);
+    if (PackagePath.IsEmpty())
+    {
+        PackagePath = TEXT("/Game/EditorBlueprints");
+    }
+
+    FString FullPackagePath = PackagePath / AssetName;
+    UPackage* Package = CreatePackage(*FullPackagePath);
+    if (!Package)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create package for utility blueprint"));
+    }
+
+    UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
+        UObject::StaticClass(),
+        Package,
+        FName(*AssetName),
+        BPTYPE_FunctionLibrary,
+        UBlueprint::StaticClass(),
+        UBlueprintGeneratedClass::StaticClass(),
+        FName("MCP")
+    );
+
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create Utility Blueprint"));
+    }
+
+    Blueprint->BlueprintCategory = TEXT("Editor");
+    FAssetRegistryModule::AssetCreated(Blueprint);
+    Package->MarkPackageDirty();
+
+    TArray<UPackage*> PackagesToSave;
+    PackagesToSave.Add(Package);
+    FEditorFileUtils::PromptForCheckoutAndSave(PackagesToSave, false, false);
+
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
-    R->SetBoolField(TEXT("success"), false);
-    R->SetStringField(TEXT("error"), TEXT("Editor Utility Blueprint creation not yet implemented. Requires UMGEditor module."));
-    R->SetStringField(TEXT("asset_path"), AssetPath); return R;
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("asset_path"), FullPackagePath);
+    R->SetStringField(TEXT("asset_name"), AssetName);
+    R->SetStringField(TEXT("blueprint_type"), TEXT("FunctionLibrary"));
+    R->SetStringField(TEXT("category"), TEXT("Editor"));
+    return R;
 }
 
 TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleExecutePythonScript(const TSharedPtr<FJsonObject>& Params)
@@ -913,6 +1005,196 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleViewportActio
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true); R->SetStringField(TEXT("action"), Action); return R;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params)
+{
+    FString OutputPath;
+    Params->TryGetStringField(TEXT("output_path"), OutputPath);
+
+    if (OutputPath.IsEmpty())
+    {
+        FDateTime Now = FDateTime::Now();
+        FString Timestamp = Now.ToString(TEXT("%Y%m%d_%H%M%S"));
+        OutputPath = FPaths::ProjectSavedDir() / TEXT("Screenshots") / FString::Printf(TEXT("MCP_Screenshot_%s.png"), *Timestamp);
+    }
+
+    // Ensure directory exists
+    FString OutputDir = FPaths::GetPath(OutputPath);
+    IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+    if (!PlatformFile.DirectoryExists(*OutputDir))
+    {
+        PlatformFile.CreateDirectoryTree(*OutputDir);
+    }
+
+    FEditorViewportClient* Client = GetSafeEditorViewportClient();
+    if (!Client)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor viewport client available"));
+    }
+
+    FViewport* Viewport = Client->Viewport;
+    if (!Viewport)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No active viewport available"));
+    }
+
+    // Read viewport pixels
+    TArray<FColor> Bitmap;
+    FIntRect Rect(0, 0, Viewport->GetSizeXY().X, Viewport->GetSizeXY().Y);
+    bool bReadSuccess = Viewport->ReadPixels(Bitmap, FReadSurfaceDataFlags(), Rect);
+    if (!bReadSuccess || Bitmap.Num() == 0)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to read viewport pixels"));
+    }
+
+    // Flip vertically (Unreal renders top-down, most image formats expect bottom-up)
+    const int32 Width = Rect.Width();
+    const int32 Height = Rect.Height();
+    for (int32 Y = 0; Y < Height / 2; ++Y)
+    {
+        for (int32 X = 0; X < Width; ++X)
+        {
+            Swap(Bitmap[Y * Width + X], Bitmap[(Height - 1 - Y) * Width + X]);
+        }
+    }
+
+    // Save via FImageUtils (UE 5.7 takes FImageView)
+    FImageView ImageView(Bitmap.GetData(), Width, Height);
+    FImageUtils::SaveImageByExtension(*OutputPath, ImageView);
+
+    bool bFileExists = FPaths::FileExists(OutputPath);
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), bFileExists);
+    Result->SetStringField(TEXT("output_path"), OutputPath);
+    Result->SetNumberField(TEXT("width"), Width);
+    Result->SetNumberField(TEXT("height"), Height);
+    if (!bFileExists)
+    {
+        Result->SetStringField(TEXT("error"), TEXT("Screenshot was captured but the file may not have been saved correctly."));
+    }
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleExportLevel(const TSharedPtr<FJsonObject>& Params)
+{
+    if (!GEditor) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("GEditor not available")); }
+
+    FString OutputPath;
+    Params->TryGetStringField(TEXT("output_path"), OutputPath);
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No active world available"));
+    }
+
+    ULevel* CurrentLevel = World->GetCurrentLevel();
+    if (!CurrentLevel)
+    {
+        CurrentLevel = World->PersistentLevel;
+    }
+    if (!CurrentLevel)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No persistent level available"));
+    }
+
+    if (OutputPath.IsEmpty())
+    {
+        FDateTime Now = FDateTime::Now();
+        FString Timestamp = Now.ToString(TEXT("%Y%m%d_%H%M%S"));
+        FString LevelName = FPaths::GetBaseFilename(CurrentLevel->GetOutermost()->GetName());
+        OutputPath = FPaths::ProjectSavedDir() / TEXT("LevelExports") / FString::Printf(TEXT("%s_%s.json"), *LevelName, *Timestamp);
+    }
+
+    FString OutputDir = FPaths::GetPath(OutputPath);
+    IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+    if (!PlatformFile.DirectoryExists(*OutputDir))
+    {
+        PlatformFile.CreateDirectoryTree(*OutputDir);
+    }
+
+    TSharedPtr<FJsonObject> LevelJson = MakeShared<FJsonObject>();
+    LevelJson->SetStringField(TEXT("level_name"), CurrentLevel->GetOutermost()->GetName());
+    LevelJson->SetStringField(TEXT("world_name"), World->GetName());
+
+    TArray<TSharedPtr<FJsonValue>> ActorArray;
+    int32 ActorCount = 0;
+    FBox LevelBounds(ForceInit);
+
+    for (AActor* Actor : CurrentLevel->Actors)
+    {
+        if (!Actor) { continue; }
+        ActorCount++;
+
+        TSharedPtr<FJsonObject> ActorJson = MakeShared<FJsonObject>();
+        ActorJson->SetStringField(TEXT("name"), Actor->GetName());
+        ActorJson->SetStringField(TEXT("class"), Actor->GetClass()->GetName());
+        ActorJson->SetStringField(TEXT("label"), Actor->GetActorLabel());
+
+        FVector Loc = Actor->GetActorLocation();
+        TSharedPtr<FJsonObject> LocJson = MakeShared<FJsonObject>();
+        LocJson->SetNumberField(TEXT("x"), Loc.X);
+        LocJson->SetNumberField(TEXT("y"), Loc.Y);
+        LocJson->SetNumberField(TEXT("z"), Loc.Z);
+        ActorJson->SetObjectField(TEXT("location"), LocJson);
+
+        FRotator Rot = Actor->GetActorRotation();
+        TSharedPtr<FJsonObject> RotJson = MakeShared<FJsonObject>();
+        RotJson->SetNumberField(TEXT("pitch"), Rot.Pitch);
+        RotJson->SetNumberField(TEXT("yaw"), Rot.Yaw);
+        RotJson->SetNumberField(TEXT("roll"), Rot.Roll);
+        ActorJson->SetObjectField(TEXT("rotation"), RotJson);
+
+        FVector Scale = Actor->GetActorScale3D();
+        TSharedPtr<FJsonObject> ScaleJson = MakeShared<FJsonObject>();
+        ScaleJson->SetNumberField(TEXT("x"), Scale.X);
+        ScaleJson->SetNumberField(TEXT("y"), Scale.Y);
+        ScaleJson->SetNumberField(TEXT("z"), Scale.Z);
+        ActorJson->SetObjectField(TEXT("scale"), ScaleJson);
+
+        UStaticMeshComponent* SMC = Actor->FindComponentByClass<UStaticMeshComponent>();
+        if (SMC && SMC->GetStaticMesh())
+        {
+            ActorJson->SetStringField(TEXT("static_mesh"), SMC->GetStaticMesh()->GetName());
+        }
+
+        ActorArray.Add(MakeShared<FJsonValueObject>(ActorJson));
+        LevelBounds += Actor->GetActorLocation();
+    }
+
+    LevelJson->SetNumberField(TEXT("actor_count"), ActorCount);
+    LevelJson->SetArrayField(TEXT("actors"), ActorArray);
+
+    if (LevelBounds.IsValid)
+    {
+        TSharedPtr<FJsonObject> BoundsJson = MakeShared<FJsonObject>();
+        FVector Min = LevelBounds.Min;
+        FVector Max = LevelBounds.Max;
+        BoundsJson->SetNumberField(TEXT("min_x"), Min.X);
+        BoundsJson->SetNumberField(TEXT("min_y"), Min.Y);
+        BoundsJson->SetNumberField(TEXT("min_z"), Min.Z);
+        BoundsJson->SetNumberField(TEXT("max_x"), Max.X);
+        BoundsJson->SetNumberField(TEXT("max_y"), Max.Y);
+        BoundsJson->SetNumberField(TEXT("max_z"), Max.Z);
+        LevelJson->SetObjectField(TEXT("approx_bounds"), BoundsJson);
+    }
+
+    FString JsonString;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&JsonString);
+    FJsonSerializer::Serialize(LevelJson.ToSharedRef(), Writer);
+
+    if (!FFileHelper::SaveStringToFile(JsonString, *OutputPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Failed to write export file: %s"), *OutputPath));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("output_path"), OutputPath);
+    Result->SetNumberField(TEXT("actor_count"), ActorCount);
+    Result->SetStringField(TEXT("format"), TEXT("json"));
+    return Result;
 }
 
 // ---------------------------------------------------------------------------
@@ -1630,6 +1912,28 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleAddActorsToDa
     UWorld* World = GEditor->GetEditorWorldContext().World();
     if (!World) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor world available")); }
 
+    // Load the DataLayerAsset by name using the asset registry
+    UDataLayerAsset* DataLayerAsset = nullptr;
+    {
+        FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+        IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+        TArray<FAssetData> Assets;
+        AssetRegistry.GetAssetsByClass(UDataLayerAsset::StaticClass()->GetClassPathName(), Assets, true);
+        for (const FAssetData& Asset : Assets)
+        {
+            if (Asset.AssetName.ToString() == DataLayerName)
+            {
+                DataLayerAsset = Cast<UDataLayerAsset>(Asset.GetAsset());
+                break;
+            }
+        }
+    }
+    if (!DataLayerAsset)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("DataLayerAsset '%s' not found. Create it first."), *DataLayerName));
+    }
+
     int32 ModifiedCount = 0;
     for (const TSharedPtr<FJsonValue>& Val : *ActorNames)
     {
@@ -1638,15 +1942,22 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleAddActorsToDa
         {
             if (It->GetName() == ActorName || It->GetActorLabel() == ActorName)
             {
-                // Direct property modification via reflection to avoid version-specific struct names
                 FProperty* Prop = It->GetClass()->FindPropertyByName(FName(TEXT("DataLayerAssets")));
                 if (Prop && Prop->IsA<FArrayProperty>())
                 {
                     FArrayProperty* ArrProp = CastField<FArrayProperty>(Prop);
                     FScriptArrayHelper ArrayHelper(ArrProp, ArrProp->ContainerPtrToValuePtr<void>(*It));
-                    // Note: Appending a null soft-object ptr is a stub; real implementation needs UDataLayerAsset* load
-                    int32 NewIndex = ArrayHelper.AddValue();
-                    ModifiedCount++;
+                    FProperty* InnerProp = ArrProp->Inner;
+                    if (InnerProp)
+                    {
+                        // Use CopyCompleteValue to safely set the TSoftObjectPtr<UDataLayerAsset>
+                        int32 NewIndex = ArrayHelper.AddValue();
+                        void* ElementPtr = ArrayHelper.GetRawPtr(NewIndex);
+                        TSoftObjectPtr<UDataLayerAsset> TargetPtr(DataLayerAsset);
+                        InnerProp->CopyCompleteValue(ElementPtr, &TargetPtr);
+                        It->Modify();
+                        ModifiedCount++;
+                    }
                 }
                 break;
             }
@@ -1656,7 +1967,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleAddActorsToDa
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);
     R->SetNumberField(TEXT("modified_count"), ModifiedCount);
-    R->SetStringField(TEXT("note"), TEXT("Data layer assignment is a stub; production code should load UDataLayerAsset and set the soft-object ptr."));
+    R->SetStringField(TEXT("data_layer_name"), DataLayerName);
     return R;
 }
 
@@ -1669,6 +1980,28 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleRemoveActorsF
     UWorld* World = GEditor->GetEditorWorldContext().World();
     if (!World) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor world available")); }
 
+    // Load the DataLayerAsset by name using the asset registry
+    UDataLayerAsset* DataLayerAsset = nullptr;
+    {
+        FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+        IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+        TArray<FAssetData> Assets;
+        AssetRegistry.GetAssetsByClass(UDataLayerAsset::StaticClass()->GetClassPathName(), Assets, true);
+        for (const FAssetData& Asset : Assets)
+        {
+            if (Asset.AssetName.ToString() == DataLayerName)
+            {
+                DataLayerAsset = Cast<UDataLayerAsset>(Asset.GetAsset());
+                break;
+            }
+        }
+    }
+    if (!DataLayerAsset)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("DataLayerAsset '%s' not found."), *DataLayerName));
+    }
+
     int32 ModifiedCount = 0;
     for (const TSharedPtr<FJsonValue>& Val : *ActorNames)
     {
@@ -1682,8 +2015,24 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleRemoveActorsF
                 {
                     FArrayProperty* ArrProp = CastField<FArrayProperty>(Prop);
                     FScriptArrayHelper ArrayHelper(ArrProp, ArrProp->ContainerPtrToValuePtr<void>(*It));
-                    ArrayHelper.EmptyValues();
-                    ModifiedCount++;
+                    FProperty* InnerProp = ArrProp->Inner;
+                    if (InnerProp)
+                    {
+                        TSoftObjectPtr<UDataLayerAsset> TargetPtr(DataLayerAsset);
+                        // Remove only entries matching the target data layer
+                        for (int32 i = ArrayHelper.Num() - 1; i >= 0; --i)
+                        {
+                            void* ElementPtr = ArrayHelper.GetRawPtr(i);
+                            TSoftObjectPtr<UDataLayerAsset> CurrentPtr;
+                            InnerProp->CopyCompleteValue(&CurrentPtr, ElementPtr);
+                            if (CurrentPtr == TargetPtr)
+                            {
+                                ArrayHelper.RemoveValues(i);
+                                It->Modify();
+                                ModifiedCount++;
+                            }
+                        }
+                    }
                 }
                 break;
             }
@@ -1693,6 +2042,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleRemoveActorsF
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);
     R->SetNumberField(TEXT("modified_count"), ModifiedCount);
+    R->SetStringField(TEXT("data_layer_name"), DataLayerName);
     return R;
 }
 
@@ -1721,10 +2071,32 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleSetDataLayerE
 TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleCreateHLODLayer(const TSharedPtr<FJsonObject>& Params)
 {
     FString LayerName; if (!Params->TryGetStringField(TEXT("name"), LayerName)) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing name")); }
+
+    FString PackagePath = FPaths::Combine(TEXT("/Game"), TEXT("HLOD"), LayerName);
+    UPackage* Package = CreatePackage(*PackagePath);
+    if (!Package)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create package for HLOD layer"));
+    }
+
+    UHLODLayer* HLODLayer = NewObject<UHLODLayer>(Package, FName(*LayerName), RF_Public | RF_Standalone);
+    if (!HLODLayer)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create HLOD layer object"));
+    }
+
+    FAssetRegistryModule::AssetCreated(HLODLayer);
+    Package->MarkPackageDirty();
+
+    TArray<UPackage*> PackagesToSave;
+    PackagesToSave.Add(Package);
+    FEditorFileUtils::PromptForCheckoutAndSave(PackagesToSave, false, false);
+
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);
     R->SetStringField(TEXT("name"), LayerName);
-    R->SetStringField(TEXT("note"), TEXT("HLOD layer creation is a stub. Use the editor HLOD system or WorldPartitionHLODBuilderCommandlet."));
+    R->SetStringField(TEXT("asset_path"), PackagePath);
+    R->SetStringField(TEXT("note"), TEXT("HLOD layer created. Assign to actors via their HLODLayer property."));
     return R;
 }
 

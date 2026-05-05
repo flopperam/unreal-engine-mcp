@@ -104,4 +104,6 @@ private:
     TSharedPtr<FJsonObject> HandleGetCameraPosition(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetCameraPosition(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleViewportAction(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleExportLevel(const TSharedPtr<FJsonObject>& Params);
 };

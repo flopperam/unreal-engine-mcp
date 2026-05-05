@@ -1776,18 +1776,49 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPContentBrowserCommands::HandleGetAssetMana
 
 TSharedPtr<FJsonObject> FEpicUnrealMCPContentBrowserCommands::HandleSetAssetManagerSettings(const TSharedPtr<FJsonObject>& Params)
 {
-    UAssetManager* AssetManagerPtr = UAssetManager::GetIfInitialized();
-    if (!AssetManagerPtr)
+    // Build the DefaultGame.ini path
+    FString ConfigPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectConfigDir() / TEXT("DefaultGame.ini"));
+    FPaths::MakeStandardFilename(ConfigPath);
+    ConfigPath = FConfigCacheIni::NormalizeConfigIniPath(ConfigPath);
+
+    const TCHAR* Section = TEXT("/Script/Engine.AssetManagerSettings");
+    bool bWroteAny = false;
+
+    int32 DefaultPriority = -1;
+    if (Params->TryGetNumberField(TEXT("default_priority"), DefaultPriority))
     {
-        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Asset Manager not initialized"));
+        GConfig->SetInt(Section, TEXT("DefaultPriority"), DefaultPriority, *ConfigPath);
+        bWroteAny = true;
     }
 
-    UAssetManager& AssetManager = *AssetManagerPtr;
+    int32 DefaultChunkId = -1;
+    if (Params->TryGetNumberField(TEXT("default_chunk_id"), DefaultChunkId))
+    {
+        GConfig->SetInt(Section, TEXT("DefaultChunkId"), DefaultChunkId, *ConfigPath);
+        bWroteAny = true;
+    }
 
-    // UE 5.7+ no longer exposes SetDefaultPrimaryAssetRules at runtime.
-    // Rules are managed via UAssetManagerSettings INI configuration.
+    bool bShouldBeInMainManifest = false;
+    if (Params->TryGetBoolField(TEXT("default_should_be_in_main_manifest"), bShouldBeInMainManifest))
+    {
+        GConfig->SetBool(Section, TEXT("bShouldBeInMainManifest"), bShouldBeInMainManifest, *ConfigPath);
+        bWroteAny = true;
+    }
+
+    bool bShouldBeLoadedOnDemand = false;
+    if (Params->TryGetBoolField(TEXT("default_should_be_loaded_on_demand"), bShouldBeLoadedOnDemand))
+    {
+        GConfig->SetBool(Section, TEXT("bShouldBeLoadedOnDemand"), bShouldBeLoadedOnDemand, *ConfigPath);
+        bWroteAny = true;
+    }
+
+    GConfig->Flush(false, *ConfigPath);
+
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
-    Result->SetStringField(TEXT("message"), TEXT("Asset Manager default rules are read-only at runtime in UE 5.7+. Modify UAssetManagerSettings in DefaultGame.ini instead."));
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetBoolField(TEXT("wrote_any"), bWroteAny);
+    Result->SetStringField(TEXT("config_path"), ConfigPath);
+    Result->SetStringField(TEXT("message"), TEXT("Asset Manager settings written to DefaultGame.ini. Restart editor for changes to take effect."));
     return Result;
 }
 
@@ -1812,11 +1843,36 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPContentBrowserCommands::HandleAddPrimaryAs
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(Error);
     }
 
-    // UE 5.7+ does not expose AddPrimaryAsset at runtime.
-    // Bundle assignments are managed via Asset Manager settings and cook-time configuration.
+    // Write bundle mapping to DefaultGame.ini
+    FString ConfigPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectConfigDir() / TEXT("DefaultGame.ini"));
+    FPaths::MakeStandardFilename(ConfigPath);
+    ConfigPath = FConfigCacheIni::NormalizeConfigIniPath(ConfigPath);
+
+    const TCHAR* Section = TEXT("/Script/Engine.AssetManagerSettings");
+    FString Key = FString::Printf(TEXT("BundleMapping_%s"), *BundleName);
+    FString ExistingValue;
+    GConfig->GetString(Section, *Key, ExistingValue, *ConfigPath);
+
+    // Append asset path if not already present
+    TArray<FString> MappedPaths;
+    ExistingValue.ParseIntoArray(MappedPaths, TEXT(","), true);
+    if (!MappedPaths.Contains(AssetPath))
+    {
+        if (!ExistingValue.IsEmpty())
+        {
+            ExistingValue += TEXT(",");
+        }
+        ExistingValue += AssetPath;
+        GConfig->SetString(Section, *Key, *ExistingValue, *ConfigPath);
+        GConfig->Flush(false, *ConfigPath);
+    }
+
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
     Result->SetStringField(TEXT("asset_path"), AssetPath);
     Result->SetStringField(TEXT("bundle_name"), BundleName);
-    Result->SetStringField(TEXT("message"), TEXT("Runtime primary asset bundle assignment is not available in UE 5.7+. Configure via Asset Manager Settings instead."));
+    Result->SetStringField(TEXT("mapped_assets"), ExistingValue);
+    Result->SetStringField(TEXT("config_path"), ConfigPath);
+    Result->SetStringField(TEXT("message"), TEXT("Bundle mapping written to DefaultGame.ini. Restart editor for changes to take effect."));
     return Result;
 }

@@ -36,10 +36,20 @@ private:
 	// Audio Import (WAV/OGG with SoundCue options)
 	TSharedPtr<FJsonObject> HandleImportAudio(const TSharedPtr<FJsonObject>& Params);
 
+	// Generic Import (GLTF/OBJ/USD/Alembic/Datasmith with conditional plugin support)
+	TSharedPtr<FJsonObject> HandleImportGeneric(const TSharedPtr<FJsonObject>& Params);
+
+	// Reimport existing asset
+	TSharedPtr<FJsonObject> HandleReimportAsset(const TSharedPtr<FJsonObject>& Params);
+
+	// Import Preset save/load
+	TSharedPtr<FJsonObject> HandleSaveImportPreset(const TSharedPtr<FJsonObject>& Params);
+	TSharedPtr<FJsonObject> HandleLoadImportPreset(const TSharedPtr<FJsonObject>& Params);
+
 	// ---------------------------------------------------------------------------
 	// Export Handlers
 	// ---------------------------------------------------------------------------
-	
+
 	// Asset Export (to FBX/OBJ/PNG/etc.)
 	TSharedPtr<FJsonObject> HandleExportAsset(const TSharedPtr<FJsonObject>& Params);
 
@@ -90,12 +100,16 @@ private:
 	 * @param Params - JSON parameters
 	 * @param OutCompressionSettings - Output compression settings enum
 	 * @param OutSRGB - Output sRGB flag
+	 * @param OutFlipGreenChannel - Output flip green channel flag
+	 * @param OutMipGenSettings - Output mip generation settings
 	 * @return true if options parsed successfully
 	 */
 	bool BuildTextureImportOptions(
 		const TSharedPtr<FJsonObject>& Params,
 		TextureCompressionSettings& OutCompressionSettings,
-		bool& OutSRGB);
+		bool& OutSRGB,
+		bool& OutFlipGreenChannel,
+		TextureMipGenSettings& OutMipGenSettings);
 	
 	/**
 	 * Build Audio import options from JSON parameters.
@@ -134,6 +148,14 @@ private:
 	 * @param ImportedObjects - Objects that were imported
 	 */
 	static void MarkPackagesDirty(const TArray<UObject*>& ImportedObjects);
+
+	/**
+	 * Auto-generate placeholder materials for a static mesh and assign them to slots.
+	 * @param StaticMesh - The mesh to generate materials for
+	 * @param DestinationPath - Package path where materials will be created
+	 * @return Number of materials created
+	 */
+	static int32 AutoGenerateMaterialsForMesh(UStaticMesh* StaticMesh, const FString& DestinationPath);
 
 	/**
 	 * Fallback texture export using IImageWrapper.
