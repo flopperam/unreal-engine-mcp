@@ -8,6 +8,7 @@
 #include "EditorSubsystem.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "PropertyEditorModule.h"
+#include "RenderingThread.h"
 #include "Modules/ModuleManager.h"
 
 TSharedPtr<FJsonObject> FBPVariables::CreateVariable(const TSharedPtr<FJsonObject>& Params)
@@ -74,6 +75,7 @@ TSharedPtr<FJsonObject> FBPVariables::CreateVariable(const TSharedPtr<FJsonObjec
             PropertyModule.NotifyCustomizationModuleChanged();
         }
 
+        FlushRenderingCommands();
         FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
         Result->SetBoolField("success", true);
@@ -387,6 +389,7 @@ TSharedPtr<FJsonObject> FBPVariables::SetVariableProperties(const TSharedPtr<FJs
         PropertyModule.NotifyCustomizationModuleChanged();
     }
 
+    FlushRenderingCommands();
     FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
     Result->SetBoolField("success", true);

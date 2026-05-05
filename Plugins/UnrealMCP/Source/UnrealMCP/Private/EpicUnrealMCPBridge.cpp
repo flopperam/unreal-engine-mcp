@@ -83,6 +83,8 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
     BlueprintGraphCommands = MakeShared<FEpicUnrealMCPBlueprintGraphCommands>();
     MaterialCommands = MakeShared<FEpicUnrealMCPMaterialCommands>();
     ProjectEditorCommands = MakeShared<FEpicUnrealMCPProjectEditorCommands>();
+    ContentBrowserCommands = MakeShared<FEpicUnrealMCPContentBrowserCommands>();
+    AssetImportCommands = MakeShared<FEpicUnrealMCPAssetImportCommands>();
 
     const UUnrealMCPSettings* Settings = GetDefault<UUnrealMCPSettings>();
     FString HostStr = Settings ? Settings->Host : TEXT(MCP_SERVER_HOST);
@@ -135,6 +137,7 @@ UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
     BlueprintGraphCommands.Reset();
     MaterialCommands.Reset();
     ProjectEditorCommands.Reset();
+    ContentBrowserCommands.Reset();
 }
 
 void UEpicUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
@@ -279,7 +282,7 @@ void UEpicUnrealMCPBridge::EnsureActorIndexInitialized()
 
 namespace
 {
-    // Command routing: 0=ping, 1=EditorCommands, 2=BlueprintCommands, 3=BlueprintGraphCommands, 4=MaterialCommands, 5=ProjectEditorCommands
+    // Command routing: 0=ping, 1=EditorCommands, 2=BlueprintCommands, 3=BlueprintGraphCommands, 4=MaterialCommands, 5=ProjectEditorCommands, 6=ContentBrowserCommands, 7=AssetImportCommands
     int32 RouteCommand(const FString& CommandType)
     {
         static const TMap<FString, int32> Router = {
@@ -407,6 +410,45 @@ namespace
             {TEXT("get_camera_position"), 5},
             {TEXT("set_camera_position"), 5},
             {TEXT("viewport_action"), 5},
+            // Content Browser Commands (6)
+            {TEXT("create_folder"), 6},
+            {TEXT("delete_folder"), 6},
+            {TEXT("list_assets"), 6},
+            {TEXT("search_assets"), 6},
+            {TEXT("resolve_asset_path"), 6},
+            {TEXT("move_asset"), 6},
+            {TEXT("copy_asset"), 6},
+            {TEXT("duplicate_asset"), 6},
+            {TEXT("rename_asset"), 6},
+            {TEXT("delete_asset"), 6},
+            {TEXT("load_asset"), 6},
+            {TEXT("unload_asset"), 6},
+            {TEXT("save_assets"), 6},
+            {TEXT("get_asset_metadata"), 6},
+            {TEXT("set_asset_metadata"), 6},
+            {TEXT("tag_asset"), 6},
+            {TEXT("find_redirectors"), 6},
+            {TEXT("fixup_redirectors"), 6},
+            {TEXT("find_unused_assets"), 6},
+            {TEXT("get_asset_references"), 6},
+            {TEXT("get_asset_dependencies"), 6},
+            {TEXT("get_asset_reference_graph"), 6},
+            {TEXT("audit_assets"), 6},
+            {TEXT("asset_registry_search"), 6},
+            {TEXT("bulk_rename"), 6},
+            {TEXT("bulk_move"), 6},
+            {TEXT("bulk_delete"), 6},
+            {TEXT("create_primary_asset_label"), 6},
+            {TEXT("delete_primary_asset_label"), 6},
+            {TEXT("list_primary_asset_labels"), 6},
+            {TEXT("get_asset_manager_settings"), 6},
+            {TEXT("set_asset_manager_settings"), 6},
+            {TEXT("add_primary_asset_bundle"), 6},
+            // Asset Import/Export Commands (7)
+            {TEXT("import_fbx_mesh"), 7},
+            {TEXT("import_texture"), 7},
+            {TEXT("import_audio"), 7},
+            {TEXT("export_asset"), 7},
         };
         const int32* Found = Router.Find(CommandType);
         return Found ? *Found : -1;
@@ -449,6 +491,12 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 break;
             case 5: // ProjectEditorCommands
                 ResultJson = ProjectEditorCommands->HandleCommand(CommandType, Params);
+                break;
+            case 6: // ContentBrowserCommands
+                ResultJson = ContentBrowserCommands->HandleCommand(CommandType, Params);
+                break;
+            case 7: // AssetImportCommands
+                ResultJson = AssetImportCommands->HandleCommand(CommandType, Params);
                 break;
             default:
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));

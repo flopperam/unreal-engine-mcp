@@ -6,6 +6,7 @@
 #include "EdGraph/EdGraphPin.h"
 #include "EdGraphSchema_K2.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "RenderingThread.h"
 #include "EditorAssetLibrary.h"
 
 TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>& Params)
@@ -150,6 +151,7 @@ TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>
 
     // Recompile
     Blueprint->MarkPackageDirty();
+    FlushRenderingCommands();
     FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
     // Return

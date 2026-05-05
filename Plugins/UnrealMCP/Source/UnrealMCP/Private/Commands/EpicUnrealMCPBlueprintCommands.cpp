@@ -13,6 +13,7 @@
 #include "Components/SphereComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Materials/MaterialInterface.h"
+#include "RenderingThread.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceConstant.h"
@@ -307,6 +308,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleAddComponentToBlu
         Blueprint->SimpleConstructionScript->AddNode(NewNode);
 
         // Compile the blueprint
+        FlushRenderingCommands();
         FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
         return MakeBlueprintSuccessResult({
@@ -413,6 +415,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCompileBlueprint(
     }
 
     // Compile the blueprint
+    FlushRenderingCommands();
     FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
     return MakeBlueprintSuccessResult({
@@ -505,6 +508,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleSpawnBlueprintAct
     // Ensure blueprint class is ready (retry loop instead of fixed 200ms sleep)
     if (!Blueprint->GeneratedClass || !Blueprint->GeneratedClass->ClassDefaultObject)
     {
+        FlushRenderingCommands();
         FKismetEditorUtilities::CompileBlueprint(Blueprint);
     }
     {
@@ -609,6 +613,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleSetStaticMeshProp
         UStaticMesh* Mesh = Cast<UStaticMesh>(UEditorAssetLibrary::LoadAsset(MeshPath));
         if (Mesh)
         {
+            FlushRenderingCommands();
             MeshComponent->SetStaticMesh(Mesh);
         }
     }
@@ -619,6 +624,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleSetStaticMeshProp
         UMaterialInterface* Material = Cast<UMaterialInterface>(UEditorAssetLibrary::LoadAsset(MaterialPath));
         if (Material)
         {
+            FlushRenderingCommands();
             MeshComponent->SetMaterial(0, Material);
         }
     }
@@ -743,6 +749,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleSetMeshMaterialCo
     DynMaterial->SetVectorParameterValue(*ParameterName, Color);
 
     // Apply the material to the component
+    FlushRenderingCommands();
     PrimComponent->SetMaterial(MaterialSlot, DynMaterial);
 
     // Mark the blueprint as modified
@@ -901,6 +908,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleApplyMaterialToAc
     {
         if (MeshComp)
         {
+            FlushRenderingCommands();
             MeshComp->SetMaterial(MaterialSlot, Material);
             bAppliedToAny = true;
         }
@@ -986,6 +994,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleApplyMaterialToBl
     }
 
     // Apply the material
+    FlushRenderingCommands();
     PrimComponent->SetMaterial(MaterialSlot, Material);
 
     // Mark the blueprint as modified

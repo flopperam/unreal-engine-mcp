@@ -121,6 +121,17 @@ from server.project_editor_tools import (
     viewport_tool,
 )
 
+from server.asset_management_tools import (
+    asset_management_tool,
+)
+
+from server.asset_import_tools import (
+    fbx_mesh_import_tool,
+    texture_import_tool,
+    audio_import_tool,
+    asset_export_tool,
+)
+
 
 # Explicitly bootstrap tool registration to avoid heavy import side-effects.
 from server import bootstrap
@@ -210,6 +221,11 @@ __all__ = [
     "editor_control_tool",
     "play_tool",
     "viewport_tool",
+    "asset_management_tool",
+    "fbx_mesh_import_tool",
+    "texture_import_tool",
+    "audio_import_tool",
+    "asset_export_tool",
 ]
 
 

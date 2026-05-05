@@ -7,6 +7,7 @@
 #include "EditorAssetLibrary.h"
 #include "K2Node_FunctionEntry.h"
 #include "K2Node_FunctionResult.h"
+#include "RenderingThread.h"
 
 TSharedPtr<FJsonObject> FFunctionManager::CreateFunction(const TSharedPtr<FJsonObject>& Params)
 {
@@ -123,6 +124,7 @@ TSharedPtr<FJsonObject> FFunctionManager::CreateFunction(const TSharedPtr<FJsonO
 	FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 
 	// Compile the Blueprint AFTER verifying nodes (like GenBlueprintUtils does)
+	FlushRenderingCommands();
 	FKismetEditorUtilities::CompileBlueprint(Blueprint);
 
 	// Get the actual graph name that was created

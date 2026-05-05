@@ -1,0 +1,71 @@
+# kaguya default configuration
+# Placed at repo root; auto-detected when running inside the project.
+
+[presets]
+full = ["surrealdb", "scene-syncd", "unreal", "mcp-server"]
+minimal = ["surrealdb", "scene-syncd"]
+headless = ["surrealdb", "scene-syncd", "unreal", "mcp-server"]
+
+[settings]
+auto_heal = true
+max_retries = 3
+log_buffer_lines = 1000
+ui_fps = 30
+
+[services.surrealdb]
+enabled = true
+command = "surreal"
+args = ["start", "--bind", "127.0.0.1:8000", "--user", "root", "--pass", "secret", "rocksdb://./.surreal/unreal_mcp.db"]
+port = 8000
+health_url = "http://127.0.0.1:8000/health"
+health_timeout_secs = 10
+start_timeout_secs = 30
+icon = "🎋"
+
+[services.scene-syncd]
+enabled = true
+command = "cargo"
+args = ["run"]
+working_dir = "./rust/scene-syncd"
+port = 8787
+health_url = "http://127.0.0.1:8787/health"
+health_timeout_secs = 30
+start_timeout_secs = 60
+dependencies = ["surrealdb"]
+icon = "🌸"
+
+[services.unreal]
+enabled = true
+project_path = "./FlopperamUnrealMCP/FlopperamUnrealMCP.uproject"
+port = 55557
+health_type = "tcp"
+start_timeout_secs = 120
+headless_args = ["-NullRHI"]
+dependencies = ["surrealdb"]
+icon = "🏰"
+
+[services.mcp-server]
+enabled = true
+command = "uv"
+args = ["run", "./Python/unreal_mcp_server_advanced.py"]
+working_dir = "."
+health_type = "process"
+log_file = "./Python/unreal_mcp_advanced.log"
+start_timeout_secs = 10
+dependencies = ["unreal"]
+icon = "🐍"
+
+[paths]
+# Unreal Engine detection priority: env > registry > common paths
+# env_key = "UNREAL_ENGINE_ROOT"
+# registry_keys = ["SOFTWARE\\EpicGames\\Unreal Engine\\5.7", "SOFTWARE\\EpicGames\\Unreal Engine\\5.5"]
+# common_paths = [
+#     "C:\\Program Files\\Epic Games\\UE_5.7",
+#     "C:\\Program Files\\Epic Games\\UE_5.5",
+# ]
+
+# SurrealDB detection
+surrealdb_search = ["surreal.exe", "./surreal.exe", "./tools/surrealdb/surreal.exe"]
+
+# scene-syncd binary fallback
+scene_syncd_binary = "./rust/scene-syncd/target/debug/scene-syncd.exe"

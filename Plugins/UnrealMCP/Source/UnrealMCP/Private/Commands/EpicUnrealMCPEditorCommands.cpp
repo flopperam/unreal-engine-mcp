@@ -7,6 +7,7 @@
 #include "ImageUtils.h"
 #include "HighResScreenshot.h"
 #include "Engine/GameViewportClient.h"
+#include "RenderingThread.h"
 #include "Misc/FileHelper.h"
 #include "GameFramework/Actor.h"
 #include "Engine/Selection.h"
@@ -242,6 +243,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleSpawnActor(const TSh
                 UStaticMesh* Mesh = Cast<UStaticMesh>(UEditorAssetLibrary::LoadAsset(MeshPath));
                 if (Mesh)
                 {
+                    FlushRenderingCommands();
                     NewMeshActor->GetStaticMeshComponent()->SetStaticMesh(Mesh);
                 }
                 else
@@ -537,6 +539,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::ExecuteCreateActor(const F
                 UStaticMesh* Mesh = Cast<UStaticMesh>(UEditorAssetLibrary::LoadAsset(Parsed.StaticMeshPath));
                 if (Mesh)
                 {
+                    FlushRenderingCommands();
                     NewMeshActor->GetStaticMeshComponent()->SetStaticMesh(Mesh);
                 }
             }
@@ -1942,6 +1945,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCreateDraftProxy(con
         ProxyActor->Destroy();
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Failed to load static mesh: %s"), *MeshPath));
     }
+    FlushRenderingCommands();
     HISM->SetStaticMesh(Mesh);
 
     // Load material if provided, otherwise create a default Unlit translucent draft material
@@ -2026,6 +2030,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleUpdateDraftProxy(con
     }
 
     // Clear existing instances and re-add
+    FlushRenderingCommands();
     HISM->ClearInstances();
 
     FString MaterialPath;
@@ -2289,6 +2294,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleSpawnInstanceSet(con
         SetActor->Destroy();
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Failed to load static mesh: %s"), *MeshPath));
     }
+    FlushRenderingCommands();
     ISM->SetStaticMesh(Mesh);
 
     if (!MaterialPath.IsEmpty())
@@ -2358,6 +2364,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleUpdateInstanceSet(co
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to find ISM/HISM component on instance set actor"));
     }
 
+    FlushRenderingCommands();
     ISM->ClearInstances();
 
     FString MaterialPath;

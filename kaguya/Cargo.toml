@@ -1,0 +1,57 @@
+[package]
+name = "kaguya"
+version = "0.1.0"
+edition = "2021"
+description = "Beautiful TUI orchestrator for Unreal MCP development stack"
+authors = ["Unreal MCP Community"]
+
+[[bin]]
+name = "kaguya"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# CLI parsing
+clap = { version = "4", features = ["derive"] }
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Process & system info
+sysinfo = "0.33"
+
+# HTTP health checks
+reqwest = { version = "0.12", features = ["json"] }
+
+# Config parsing
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+
+# Error handling
+thiserror = "2"
+color-eyre = "0.6"
+
+# Logging & tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Async traits
+async-trait = "0.1"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Utility
+anyhow = "1"
+
+# Directories for config
+directories = "6"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.56.0"
+
+[dev-dependencies]
+tokio-test = "0.4"

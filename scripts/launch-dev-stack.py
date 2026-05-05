@@ -52,7 +52,7 @@ class Style:
 
 def log(service: str, message: str, color: str = Style.RESET) -> None:
     prefix = f"[{color}{Style.BOLD}{service}{Style.RESET}]"
-    print(f"{prefix} {message}")
+    print(f"{prefix} {message}", flush=True)
 
 
 def resolve_unreal_engine_root() -> Optional[Path]:
@@ -213,6 +213,32 @@ def wait_for_tcp(host: str, port: int, timeout: float = 60.0, interval: float = 
     return False
 
 
+def wait_for_tcp_or_process_exit(
+    host: str,
+    port: int,
+    proc: subprocess.Popen,
+    timeout: float = 60.0,
+    interval: float = 0.5,
+) -> tuple[bool, bool]:
+    """Poll a TCP port until it accepts connections or the process exits.
+
+    Returns (tcp_ready, process_exited).
+    """
+    import socket
+
+    start = time.time()
+    while time.time() - start < timeout:
+        if proc.poll() is not None:
+            return False, True
+        try:
+            with socket.create_connection((host, port), timeout=2):
+                return True, False
+        except Exception:
+            pass
+        time.sleep(interval)
+    return False, proc.poll() is not None
+
+
 class DevStackLauncher:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
@@ -334,14 +360,27 @@ class DevStackLauncher:
             log("Unreal", f"{Style.RED}.uproject not found at {UPROJECT_PATH}{Style.RESET}")
             return False
 
-        cmd = [str(editor_exe), str(UPROJECT_PATH)]
+        cmd = [
+            str(editor_exe),
+            str(UPROJECT_PATH),
+            "-Windowed",
+            "-ResX=1280",
+            "-ResY=720",
+        ]
+        
+        if getattr(self.args, "headless", False):
+            cmd.append("-NullRHI")
+        
+        if getattr(self.args, "render_offscreen", False):
+            cmd.append("-RenderOffScreen")
         log("Unreal", f"Starting: {Style.DIM}{editor_exe.name} {UPROJECT_PATH.name}{Style.RESET}", Style.MAGENTA)
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=str(REPO_ROOT),
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+            # Unreal Editor needs a window, so we don't use CREATE_NO_WINDOW here
+            creationflags=0,
         )
         self.processes.append(proc)
         t = threading.Thread(target=stream_output, args=(proc, "Unreal", Style.MAGENTA), daemon=True)
@@ -349,9 +388,13 @@ class DevStackLauncher:
         self.threads.append(t)
 
         log("Unreal", f"Waiting for TCP {DEFAULT_UNREAL_HOST}:{DEFAULT_UNREAL_PORT} ...", Style.MAGENTA)
-        if wait_for_tcp(DEFAULT_UNREAL_HOST, DEFAULT_UNREAL_PORT, timeout=120.0):
+        ready, exited = wait_for_tcp_or_process_exit(DEFAULT_UNREAL_HOST, DEFAULT_UNREAL_PORT, proc, timeout=120.0)
+        if ready:
             log("Unreal", f"{Style.GREEN}Ready{Style.RESET}", Style.MAGENTA)
             return True
+        elif exited:
+            log("Unreal", f"{Style.RED}Editor exited before MCP TCP became ready (code {proc.returncode}){Style.RESET}", Style.MAGENTA)
+            return False
         else:
             log("Unreal", f"{Style.YELLOW}TCP probe timed out; editor may still be loading{Style.RESET}", Style.MAGENTA)
             return True
@@ -480,8 +523,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scene-syncd", action="store_true", help="Start scene-syncd")
     parser.add_argument("--unreal", action="store_true", help="Start Unreal Editor")
     parser.add_argument("--mcp-server", action="store_true", help="Start Python MCP server")
-    parser.add_argument("--surreal-bind", default=DEFAULT_SURREAL_BIND, help="SurrealDB bind address")
     parser.add_argument("--surreal-memory", action="store_true", help="Use in-memory SurrealDB instead of rocksdb")
+    parser.add_argument("--headless", action="store_true", help="Run Unreal Engine in headless mode (no window)")
+    parser.add_argument("--render-offscreen", action="store_true", help="Use -RenderOffScreen for Unreal Engine")
+    parser.add_argument("--cleanup", action="store_true", help="Cleanup ports (55557, 8787, 8000) before starting")
     return parser
 
 
@@ -498,6 +543,14 @@ def main(argv: List[str] | None = None) -> int:
         args.scene_syncd = True
         args.unreal = True
         args.mcp_server = True
+
+    if getattr(args, "cleanup", False):
+        log("Launcher", "Cleaning up ports before start...", Style.YELLOW)
+        cleanup_script = REPO_ROOT / "scripts" / "cleanup-ports.py"
+        if cleanup_script.exists():
+            subprocess.run([sys.executable, str(cleanup_script)], check=False)
+        else:
+            log("Launcher", f"{Style.RED}Cleanup script not found at {cleanup_script}{Style.RESET}")
 
     launcher = DevStackLauncher(args)
     return launcher.run()

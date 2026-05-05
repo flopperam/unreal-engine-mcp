@@ -15,6 +15,7 @@
 #include "UObject/UnrealType.h"
 #include "EngineUtils.h"
 #include "Algo/Unique.h"
+#include "RenderingThread.h"
 
 namespace
 {
@@ -639,6 +640,8 @@ TSharedPtr<FJsonObject> FProceduralMeshBuilder::BuildAndSpawnOnGameThread(const 
 	MeshComp->SetMobility(EComponentMobility::Movable);
 	MeshComp->SetVisibility(true, true);
 	MeshComp->SetHiddenInGame(false);
+
+	FlushRenderingCommands();
 
 	UMaterialInterface* AppliedMaterial = ResolveMaterial(Payload, Warnings);
 	ApplyNaniteIfSupported(MeshComp, Payload.bEnableNanite, Warnings);

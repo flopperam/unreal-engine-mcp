@@ -13,6 +13,8 @@
 #include "Commands/EpicUnrealMCPBlueprintGraphCommands.h"
 #include "Commands/EpicUnrealMCPMaterialCommands.h"
 #include "Commands/EpicUnrealMCPProjectEditorCommands.h"
+#include "Commands/EpicUnrealMCPContentBrowserCommands.h"
+#include "Commands/EpicUnrealMCPAssetImportCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "MCPServerRunnable.h"
 #include "EpicUnrealMCPBridge.generated.h"
@@ -72,6 +74,8 @@ private:
 	TSharedPtr<FEpicUnrealMCPBlueprintGraphCommands> BlueprintGraphCommands;
 	TSharedPtr<FEpicUnrealMCPMaterialCommands> MaterialCommands;
 	TSharedPtr<FEpicUnrealMCPProjectEditorCommands> ProjectEditorCommands;
+	TSharedPtr<FEpicUnrealMCPContentBrowserCommands> ContentBrowserCommands;
+	TSharedPtr<FEpicUnrealMCPAssetImportCommands> AssetImportCommands;
 };
 
 #endif // WITH_EDITOR

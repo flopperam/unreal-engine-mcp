@@ -61,7 +61,9 @@ public class UnrealMCP : ModuleRules
 				"AssetRegistry",
 				"AssetTools",
 				"NavigationSystem",
-				"Navmesh"
+				"Navmesh",
+				"AudioEditor",			// For USoundFactory (WAV/OGG import)
+				"RenderCore"			// For FlushRenderingCommands()
 			}
 		);
 

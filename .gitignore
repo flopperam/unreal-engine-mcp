@@ -83,6 +83,10 @@ venv.bak/
 
 # Project specific files
 MCPGameProject/Config/DefaultEditorPerProjectUserSettings.ini
+
+# Test-generated maps (prevent duplicate asset ID commits)
+FlopperamUnrealMCP/Content/Maps/Sublevel_Test.umap
+FlopperamUnrealMCP/Content/Maps/TestMCP_Integration.umap
 tmp/
 scratch/
 tests/benchmarks/
@@ -91,6 +95,7 @@ surreal.exe
 tools/surrealdb/
 FlopperamUnrealMCP 5.7/Content/NewMap.umap
 rust/**/target/
+kaguya/target/
 scripts/__pycache__/
 
 # Cursor

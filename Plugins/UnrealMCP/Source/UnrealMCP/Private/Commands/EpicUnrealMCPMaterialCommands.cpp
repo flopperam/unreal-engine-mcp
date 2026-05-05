@@ -11,6 +11,7 @@
 #include "EditorAssetLibrary.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Factories/MaterialFactoryNew.h"
+#include "RenderingThread.h"
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
 #include "ScopedTransaction.h"
@@ -253,6 +254,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPMaterialCommands::HandleCreateMaterial(con
     {
         UMaterial* Material = Cast<UMaterial>(NewAsset);
         Material->PreEditChange(nullptr);
+        FlushRenderingCommands();
         Material->PostEditChange();
         
         TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
@@ -321,6 +323,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPMaterialCommands::HandleAddMaterialNode(co
         ApplyNodeParams(NewExpression, *NodeParams);
     }
 
+    FlushRenderingCommands();
     Material->PostEditChange();
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
@@ -391,7 +394,8 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPMaterialCommands::HandleConnectMaterialNod
     }
 
     TargetInput->Connect(OutputIndex, FromExpr);
-    
+
+    FlushRenderingCommands();
     Material->PostEditChange();
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
