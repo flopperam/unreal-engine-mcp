@@ -23,7 +23,16 @@
 
 // For export
 #include "Exporters/Exporter.h"
+#include "AssetExportTask.h"
+#include "Exporters/FbxExportOption.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "AssetCompilingManager.h"
+
+// For texture export fallback
+#include "ImageUtils.h"
+#include "IImageWrapperModule.h"
+#include "IImageWrapper.h"
+#include "Engine/Texture2D.h"
 
 FEpicUnrealMCPAssetImportCommands::FEpicUnrealMCPAssetImportCommands()
 {
@@ -209,17 +218,34 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleImportTexture(
 		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(Error);
 	}
 
-	// Apply SRGB setting to imported textures
+	// Apply SRGB and Compression settings to imported textures
 	for (UObject* Obj : ImportedObjects)
 	{
 		UTexture* Texture = Cast<UTexture>(Obj);
 		if (Texture && IsValid(Texture))
 		{
-			Texture->SRGB = bSRGB;
-			FlushRenderingCommands();
-			Texture->PostEditChange();
+			bool bChanged = false;
+			if (Texture->SRGB != bSRGB)
+			{
+				Texture->SRGB = bSRGB;
+				bChanged = true;
+			}
+			if (Texture->CompressionSettings != CompressionSettings)
+			{
+				Texture->CompressionSettings = CompressionSettings;
+				bChanged = true;
+			}
+			
+			if (bChanged)
+			{
+				Texture->UpdateResource();
+				Texture->PostEditChange();
+			}
 		}
 	}
+
+	FAssetCompilingManager::Get().FinishAllCompilation();
+	FlushRenderingCommands();
 
 	MarkPackagesDirty(ImportedObjects);
 
@@ -335,14 +361,11 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleExportAsset(
 		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("output_path is required"));
 	}
 
-	// Resolve asset
-	FAssetData AssetData;
-	FString Error;
-	
+	// Resolve asset via AssetRegistry
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
 	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
-	
-	AssetData = AssetRegistry.GetAssetByObjectPath(FSoftObjectPath(AssetPath));
+
+	FAssetData AssetData = AssetRegistry.GetAssetByObjectPath(FSoftObjectPath(AssetPath));
 	if (!AssetData.IsValid())
 	{
 		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
@@ -350,11 +373,15 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleExportAsset(
 	}
 
 	UObject* Asset = AssetData.GetAsset();
-	if (!Asset)
+	if (!Asset || !IsValid(Asset))
 	{
 		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
 			FString::Printf(TEXT("Failed to load asset: %s"), *AssetPath));
 	}
+
+	// Ensure asset compilation is complete before attempting export
+	FAssetCompilingManager::Get().FinishAllCompilation();
+	FlushRenderingCommands();
 
 	// Determine export format from extension or parameter
 	FString ExportFormat;
@@ -363,40 +390,81 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleExportAsset(
 		ExportFormat = FPaths::GetExtension(OutputPath).ToLower();
 	}
 
-	// Find exporter for format
-	UExporter* Exporter = nullptr;
-	for (TObjectIterator<UExporter> It; It; ++It)
+	// Ensure output directory exists
+	FString OutputDir = FPaths::GetPath(OutputPath);
+	if (!OutputDir.IsEmpty())
 	{
-		if (IsValid(*It) && It->SupportedClass && Asset->IsA(It->SupportedClass))
-		{
-			for (const FString& Ext : It->FormatExtension)
-			{
-				if (Ext.Equals(ExportFormat, ESearchCase::IgnoreCase))
-				{
-					Exporter = *It;
-					break;
-				}
-			}
-			if (Exporter)
-			{
-				break;
-			}
-		}
+		IFileManager::Get().MakeDirectory(*OutputDir, true);
 	}
 
-	if (!Exporter)
+	// -------------------------------------------------------------------------
+	// UAssetExportTask approach (UE5 standard API)
+	// UExporter::RunAssetExportTask automatically resolves the correct exporter
+	// from registered classes, avoiding the CDO-not-in-memory issue that
+	// TObjectIterator<UExporter> and manual class lookup suffer from.
+	// -------------------------------------------------------------------------
+	UAssetExportTask* ExportTask = NewObject<UAssetExportTask>();
+	ExportTask->AddToRoot(); // GC protection during export
+
+	ExportTask->Object = Asset;
+	ExportTask->Filename = OutputPath;
+	ExportTask->bAutomated = true;
+	ExportTask->bPrompt = false;
+	ExportTask->bReplaceIdentical = true;
+	ExportTask->bSelected = false;
+
+	// Use UExporter::FindExporter to resolve the best exporter for this
+	// asset type + format combination. This scans all registered exporter
+	// classes (not just existing CDO instances).
+	UExporter* Exporter = UExporter::FindExporter(Asset, *ExportFormat);
+	if (Exporter)
 	{
-		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
-			FString::Printf(TEXT("No exporter found for format: %s"), *ExportFormat));
+		ExportTask->Exporter = Exporter;
 	}
 
-	// Perform export
-	bool bExportSuccess = UExporter::ExportToFile(Asset, Exporter, *OutputPath, false, false, false) > 0;
-	
+	// Format-specific export options
+	if (ExportFormat.Equals(TEXT("fbx"), ESearchCase::IgnoreCase))
+	{
+		UFbxExportOption* FbxOpts = NewObject<UFbxExportOption>();
+
+		// Parse optional FBX settings from MCP params
+		bool bExportCollision = false;
+		Params->TryGetBoolField(TEXT("export_collision"), bExportCollision);
+		FbxOpts->Collision = bExportCollision;
+
+		bool bExportVertexColor = true;
+		Params->TryGetBoolField(TEXT("export_vertex_color"), bExportVertexColor);
+		FbxOpts->VertexColor = bExportVertexColor;
+
+		ExportTask->Options = FbxOpts;
+	}
+
+	// Execute export via UE5 standard API
+	bool bExportSuccess = UExporter::RunAssetExportTask(ExportTask);
+
+	ExportTask->RemoveFromRoot(); // Release GC protection
+
+	// -------------------------------------------------------------------------
+	// Fallback for textures: use IImageWrapper to write source data directly
+	// This handles edge cases where the UExporter system can't find a
+	// suitable exporter for the texture format.
+	// -------------------------------------------------------------------------
+	if (!bExportSuccess && Asset->IsA<UTexture2D>())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("UExporter::RunAssetExportTask failed for texture '%s'. "
+				 "Attempting FImageUtils/IImageWrapper fallback."),
+			*AssetPath);
+		bExportSuccess = ExportTextureViaImageUtils(
+			Cast<UTexture2D>(Asset), OutputPath, ExportFormat);
+	}
+
 	if (!bExportSuccess)
 	{
 		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
-			FString::Printf(TEXT("Export failed for asset: %s"), *AssetPath));
+			FString::Printf(TEXT("Export failed for asset: %s (format: %s). "
+				"Verify the asset is valid and the export format is supported."),
+				*AssetPath, *ExportFormat));
 	}
 
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
@@ -404,7 +472,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleExportAsset(
 	Result->SetStringField(TEXT("output_path"), OutputPath);
 	Result->SetStringField(TEXT("format"), ExportFormat);
 	Result->SetStringField(TEXT("message"), TEXT("Export successful"));
-	
+
 	return Result;
 }
 
@@ -447,12 +515,20 @@ TArray<UObject*> FEpicUnrealMCPAssetImportCommands::ProcessImportTask(UAssetImpo
 		return TArray<UObject*>();
 	}
 
+	Task->AddToRoot(); // Prevent GC during import
+
 	FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
 	IAssetTools& AssetTools = AssetToolsModule.Get();
 
 	FlushRenderingCommands();
 	AssetTools.ImportAssetTasks({Task});
+
+	// Wait for any async compilation (Static Meshes, Textures, SoundWaves) to finish before proceeding
+	FAssetCompilingManager::Get().FinishAllCompilation();
+
 	FlushRenderingCommands();
+
+	Task->RemoveFromRoot(); // Allow GC again
 
 	// Check results
 	if (Task->GetObjects().Num() == 0)
@@ -460,6 +536,11 @@ TArray<UObject*> FEpicUnrealMCPAssetImportCommands::ProcessImportTask(UAssetImpo
 		OutError = FString::Printf(TEXT("Nothing was imported from: %s"), *Task->Filename);
 		return TArray<UObject*>();
 	}
+
+	// Force AssetRegistry to reflect newly imported assets immediately
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+	AssetRegistry.ScanPathsSynchronous({Task->DestinationPath}, true);
 
 	return Task->GetObjects();
 }
@@ -727,4 +808,135 @@ void FEpicUnrealMCPAssetImportCommands::MarkPackagesDirty(const TArray<UObject*>
 	}
 	
 	// Packages are marked dirty; Content Browser will refresh on next tick automatically
+}
+
+// ---------------------------------------------------------------------------
+// Texture Export Fallback (IImageWrapper)
+// ---------------------------------------------------------------------------
+
+bool FEpicUnrealMCPAssetImportCommands::ExportTextureViaImageUtils(
+	UTexture2D* Texture, const FString& OutputPath, const FString& ExportFormat)
+{
+	if (!Texture || !IsValid(Texture))
+	{
+		return false;
+	}
+
+	// Ensure texture source data is available
+	FTextureSource& Source = Texture->Source;
+	if (!Source.IsValid())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ExportTextureViaImageUtils: Texture '%s' has no valid source data."),
+			*Texture->GetPathName());
+		return false;
+	}
+
+	// Read mip 0 raw data
+	TArray64<uint8> RawData;
+	Source.GetMipData(RawData, 0);
+	if (RawData.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("ExportTextureViaImageUtils: Failed to read mip data from '%s'."),
+			*Texture->GetPathName());
+		return false;
+	}
+
+	const int32 Width = Source.GetSizeX();
+	const int32 Height = Source.GetSizeY();
+
+	// Determine format for IImageWrapper
+	EImageFormat ImageFormat = EImageFormat::PNG;
+	if (ExportFormat.Equals(TEXT("bmp"), ESearchCase::IgnoreCase))
+	{
+		ImageFormat = EImageFormat::BMP;
+	}
+	else if (ExportFormat.Equals(TEXT("exr"), ESearchCase::IgnoreCase))
+	{
+		ImageFormat = EImageFormat::EXR;
+	}
+	else if (ExportFormat.Equals(TEXT("jpg"), ESearchCase::IgnoreCase) ||
+			 ExportFormat.Equals(TEXT("jpeg"), ESearchCase::IgnoreCase))
+	{
+		ImageFormat = EImageFormat::JPEG;
+	}
+	// Default: PNG for "png", "tga", and other formats
+
+	// Determine pixel format from texture source
+	ERGBFormat RGBFormat = ERGBFormat::BGRA;
+	int32 BitDepth = 8;
+
+	ETextureSourceFormat SourceFormat = Source.GetFormat();
+	switch (SourceFormat)
+	{
+	case TSF_RGBA16:
+	case TSF_RGBA16F:
+		BitDepth = 16;
+		RGBFormat = ERGBFormat::RGBA;
+		break;
+	case TSF_RGBA32F:
+		BitDepth = 32;
+		RGBFormat = ERGBFormat::RGBA;
+		break;
+	case TSF_G8:
+		BitDepth = 8;
+		RGBFormat = ERGBFormat::Gray;
+		break;
+	case TSF_G16:
+		BitDepth = 16;
+		RGBFormat = ERGBFormat::Gray;
+		break;
+	default:
+		// TSF_BGRA8 and others default to BGRA 8-bit
+		BitDepth = 8;
+		RGBFormat = ERGBFormat::BGRA;
+		break;
+	}
+
+	// Use IImageWrapper to compress and save
+	IImageWrapperModule& ImageWrapperModule =
+		FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
+	TSharedPtr<IImageWrapper> ImageWrapper =
+		ImageWrapperModule.CreateImageWrapper(ImageFormat);
+
+	if (!ImageWrapper.IsValid())
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("ExportTextureViaImageUtils: Failed to create ImageWrapper for format '%s'."),
+			*ExportFormat);
+		return false;
+	}
+
+	if (!ImageWrapper->SetRaw(
+			RawData.GetData(), RawData.Num(),
+			Width, Height, RGBFormat, BitDepth))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("ExportTextureViaImageUtils: Failed to set raw data for '%s' (%dx%d)."),
+			*Texture->GetPathName(), Width, Height);
+		return false;
+	}
+
+	TArray64<uint8> CompressedData = ImageWrapper->GetCompressed();
+	if (CompressedData.Num() == 0)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("ExportTextureViaImageUtils: Compression produced empty output for '%s'."),
+			*Texture->GetPathName());
+		return false;
+	}
+
+	if (!FFileHelper::SaveArrayToFile(CompressedData, *OutputPath))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("ExportTextureViaImageUtils: Failed to write file '%s'."),
+			*OutputPath);
+		return false;
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("ExportTextureViaImageUtils: Successfully exported '%s' to '%s'."),
+		*Texture->GetPathName(), *OutputPath);
+	return true;
 }

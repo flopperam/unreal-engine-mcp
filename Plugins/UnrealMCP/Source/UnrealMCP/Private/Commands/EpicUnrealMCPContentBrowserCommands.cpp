@@ -19,6 +19,7 @@
 #include "Misc/FileHelper.h"
 #include "ObjectTools.h"
 #include "RenderingThread.h"
+#include "AssetCompilingManager.h"
 #include "Engine/AssetManager.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Engine/PrimaryAssetLabel.h"
@@ -758,6 +759,11 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPContentBrowserCommands::HandleDeleteAsset(
     }
 
     const FString PackagePathToDelete = AssetData.PackageName.ToString();
+    
+    // Ensure all pending render commands (like thumbnail generation or texture updates) are finished before deleting
+    FAssetCompilingManager::Get().FinishAllCompilation();
+    FlushRenderingCommands();
+    
     if (!UEditorAssetLibrary::DeleteAsset(PackagePathToDelete))
     {
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to delete asset"));

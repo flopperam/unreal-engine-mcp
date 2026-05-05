@@ -165,23 +165,36 @@ def resolve_scene_syncd_exe() -> Optional[Path]:
 
 def stream_output(proc: subprocess.Popen, service: str, color: str) -> None:
     """Stream subprocess stdout/stderr to console with color-coded prefix."""
-    try:
-        if proc.stdout:
-            for line in iter(proc.stdout.readline, b""):
-                if not line:
-                    break
-                text = line.decode("utf-8", errors="replace").rstrip()
-                if text:
-                    log(service, text, color)
-        if proc.stderr:
-            for line in iter(proc.stderr.readline, b""):
-                if not line:
-                    break
-                text = line.decode("utf-8", errors="replace").rstrip()
-                if text:
-                    log(service, f"{Style.RED}{text}{Style.RESET}", color)
-    except Exception:
-        pass
+    def read_stdout():
+        try:
+            if proc.stdout:
+                for line in iter(proc.stdout.readline, b""):
+                    if not line:
+                        break
+                    text = line.decode("utf-8", errors="replace").rstrip()
+                    if text:
+                        log(service, text, color)
+        except Exception:
+            pass
+
+    def read_stderr():
+        try:
+            if proc.stderr:
+                for line in iter(proc.stderr.readline, b""):
+                    if not line:
+                        break
+                    text = line.decode("utf-8", errors="replace").rstrip()
+                    if text:
+                        log(service, f"{Style.RED}{text}{Style.RESET}", color)
+        except Exception:
+            pass
+
+    t_out = threading.Thread(target=read_stdout, daemon=True)
+    t_err = threading.Thread(target=read_stderr, daemon=True)
+    t_out.start()
+    t_err.start()
+    t_out.join()
+    t_err.join()
 
 
 def wait_for_service(url: str, timeout: float = 30.0, interval: float = 0.5) -> bool:
@@ -343,6 +356,61 @@ class DevStackLauncher:
             log("scene-syncd", f"{Style.YELLOW}Health check timed out; proceeding anyway{Style.RESET}", Style.BLUE)
             return True
 
+    def _monitor_unreal_window(self, proc: subprocess.Popen) -> None:
+        """Monitor Unreal Editor window size and prevent it from becoming too small.
+
+        This mitigates D3D12 DXGI_ERROR_INVALID_CALL crashes that occur when
+        the window is resized to extreme dimensions (e.g. 118x101).
+        """
+        if sys.platform != "win32":
+            return
+
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        MIN_WIDTH = 800
+        MIN_HEIGHT = 600
+
+        # Wait for window to appear
+        time.sleep(8.0)
+        if proc.poll() is not None:
+            return
+
+        # Find window by process ID
+        def enum_windows_callback(hwnd, extra):
+            if user32.IsWindowVisible(hwnd):
+                pid = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                if pid.value == proc.pid:
+                    extra.append(hwnd)
+            return True
+
+        EnumWindowsProc = ctypes.WINFUNCTYPE(
+            wintypes.BOOL, wintypes.HWND, ctypes.POINTER(wintypes.HWND)
+        )
+        hwnds = []
+        callback = EnumWindowsProc(lambda hwnd, extra: enum_windows_callback(hwnd, hwnds))
+        user32.EnumWindows(callback, None)
+
+        if not hwnds:
+            log("Unreal", f"{Style.YELLOW}Window monitor: could not find editor window{Style.RESET}", Style.MAGENTA)
+            return
+
+        hwnd = hwnds[0]
+        log("Unreal", f"Window monitor active (hwnd={hwnd})", Style.MAGENTA)
+
+        while proc.poll() is None:
+            rect = wintypes.RECT()
+            if user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                width = rect.right - rect.left
+                height = rect.bottom - rect.top
+                if width < MIN_WIDTH or height < MIN_HEIGHT:
+                    log("Unreal", f"{Style.YELLOW}Window too small ({width}x{height}), restoring to {MIN_WIDTH}x{MIN_HEIGHT}{Style.RESET}", Style.MAGENTA)
+                    # SWP_SHOWWINDOW | SWP_NOZORDER | SWP_NOMOVE
+                    user32.SetWindowPos(hwnd, None, 0, 0, MIN_WIDTH, MIN_HEIGHT, 0x0040 | 0x0004 | 0x0002)
+            time.sleep(2.0)
+
     def start_unreal(self) -> bool:
         ue_root = resolve_unreal_engine_root()
         if not ue_root:
@@ -373,6 +441,10 @@ class DevStackLauncher:
         
         if getattr(self.args, "render_offscreen", False):
             cmd.append("-RenderOffScreen")
+
+        if getattr(self.args, "no_minimize", False):
+            cmd.extend(["-ResX=1920", "-ResY=1080"])
+
         log("Unreal", f"Starting: {Style.DIM}{editor_exe.name} {UPROJECT_PATH.name}{Style.RESET}", Style.MAGENTA)
         proc = subprocess.Popen(
             cmd,
@@ -386,6 +458,11 @@ class DevStackLauncher:
         t = threading.Thread(target=stream_output, args=(proc, "Unreal", Style.MAGENTA), daemon=True)
         t.start()
         self.threads.append(t)
+
+        if getattr(self.args, "no_minimize", False):
+            wm = threading.Thread(target=self._monitor_unreal_window, args=(proc,), daemon=True)
+            wm.start()
+            self.threads.append(wm)
 
         log("Unreal", f"Waiting for TCP {DEFAULT_UNREAL_HOST}:{DEFAULT_UNREAL_PORT} ...", Style.MAGENTA)
         ready, exited = wait_for_tcp_or_process_exit(DEFAULT_UNREAL_HOST, DEFAULT_UNREAL_PORT, proc, timeout=120.0)
@@ -524,8 +601,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--unreal", action="store_true", help="Start Unreal Editor")
     parser.add_argument("--mcp-server", action="store_true", help="Start Python MCP server")
     parser.add_argument("--surreal-memory", action="store_true", help="Use in-memory SurrealDB instead of rocksdb")
+    parser.add_argument("--surreal-bind", default=DEFAULT_SURREAL_BIND, help=f"SurrealDB bind address (default: {DEFAULT_SURREAL_BIND})")
     parser.add_argument("--headless", action="store_true", help="Run Unreal Engine in headless mode (no window)")
     parser.add_argument("--render-offscreen", action="store_true", help="Use -RenderOffScreen for Unreal Engine")
+    parser.add_argument("--no-minimize", action="store_true", help="Prevent Unreal Editor window from being minimized/resized too small (D3D12 stability)")
     parser.add_argument("--cleanup", action="store_true", help="Cleanup ports (55557, 8787, 8000) before starting")
     return parser
 

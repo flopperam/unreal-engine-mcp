@@ -63,7 +63,8 @@ public class UnrealMCP : ModuleRules
 				"NavigationSystem",
 				"Navmesh",
 				"AudioEditor",			// For USoundFactory (WAV/OGG import)
-				"RenderCore"			// For FlushRenderingCommands()
+				"RenderCore",			// For FlushRenderingCommands()
+				"ImageWrapper"			// For IImageWrapper texture export fallback
 			}
 		);
 

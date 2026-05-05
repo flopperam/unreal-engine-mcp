@@ -195,11 +195,13 @@ class TestAudioImport:
             destination_path=dest_path
         )
 
+        imported_assets = []
         try:
             assert result.get("success"), f"Import failed: {result.get('error')}"
             assert len(result["imported_assets"]) > 0
+            imported_assets = result["imported_assets"]
         finally:
-            _cleanup_assets([dest_path])
+            _cleanup_assets(imported_assets if imported_assets else [dest_path])
 
     def test_import_wav_with_cue(self):
         """Test importing WAV with automatic Sound Cue creation."""
@@ -215,12 +217,14 @@ class TestAudioImport:
             cue_volume=0.8
         )
 
+        imported_assets = []
         try:
             assert result.get("success"), f"Import failed: {result.get('error')}"
             # SoundCue auto-creation is factory-dependent; accept 1+ assets
             assert len(result["imported_assets"]) >= 1
+            imported_assets = result["imported_assets"]
         finally:
-            _cleanup_assets([dest_path])
+            _cleanup_assets(imported_assets if imported_assets else [dest_path])
 
 
 class TestAssetExport:
@@ -251,18 +255,21 @@ class TestAssetExport:
             pytest.skip("No imported assets returned")
         asset_path = actual_asset_paths[0]
 
-        result = _send(
-            "export_asset",
-            asset_path=asset_path,
-            output_path=output_path
-        )
+        try:
+            result = _send(
+                "export_asset",
+                asset_path=asset_path,
+                output_path=output_path
+            )
 
-        _cleanup_assets([asset_path])
-
-        if "No exporter found" in result.get("error", ""):
-            pytest.skip("FBX exporter not available in this Unreal build")
-        assert result.get("success"), f"Export failed: {result.get('error')}"
-        assert os.path.exists(output_path), f"Exported file not found: {output_path}"
+            assert result.get("success"), f"Export failed: {result.get('error')}"
+            assert os.path.exists(output_path), f"Exported file not found: {output_path}"
+            assert os.path.getsize(output_path) > 0, "Exported file is empty"
+            logger.info(f"Successfully exported FBX: {os.path.getsize(output_path)} bytes")
+        finally:
+            _cleanup_assets([asset_path])
+            if os.path.exists(output_path):
+                os.remove(output_path)
 
     def test_export_texture_png(self):
         """Test exporting a Texture to PNG."""
@@ -286,18 +293,21 @@ class TestAssetExport:
             pytest.skip("No imported assets returned")
         asset_path = actual_asset_paths[0]
 
-        result = _send(
-            "export_asset",
-            asset_path=asset_path,
-            output_path=output_path
-        )
+        try:
+            result = _send(
+                "export_asset",
+                asset_path=asset_path,
+                output_path=output_path
+            )
 
-        _cleanup_assets([asset_path])
-
-        if "No exporter found" in result.get("error", ""):
-            pytest.skip("PNG exporter not available in this Unreal build")
-        assert result.get("success"), f"Export failed: {result.get('error')}"
-        assert os.path.exists(output_path), f"Exported file not found: {output_path}"
+            assert result.get("success"), f"Export failed: {result.get('error')}"
+            assert os.path.exists(output_path), f"Exported file not found: {output_path}"
+            assert os.path.getsize(output_path) > 0, "Exported file is empty"
+            logger.info(f"Successfully exported PNG: {os.path.getsize(output_path)} bytes")
+        finally:
+            _cleanup_assets([asset_path])
+            if os.path.exists(output_path):
+                os.remove(output_path)
 
     def test_export_nonexistent_asset(self):
         """Test error handling for non-existent asset."""

@@ -134,4 +134,15 @@ private:
 	 * @param ImportedObjects - Objects that were imported
 	 */
 	static void MarkPackagesDirty(const TArray<UObject*>& ImportedObjects);
+
+	/**
+	 * Fallback texture export using IImageWrapper.
+	 * Used when UExporter::RunAssetExportTask cannot find an appropriate exporter.
+	 * Reads the texture source data (mip 0) and writes it via IImageWrapper.
+	 * @param Texture - The UTexture2D to export
+	 * @param OutputPath - Absolute disk path for the output file
+	 * @param ExportFormat - File format extension (e.g., "png", "bmp", "exr")
+	 * @return true if export was successful
+	 */
+	static bool ExportTextureViaImageUtils(UTexture2D* Texture, const FString& OutputPath, const FString& ExportFormat);
 };
