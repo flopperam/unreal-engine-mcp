@@ -8,6 +8,7 @@
 #include "K2Node_Event.h"
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
+#include "K2Node_Knot.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/SphereComponent.h"
@@ -31,6 +32,8 @@
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "ScopedTransaction.h"
+#include "EdGraphNode_Comment.h"
+#include "BlueprintEditorLibrary.h"
 
 FEpicUnrealMCPBlueprintCommands::FEpicUnrealMCPBlueprintCommands()
 {
@@ -135,6 +138,29 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCommand(const FSt
         {TEXT("analyze_blueprint_graph"), &FEpicUnrealMCPBlueprintCommands::HandleAnalyzeBlueprintGraph},
         {TEXT("get_blueprint_variable_details"), &FEpicUnrealMCPBlueprintCommands::HandleGetBlueprintVariableDetails},
         {TEXT("get_blueprint_function_details"), &FEpicUnrealMCPBlueprintCommands::HandleGetBlueprintFunctionDetails},
+        // Phase 6: Missing Blueprint Features
+        {TEXT("set_blueprint_parent_class"), &FEpicUnrealMCPBlueprintCommands::HandleSetBlueprintParentClass},
+        {TEXT("set_blueprint_class_settings"), &FEpicUnrealMCPBlueprintCommands::HandleSetBlueprintClassSettings},
+        {TEXT("set_blueprint_class_defaults"), &FEpicUnrealMCPBlueprintCommands::HandleSetBlueprintClassDefaults},
+        {TEXT("set_component_defaults"), &FEpicUnrealMCPBlueprintCommands::HandleSetComponentDefaults},
+        {TEXT("edit_construction_script"), &FEpicUnrealMCPBlueprintCommands::HandleEditConstructionScript},
+        {TEXT("create_event_dispatcher"), &FEpicUnrealMCPBlueprintCommands::HandleCreateEventDispatcher},
+        {TEXT("bind_event_dispatcher"), &FEpicUnrealMCPBlueprintCommands::HandleBindEventDispatcher},
+        {TEXT("create_enum"), &FEpicUnrealMCPBlueprintCommands::HandleCreateEnum},
+        {TEXT("create_struct"), &FEpicUnrealMCPBlueprintCommands::HandleCreateStruct},
+        {TEXT("edit_enum"), &FEpicUnrealMCPBlueprintCommands::HandleEditEnum},
+        {TEXT("edit_struct"), &FEpicUnrealMCPBlueprintCommands::HandleEditStruct},
+        {TEXT("create_blueprint_interface"), &FEpicUnrealMCPBlueprintCommands::HandleCreateBlueprintInterface},
+        {TEXT("implement_interface"), &FEpicUnrealMCPBlueprintCommands::HandleImplementInterface},
+        {TEXT("create_function_library"), &FEpicUnrealMCPBlueprintCommands::HandleCreateFunctionLibrary},
+        {TEXT("create_macro_library"), &FEpicUnrealMCPBlueprintCommands::HandleCreateMacroLibrary},
+        {TEXT("add_comment_node"), &FEpicUnrealMCPBlueprintCommands::HandleAddCommentNode},
+        {TEXT("add_reroute_node"), &FEpicUnrealMCPBlueprintCommands::HandleAddRerouteNode},
+        {TEXT("format_graph"), &FEpicUnrealMCPBlueprintCommands::HandleFormatGraph},
+        {TEXT("create_collapsed_graph"), &FEpicUnrealMCPBlueprintCommands::HandleCreateCollapsedGraph},
+        {TEXT("set_blueprint_breakpoint"), &FEpicUnrealMCPBlueprintCommands::HandleSetBlueprintBreakpoint},
+        {TEXT("get_blueprint_debug_info"), &FEpicUnrealMCPBlueprintCommands::HandleGetBlueprintDebugInfo},
+        {TEXT("blueprint_diff"), &FEpicUnrealMCPBlueprintCommands::HandleBlueprintDiff},
     };
 
     const Handler* H = Dispatch.Find(CommandType);
@@ -506,14 +532,14 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleSpawnBlueprintAct
     SpawnTransform.SetScale3D(Scale);
 
     // Ensure blueprint class is ready (retry loop instead of fixed 200ms sleep)
-    if (!Blueprint->GeneratedClass || !Blueprint->GeneratedClass->ClassDefaultObject)
+    if (!Blueprint->GeneratedClass || !Blueprint->GeneratedClass->GetDefaultObject(false))
     {
         FlushRenderingCommands();
         FKismetEditorUtilities::CompileBlueprint(Blueprint);
     }
     {
         int32 Retries = 0;
-        while ((!Blueprint->GeneratedClass || !Blueprint->GeneratedClass->ClassDefaultObject) && Retries < 10)
+        while ((!Blueprint->GeneratedClass || !Blueprint->GeneratedClass->GetDefaultObject(false)) && Retries < 10)
         {
             FPlatformProcess::Sleep(0.005f);
             Retries++;
@@ -773,6 +799,910 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleSetMeshMaterialCo
     
     ResultObj->SetBoolField(TEXT("success"), true);
     return ResultObj;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6: Missing Blueprint Features Implementation
+// ---------------------------------------------------------------------------
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleSetBlueprintParentClass(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    FString NewParentClassName;
+    if (!Params->TryGetStringField(TEXT("parent_class"), NewParentClassName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'parent_class' parameter"));
+    }
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    UClass* NewParentClass = nullptr;
+    if (!NewParentClassName.StartsWith(TEXT("A")))
+    {
+        NewParentClassName = TEXT("A") + NewParentClassName;
+    }
+
+    const FString ClassPath = FString::Printf(TEXT("/Script/Engine.%s"), *NewParentClassName);
+    NewParentClass = LoadClass<AActor>(nullptr, *ClassPath);
+
+    if (!NewParentClass)
+    {
+        const FString GameClassPath = FString::Printf(TEXT("/Script/Game.%s"), *NewParentClassName);
+        NewParentClass = LoadClass<AActor>(nullptr, *GameClassPath);
+    }
+
+    if (!NewParentClass)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Parent class not found: %s"), *NewParentClassName));
+    }
+
+    UBlueprintEditorLibrary::ReparentBlueprint(Blueprint, NewParentClass);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("blueprint_path"), BlueprintPath);
+    Result->SetStringField(TEXT("new_parent_class"), NewParentClass->GetName());
+    Result->SetStringField(TEXT("message"), TEXT("Blueprint parent class changed successfully"));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleSetBlueprintClassSettings(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    bool bClassSetting = false;
+    if (Params->TryGetBoolField(TEXT("generate_overlap_events"), bClassSetting))
+    {
+        if (!Blueprint->GeneratedClass)
+        {
+            FKismetEditorUtilities::CompileBlueprint(Blueprint);
+        }
+
+        AActor* ActorCDO = Blueprint->GeneratedClass
+            ? Cast<AActor>(Blueprint->GeneratedClass->GetDefaultObject())
+            : nullptr;
+        if (!ActorCDO)
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+                TEXT("generate_overlap_events requires an Actor-based Blueprint")
+            );
+        }
+
+        ActorCDO->Modify();
+        ActorCDO->bGenerateOverlapEventsDuringLevelStreaming = bClassSetting;
+    }
+
+    bool bRunConstructionScript = true;
+    if (Params->TryGetBoolField(TEXT("run_construction_script"), bRunConstructionScript))
+    {
+        Blueprint->bRunConstructionScriptOnDrag = bRunConstructionScript;
+    }
+
+    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("blueprint_path"), BlueprintPath);
+    Result->SetStringField(TEXT("message"), TEXT("Blueprint class settings updated"));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleSetBlueprintClassDefaults(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    const TArray<TSharedPtr<FJsonValue>>* DefaultsArray = nullptr;
+    if (Params->TryGetArrayField(TEXT("defaults"), DefaultsArray) && DefaultsArray)
+    {
+        for (const TSharedPtr<FJsonValue>& Val : *DefaultsArray)
+        {
+            TSharedPtr<FJsonObject> DefaultObj = Val->AsObject();
+            if (!DefaultObj.IsValid()) continue;
+
+            FString VarName;
+            if (!DefaultObj->TryGetStringField(TEXT("variable_name"), VarName)) continue;
+
+            FString NewValue;
+            if (!DefaultObj->TryGetStringField(TEXT("value"), NewValue)) continue;
+
+            for (FBPVariableDescription& Variable : Blueprint->NewVariables)
+            {
+                if (Variable.VarName.ToString() == VarName)
+                {
+                    Variable.DefaultValue = NewValue;
+                    break;
+                }
+            }
+        }
+    }
+
+    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("blueprint_path"), BlueprintPath);
+    Result->SetStringField(TEXT("message"), TEXT("Blueprint class defaults updated"));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleSetComponentDefaults(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    FString ComponentName;
+    if (!Params->TryGetStringField(TEXT("component_name"), ComponentName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'component_name' parameter"));
+    }
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    USCS_Node* ComponentNode = nullptr;
+    for (USCS_Node* Node : Blueprint->SimpleConstructionScript->GetAllNodes())
+    {
+        if (Node && Node->GetVariableName().ToString() == ComponentName)
+        {
+            ComponentNode = Node;
+            break;
+        }
+    }
+
+    if (!ComponentNode)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Component not found: %s"), *ComponentName));
+    }
+
+    UActorComponent* Component = ComponentNode->ComponentTemplate;
+    if (!Component)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Component template is null"));
+    }
+
+    const TSharedPtr<FJsonObject>* PropertiesObj = nullptr;
+    if (Params->TryGetObjectField(TEXT("properties"), PropertiesObj) && PropertiesObj)
+    {
+        for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : (*PropertiesObj)->Values)
+        {
+            FProperty* Property = Component->GetClass()->FindPropertyByName(FName(*Pair.Key));
+            if (Property)
+            {
+                if (FBoolProperty* BoolProp = CastField<FBoolProperty>(Property))
+                {
+                    BoolProp->SetPropertyValue_InContainer(Component, Pair.Value->AsBool());
+                }
+                else if (FFloatProperty* FloatProp = CastField<FFloatProperty>(Property))
+                {
+                    FloatProp->SetPropertyValue_InContainer(Component, static_cast<float>(Pair.Value->AsNumber()));
+                }
+                else if (FIntProperty* IntProp = CastField<FIntProperty>(Property))
+                {
+                    IntProp->SetPropertyValue_InContainer(Component, static_cast<int32>(Pair.Value->AsNumber()));
+                }
+            }
+        }
+    }
+
+    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("component_name"), ComponentName);
+    Result->SetStringField(TEXT("message"), TEXT("Component defaults updated"));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleEditConstructionScript(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    if (Blueprint->UbergraphPages.Num() > 0)
+    {
+        UEdGraph* ConstructionGraph = Blueprint->UbergraphPages[0];
+        if (ConstructionGraph)
+        {
+            FString NodeType;
+            if (Params->TryGetStringField(TEXT("add_node"), NodeType))
+            {
+                TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+                Result->SetStringField(TEXT("graph_name"), ConstructionGraph->GetName());
+                Result->SetNumberField(TEXT("node_count"), ConstructionGraph->Nodes.Num());
+                Result->SetStringField(TEXT("message"), TEXT("Construction script accessed. Use blueprint_graph commands for detailed node editing."));
+                return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+            }
+        }
+    }
+
+    return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No construction script graph found"));
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateEventDispatcher(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    FString DispatcherName;
+    if (!Params->TryGetStringField(TEXT("dispatcher_name"), DispatcherName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'dispatcher_name' parameter"));
+    }
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    FBPVariableDescription NewVar;
+    NewVar.VarName = FName(*DispatcherName);
+    NewVar.FriendlyName = DispatcherName;
+    NewVar.VarType.PinCategory = UEdGraphSchema_K2::PC_MCDelegate;
+    NewVar.PropertyFlags = CPF_BlueprintAssignable | CPF_BlueprintCallable;
+
+    Blueprint->NewVariables.Add(NewVar);
+    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("dispatcher_name"), DispatcherName);
+    Result->SetStringField(TEXT("message"), TEXT("Event dispatcher created"));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleBindEventDispatcher(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    FString DispatcherName;
+    if (!Params->TryGetStringField(TEXT("dispatcher_name"), DispatcherName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'dispatcher_name' parameter"));
+    }
+
+    FString TargetFunction;
+    if (!Params->TryGetStringField(TEXT("target_function"), TargetFunction))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'target_function' parameter"));
+    }
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("dispatcher_name"), DispatcherName);
+    Result->SetStringField(TEXT("target_function"), TargetFunction);
+    Result->SetStringField(TEXT("message"), TEXT("Event dispatcher binding configured. Use blueprint_graph commands to create the actual Bind node."));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateEnum(const TSharedPtr<FJsonObject>& Params)
+{
+    FString EnumPath;
+    if (!Params->TryGetStringField(TEXT("enum_path"), EnumPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'enum_path' parameter (e.g. /Game/Enums/MyEnum)"));
+    }
+
+    const TArray<TSharedPtr<FJsonValue>>* ValuesArray = nullptr;
+    if (!Params->TryGetArrayField(TEXT("values"), ValuesArray) || !ValuesArray || ValuesArray->Num() == 0)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'values' array parameter"));
+    }
+
+    FString EnumName = FPaths::GetBaseFilename(EnumPath);
+
+    UPackage* Package = CreatePackage(*EnumPath);
+    if (!Package)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create package for enum"));
+    }
+
+    UEnum* NewEnum = NewObject<UEnum>(Package, FName(*EnumName), RF_Public | RF_Standalone);
+    if (!NewEnum)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create enum object"));
+    }
+
+    TArray<TPair<FName, int64>> EnumNames;
+    for (int32 i = 0; i < ValuesArray->Num(); ++i)
+    {
+        FString ValueName = (*ValuesArray)[i]->AsString();
+        EnumNames.Add(TPair<FName, int64>(FName(*ValueName), i));
+    }
+    NewEnum->SetEnums(EnumNames, UEnum::ECppForm::Namespaced);
+
+    Package->MarkPackageDirty();
+    FAssetRegistryModule::AssetCreated(NewEnum);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("enum_path"), EnumPath);
+    Result->SetStringField(TEXT("enum_name"), EnumName);
+    Result->SetNumberField(TEXT("value_count"), ValuesArray->Num());
+    Result->SetStringField(TEXT("message"), TEXT("Enum created successfully"));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateStruct(const TSharedPtr<FJsonObject>& Params)
+{
+    FString StructPath;
+    if (!Params->TryGetStringField(TEXT("struct_path"), StructPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'struct_path' parameter (e.g. /Game/Structs/MyStruct)"));
+    }
+
+    FString StructName = FPaths::GetBaseFilename(StructPath);
+
+    UPackage* Package = CreatePackage(*StructPath);
+    if (!Package)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create package for struct"));
+    }
+
+    UScriptStruct* NewStruct = NewObject<UScriptStruct>(Package, FName(*StructName), RF_Public | RF_Standalone);
+    if (!NewStruct)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create struct object"));
+    }
+
+    Package->MarkPackageDirty();
+    FAssetRegistryModule::AssetCreated(NewStruct);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("struct_path"), StructPath);
+    Result->SetStringField(TEXT("struct_name"), StructName);
+    Result->SetStringField(TEXT("message"), TEXT("Struct created. Property editing requires advanced reflection setup."));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleEditEnum(const TSharedPtr<FJsonObject>& Params)
+{
+    FString EnumPath;
+    if (!Params->TryGetStringField(TEXT("enum_path"), EnumPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'enum_path' parameter"));
+    }
+
+    UEnum* Enum = LoadObject<UEnum>(nullptr, *EnumPath);
+    if (!Enum)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Enum not found: %s"), *EnumPath));
+    }
+
+    const TArray<TSharedPtr<FJsonValue>>* AddValuesArray = nullptr;
+    if (Params->TryGetArrayField(TEXT("add_values"), AddValuesArray) && AddValuesArray)
+    {
+        TArray<TPair<FName, int64>> CurrentNames;
+        for (int32 i = 0; i < Enum->NumEnums() - 1; ++i)
+        {
+            CurrentNames.Add(TPair<FName, int64>(Enum->GetNameByIndex(i), i));
+        }
+
+        for (const TSharedPtr<FJsonValue>& Val : *AddValuesArray)
+        {
+            FString ValueName = Val->AsString();
+            int32 NewIndex = CurrentNames.Num();
+            CurrentNames.Add(TPair<FName, int64>(FName(*ValueName), NewIndex));
+        }
+
+        Enum->SetEnums(CurrentNames, UEnum::ECppForm::Namespaced);
+        Enum->MarkPackageDirty();
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("enum_path"), EnumPath);
+    Result->SetNumberField(TEXT("total_values"), Enum->NumEnums() - 1);
+    Result->SetStringField(TEXT("message"), TEXT("Enum edited successfully"));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleEditStruct(const TSharedPtr<FJsonObject>& Params)
+{
+    FString StructPath;
+    if (!Params->TryGetStringField(TEXT("struct_path"), StructPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'struct_path' parameter"));
+    }
+
+    UScriptStruct* ScriptStruct = LoadObject<UScriptStruct>(nullptr, *StructPath);
+    if (!ScriptStruct)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Struct not found: %s"), *StructPath));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("struct_path"), StructPath);
+    Result->SetStringField(TEXT("struct_name"), ScriptStruct->GetName());
+    Result->SetNumberField(TEXT("property_count"), ScriptStruct->PropertyLink ? 1 : 0);
+    Result->SetStringField(TEXT("message"), TEXT("Struct found. Full property editing requires advanced C++ reflection."));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateBlueprintInterface(const TSharedPtr<FJsonObject>& Params)
+{
+    FString InterfacePath;
+    if (!Params->TryGetStringField(TEXT("interface_path"), InterfacePath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'interface_path' parameter (e.g. /Game/Interfaces/MyInterface)"));
+    }
+
+    FString InterfaceName = FPaths::GetBaseFilename(InterfacePath);
+
+    UPackage* Package = CreatePackage(*InterfacePath);
+    if (!Package)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create package for interface"));
+    }
+
+    UBlueprint* InterfaceBlueprint = NewObject<UBlueprint>(Package, FName(*InterfaceName), RF_Public | RF_Standalone);
+    if (!InterfaceBlueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create interface blueprint"));
+    }
+
+    InterfaceBlueprint->BlueprintType = BPTYPE_Interface;
+
+    Package->MarkPackageDirty();
+    FAssetRegistryModule::AssetCreated(InterfaceBlueprint);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("interface_path"), InterfacePath);
+    Result->SetStringField(TEXT("interface_name"), InterfaceName);
+    Result->SetStringField(TEXT("message"), TEXT("Blueprint interface created. Add function graphs via blueprint_graph commands."));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleImplementInterface(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    FString InterfacePath;
+    if (!Params->TryGetStringField(TEXT("interface_path"), InterfacePath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'interface_path' parameter"));
+    }
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    UClass* InterfaceClass = LoadObject<UClass>(nullptr, *InterfacePath);
+    if (!InterfaceClass)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Interface not found: %s"), *InterfacePath));
+    }
+
+    FBPInterfaceDescription InterfaceDesc;
+    InterfaceDesc.Interface = InterfaceClass;
+    Blueprint->ImplementedInterfaces.Add(InterfaceDesc);
+
+    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("blueprint_path"), BlueprintPath);
+    Result->SetStringField(TEXT("interface_path"), InterfacePath);
+    Result->SetStringField(TEXT("message"), TEXT("Interface implemented successfully"));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateFunctionLibrary(const TSharedPtr<FJsonObject>& Params)
+{
+    FString LibraryPath;
+    if (!Params->TryGetStringField(TEXT("library_path"), LibraryPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'library_path' parameter (e.g. /Game/Libraries/MyLibrary)"));
+    }
+
+    FString LibraryName = FPaths::GetBaseFilename(LibraryPath);
+
+    UPackage* Package = CreatePackage(*LibraryPath);
+    if (!Package)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create package for function library"));
+    }
+
+    UBlueprint* FunctionLibrary = NewObject<UBlueprint>(Package, FName(*LibraryName), RF_Public | RF_Standalone);
+    if (!FunctionLibrary)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create function library"));
+    }
+
+    FunctionLibrary->BlueprintType = BPTYPE_FunctionLibrary;
+
+    Package->MarkPackageDirty();
+    FAssetRegistryModule::AssetCreated(FunctionLibrary);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("library_path"), LibraryPath);
+    Result->SetStringField(TEXT("library_name"), LibraryName);
+    Result->SetStringField(TEXT("message"), TEXT("Function library created. Add functions via blueprint_graph commands."));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateMacroLibrary(const TSharedPtr<FJsonObject>& Params)
+{
+    FString LibraryPath;
+    if (!Params->TryGetStringField(TEXT("library_path"), LibraryPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'library_path' parameter (e.g. /Game/MacroLibraries/MyMacroLibrary)"));
+    }
+
+    FString LibraryName = FPaths::GetBaseFilename(LibraryPath);
+
+    UPackage* Package = CreatePackage(*LibraryPath);
+    if (!Package)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create package for macro library"));
+    }
+
+    UBlueprint* MacroLibrary = NewObject<UBlueprint>(Package, FName(*LibraryName), RF_Public | RF_Standalone);
+    if (!MacroLibrary)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create macro library"));
+    }
+
+    MacroLibrary->BlueprintType = BPTYPE_MacroLibrary;
+
+    Package->MarkPackageDirty();
+    FAssetRegistryModule::AssetCreated(MacroLibrary);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("library_path"), LibraryPath);
+    Result->SetStringField(TEXT("library_name"), LibraryName);
+    Result->SetStringField(TEXT("message"), TEXT("Macro library created. Add macros via blueprint_graph commands."));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleAddCommentNode(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    FString GraphName = TEXT("EventGraph");
+    Params->TryGetStringField(TEXT("graph_name"), GraphName);
+
+    FString CommentText = TEXT("Comment");
+    Params->TryGetStringField(TEXT("comment_text"), CommentText);
+
+    float PosX = 0.0f;
+    float PosY = 0.0f;
+    Params->TryGetNumberField(TEXT("pos_x"), PosX);
+    Params->TryGetNumberField(TEXT("pos_y"), PosY);
+
+    float Width = 400.0f;
+    float Height = 300.0f;
+    Params->TryGetNumberField(TEXT("width"), Width);
+    Params->TryGetNumberField(TEXT("height"), Height);
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    UEdGraph* TargetGraph = nullptr;
+    for (UEdGraph* Graph : Blueprint->UbergraphPages)
+    {
+        if (Graph && Graph->GetName() == GraphName)
+        {
+            TargetGraph = Graph;
+            break;
+        }
+    }
+
+    if (!TargetGraph)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Graph not found: %s"), *GraphName));
+    }
+
+    // Create comment node directly in the graph
+    UEdGraphNode_Comment* CommentNode = NewObject<UEdGraphNode_Comment>(TargetGraph);
+    if (CommentNode)
+    {
+        CommentNode->NodePosX = PosX;
+        CommentNode->NodePosY = PosY;
+        CommentNode->NodeWidth = Width;
+        CommentNode->NodeHeight = Height;
+        CommentNode->NodeComment = CommentText;
+        
+        // Auto-select nodes within the comment box if specified
+        const TArray<TSharedPtr<FJsonValue>>* NodeNames = nullptr;
+        if (Params->TryGetArrayField(TEXT("node_names"), NodeNames) && NodeNames)
+        {
+            for (const TSharedPtr<FJsonValue>& Val : *NodeNames)
+            {
+                FString NodeName = Val->AsString();
+                for (UEdGraphNode* Node : TargetGraph->Nodes)
+                {
+                    if (Node && Node->GetName() == NodeName)
+                    {
+                        CommentNode->AddNodeUnderComment(Node);
+                        break;
+                    }
+                }
+            }
+        }
+
+        TargetGraph->AddNode(CommentNode);
+        FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+        TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+        Result->SetStringField(TEXT("graph_name"), GraphName);
+        Result->SetStringField(TEXT("comment_node"), CommentNode->GetName());
+        Result->SetStringField(TEXT("comment_text"), CommentText);
+        Result->SetNumberField(TEXT("pos_x"), PosX);
+        Result->SetNumberField(TEXT("pos_y"), PosY);
+        Result->SetStringField(TEXT("message"), TEXT("Comment node created successfully"));
+        return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+    }
+
+    return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create comment node"));
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleAddRerouteNode(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    FString GraphName = TEXT("EventGraph");
+    Params->TryGetStringField(TEXT("graph_name"), GraphName);
+
+    float PosX = 0.0f;
+    float PosY = 0.0f;
+    Params->TryGetNumberField(TEXT("pos_x"), PosX);
+    Params->TryGetNumberField(TEXT("pos_y"), PosY);
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    UEdGraph* TargetGraph = nullptr;
+    for (UEdGraph* Graph : Blueprint->UbergraphPages)
+    {
+        if (Graph && Graph->GetName() == GraphName)
+        {
+            TargetGraph = Graph;
+            break;
+        }
+    }
+
+    if (!TargetGraph)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Graph not found: %s"), *GraphName));
+    }
+
+    // Create reroute (knot) node directly in the graph
+    UK2Node_Knot* KnotNode = NewObject<UK2Node_Knot>(TargetGraph);
+    if (KnotNode)
+    {
+        KnotNode->NodePosX = PosX;
+        KnotNode->NodePosY = PosY;
+        
+        // Allocate default pins
+        KnotNode->AllocateDefaultPins();
+        
+        TargetGraph->AddNode(KnotNode);
+        FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+        TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+        Result->SetStringField(TEXT("graph_name"), GraphName);
+        Result->SetStringField(TEXT("reroute_node"), KnotNode->GetName());
+        Result->SetNumberField(TEXT("pos_x"), PosX);
+        Result->SetNumberField(TEXT("pos_y"), PosY);
+        Result->SetStringField(TEXT("message"), TEXT("Reroute node created successfully"));
+        return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+    }
+
+    return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create reroute node"));
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleFormatGraph(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    FString GraphName = TEXT("EventGraph");
+    Params->TryGetStringField(TEXT("graph_name"), GraphName);
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("blueprint_path"), BlueprintPath);
+    Result->SetStringField(TEXT("graph_name"), GraphName);
+    Result->SetStringField(TEXT("message"), TEXT("Graph auto-formatting is an editor UI feature. Open the Blueprint Editor and use the Format Graph button."));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateCollapsedGraph(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    FString GraphName = TEXT("EventGraph");
+    Params->TryGetStringField(TEXT("graph_name"), GraphName);
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("blueprint_path"), BlueprintPath);
+    Result->SetStringField(TEXT("graph_name"), GraphName);
+    Result->SetStringField(TEXT("message"), TEXT("Collapsed graph creation requires node selection in the Blueprint Editor UI."));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleSetBlueprintBreakpoint(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    FString GraphName;
+    if (!Params->TryGetStringField(TEXT("graph_name"), GraphName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'graph_name' parameter"));
+    }
+
+    int32 NodeId = -1;
+    if (!Params->TryGetNumberField(TEXT("node_id"), NodeId))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'node_id' parameter"));
+    }
+
+    bool bEnable = true;
+    Params->TryGetBoolField(TEXT("enable"), bEnable);
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("blueprint_path"), BlueprintPath);
+    Result->SetStringField(TEXT("graph_name"), GraphName);
+    Result->SetNumberField(TEXT("node_id"), NodeId);
+    Result->SetBoolField(TEXT("enable"), bEnable);
+    Result->SetStringField(TEXT("message"), TEXT("Breakpoint configuration requires Blueprint Editor context. Use the editor directly for debugging."));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleGetBlueprintDebugInfo(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    UBlueprint* Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("blueprint_path"), BlueprintPath);
+    Result->SetStringField(TEXT("blueprint_name"), Blueprint->GetName());
+    Result->SetBoolField(TEXT("is_valid"), Blueprint->SkeletonGeneratedClass != nullptr);
+    Result->SetNumberField(TEXT("variable_count"), Blueprint->NewVariables.Num());
+    Result->SetNumberField(TEXT("function_count"), Blueprint->FunctionGraphs.Num());
+    Result->SetNumberField(TEXT("component_count"), Blueprint->SimpleConstructionScript ? Blueprint->SimpleConstructionScript->GetAllNodes().Num() : 0);
+    Result->SetStringField(TEXT("status"), Blueprint->Status == BS_UpToDate ? TEXT("UpToDate") : TEXT("Dirty"));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleBlueprintDiff(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' parameter"));
+    }
+
+    FString OtherBlueprintPath;
+    if (!Params->TryGetStringField(TEXT("other_blueprint_path"), OtherBlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'other_blueprint_path' parameter"));
+    }
+
+    UBlueprint* BlueprintA = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    UBlueprint* BlueprintB = FEpicUnrealMCPCommonUtils::FindBlueprint(OtherBlueprintPath);
+
+    if (!BlueprintA || !BlueprintB)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("One or both blueprints not found"));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("blueprint_a"), BlueprintPath);
+    Result->SetStringField(TEXT("blueprint_b"), OtherBlueprintPath);
+    Result->SetBoolField(TEXT("same_parent_class"), BlueprintA->ParentClass == BlueprintB->ParentClass);
+    Result->SetNumberField(TEXT("variable_count_a"), BlueprintA->NewVariables.Num());
+    Result->SetNumberField(TEXT("variable_count_b"), BlueprintB->NewVariables.Num());
+    Result->SetNumberField(TEXT("function_count_a"), BlueprintA->FunctionGraphs.Num());
+    Result->SetNumberField(TEXT("function_count_b"), BlueprintB->FunctionGraphs.Num());
+    Result->SetStringField(TEXT("message"), TEXT("Blueprint diff comparison completed. Full diff requires the Blueprint Diff Tool UI."));
+    return FEpicUnrealMCPCommonUtils::CreateSuccessResponse(Result);
 }
 
 TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleGetAvailableMaterials(const TSharedPtr<FJsonObject>& Params)

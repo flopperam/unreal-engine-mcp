@@ -29,15 +29,16 @@ class TestLevelManagementComprehensive(unittest.TestCase):
         cls.unreal = unreal
         
         # Test paths
-        cls.test_base_path = "/Game/Tests/MCP_Integration"
+        cls.test_base_path = f"/Game/Tests/MCP_Runtime/MCP_Integration_{int(time.time())}_{os.getpid()}"
         cls.test_level_1 = f"{cls.test_base_path}/Level1"
         cls.test_level_2 = f"{cls.test_base_path}/Level2"
         cls.test_sublevel = f"{cls.test_base_path}/Sublevel"
+        cls.renamed_level = f"{cls.test_base_path}/RenamedLevel"
         
     def setUp(self):
         """Clean up any existing test levels before each test."""
         # Try to delete test levels if they exist
-        for path in [self.test_level_1, self.test_level_2, self.test_sublevel]:
+        for path in [self.test_level_1, self.test_level_2, self.test_sublevel, self.renamed_level]:
             level_tool(action="delete", asset_path=path)
         
     def tearDown(self):
@@ -115,7 +116,7 @@ class TestLevelManagementComprehensive(unittest.TestCase):
         # Create source level
         level_tool(action="create", asset_path=self.test_level_1)
         
-        renamed_path = f"{self.test_base_path}/RenamedLevel"
+        renamed_path = self.renamed_level
         result = level_tool(
             action="rename",
             source_path=self.test_level_1,
@@ -197,9 +198,10 @@ class TestSublevelToolComprehensive(unittest.TestCase):
             raise unittest.SkipTest("Unreal Engine not running or unreachable")
         cls.unreal = unreal
         
-        cls.persist_level = "/Game/Tests/MCP_Persist"
-        cls.sublevel_1 = "/Game/Tests/MCP_Sub1"
-        cls.sublevel_2 = "/Game/Tests/MCP_Sub2"
+        cls.test_base_path = f"/Game/Tests/MCP_Runtime/MCP_Sublevel_{int(time.time())}_{os.getpid()}"
+        cls.persist_level = f"{cls.test_base_path}/MCP_Persist"
+        cls.sublevel_1 = f"{cls.test_base_path}/MCP_Sub1"
+        cls.sublevel_2 = f"{cls.test_base_path}/MCP_Sub2"
         
     def setUp(self):
         """Set up test environment."""

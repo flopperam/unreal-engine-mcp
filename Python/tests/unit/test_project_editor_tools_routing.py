@@ -12,10 +12,13 @@ from server.project_editor_tools import (
 
 
 @pytest.fixture
-def mock_unreal(mocker):
+def mock_unreal(monkeypatch):
     mock = MagicMock()
     mock.send_command.return_value = {"success": True}
-    mocker.patch("server.project_editor_tools.get_unreal_connection", return_value=mock)
+    monkeypatch.setattr(
+        "server.project_editor_tools.get_unreal_connection",
+        lambda: mock,
+    )
     return mock
 
 

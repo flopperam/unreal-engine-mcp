@@ -79,7 +79,9 @@ public class UnrealMCP : ModuleRules
 				"GeometryCore",
 				"GeometryScriptingCore",
 				"GeometryFramework",
-				"DynamicMesh"
+				"DynamicMesh",
+				"MeshDescription",     // For FMeshDescription
+				"StaticMeshDescription" // For FStaticMeshAttributes
 			}
 		);
 		
@@ -92,7 +94,12 @@ public class UnrealMCP : ModuleRules
 					"ToolMenus",           // For editor UI
 					"BlueprintEditorLibrary", // For Blueprint utilities
 					"LevelEditor",         // For level/map management operations
-					"StaticMeshEditor"     // For StaticMeshEditorSubsystem
+					"StaticMeshEditor",     // For StaticMeshEditorSubsystem
+					"GraphEditor",          // For graph node manipulation (Comment, Reroute, Format)
+					"EditorWidgets",        // For editor widget utilities
+					"ApplicationCore",      // For SlateApplication window management
+					"WorkspaceMenuStructure", // For editor workspace access
+					"DataLayerEditor"      // For UE5.7 Data Layer editor operations
 				}
 			);
 		}

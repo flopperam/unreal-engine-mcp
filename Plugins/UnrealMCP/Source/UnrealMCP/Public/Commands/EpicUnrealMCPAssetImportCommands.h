@@ -53,6 +53,12 @@ private:
 	// Asset Export (to FBX/OBJ/PNG/etc.)
 	TSharedPtr<FJsonObject> HandleExportAsset(const TSharedPtr<FJsonObject>& Params);
 
+	// Screenshot capture
+	TSharedPtr<FJsonObject> HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params);
+
+	// Level export (JSON manifest)
+	TSharedPtr<FJsonObject> HandleExportLevel(const TSharedPtr<FJsonObject>& Params);
+
 	// ---------------------------------------------------------------------------
 	// Common Helpers
 	// ---------------------------------------------------------------------------

@@ -18,6 +18,7 @@
 #include "Misc/Paths.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
+#include "HAL/IConsoleManager.h"
 #include "HAL/PlatformFileManager.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/Package.h"
@@ -35,6 +36,54 @@
 #include "IImageWrapperModule.h"
 #include "IImageWrapper.h"
 #include "Engine/Texture2D.h"
+
+// For screenshot
+#include "Engine/Engine.h"
+#include "Editor.h"
+#include "HighResScreenshot.h"
+#include "Engine/GameViewportClient.h"
+#include "HAL/PlatformProcess.h"
+
+// For level export
+#include "Engine/World.h"
+#include "GameFramework/Actor.h"
+#include "Kismet/GameplayStatics.h"
+#include "EngineUtils.h"
+
+namespace
+{
+class FScopedBoolConsoleVariableOverride
+{
+public:
+	FScopedBoolConsoleVariableOverride(const TCHAR* Name, bool bOverrideValue)
+		: Variable(IConsoleManager::Get().FindConsoleVariable(Name))
+		, bOriginalValue(false)
+	{
+		if (Variable)
+		{
+			bOriginalValue = Variable->GetBool();
+			Variable->Set(bOverrideValue ? 1 : 0, ECVF_SetByCode);
+		}
+	}
+
+	~FScopedBoolConsoleVariableOverride()
+	{
+		if (Variable)
+		{
+			Variable->Set(bOriginalValue ? 1 : 0, ECVF_SetByCode);
+		}
+	}
+
+	bool IsValid() const
+	{
+		return Variable != nullptr;
+	}
+
+private:
+	IConsoleVariable* Variable;
+	bool bOriginalValue;
+};
+}
 
 FEpicUnrealMCPAssetImportCommands::FEpicUnrealMCPAssetImportCommands()
 {
@@ -63,6 +112,8 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleCommand(
 		{TEXT("save_import_preset"), &FEpicUnrealMCPAssetImportCommands::HandleSaveImportPreset},
 		{TEXT("load_import_preset"), &FEpicUnrealMCPAssetImportCommands::HandleLoadImportPreset},
 		{TEXT("export_asset"), &FEpicUnrealMCPAssetImportCommands::HandleExportAsset},
+		{TEXT("take_screenshot"), &FEpicUnrealMCPAssetImportCommands::HandleTakeScreenshot},
+		{TEXT("export_level"), &FEpicUnrealMCPAssetImportCommands::HandleExportLevel},
 	};
 
 	const Handler* H = Dispatch.Find(CommandType);
@@ -115,27 +166,40 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleImportFbxMesh(
 		AssetName = FPaths::GetBaseFilename(SourcePath);
 	}
 
-	// Resolve FBX factory
-	UFactory* Factory = ResolveFactoryForExtension(TEXT("fbx"));
+	// Resolve FBX factory — root it to prevent GC during import
+	UFbxFactory* Factory = NewObject<UFbxFactory>();
 	if (!Factory)
 	{
-		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to resolve FBX factory"));
+		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create FBX factory"));
 	}
+	Factory->AddToRoot();
 
-	// Build FBX import options
+	// Build FBX import options — root to prevent GC
 	UFbxImportUI* ImportOptions = BuildFbxImportOptions(Params);
+	if (ImportOptions)
+	{
+		ImportOptions->AddToRoot();
+	}
 
 	// Create and process import task
 	UAssetImportTask* Task = CreateImportTask(SourcePath, DestinationPath, AssetName, Factory, ImportOptions);
 	if (!Task)
 	{
+		Factory->RemoveFromRoot();
+		if (ImportOptions) ImportOptions->RemoveFromRoot();
 		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create import task"));
 	}
 
 	TArray<UObject*> ImportedObjects = ProcessImportTask(Task, Error);
+
+	// Release GC protection for factory and options
+	Factory->RemoveFromRoot();
+	if (ImportOptions) ImportOptions->RemoveFromRoot();
+
 	if (ImportedObjects.IsEmpty())
 	{
-		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(Error);
+		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+			Error.IsEmpty() ? TEXT("No objects were imported") : Error);
 	}
 
 	// Mark packages dirty (no forced GC)
@@ -168,6 +232,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleImportFbxMesh(
 	}
 
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetBoolField(TEXT("success"), true);
 	Result->SetArrayField(TEXT("imported_assets"), ImportedAssets);
 	Result->SetNumberField(TEXT("count"), ImportedAssets.Num());
 	if (GeneratedMaterials > 0)
@@ -221,6 +286,9 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleImportTexture(
 			FString::Printf(TEXT("Unsupported texture format: %s"), *Extension));
 	}
 
+	// Root the factory to prevent GC during import
+	Factory->AddToRoot();
+
 	// Build texture import options
 	TextureCompressionSettings CompressionSettings = TC_Default;
 	bool bSRGB = true;
@@ -236,19 +304,24 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleImportTexture(
 	if (TextureFactory)
 	{
 		TextureFactory->CompressionSettings = CompressionSettings;
-		// Note: SRGB is set per-texture after import, not on factory
 	}
 
 	UAssetImportTask* Task = CreateImportTask(SourcePath, DestinationPath, AssetName, Factory, nullptr);
 	if (!Task)
 	{
+		Factory->RemoveFromRoot();
 		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create import task"));
 	}
 
 	TArray<UObject*> ImportedObjects = ProcessImportTask(Task, Error);
+
+	// Release GC protection for factory
+	Factory->RemoveFromRoot();
+
 	if (ImportedObjects.IsEmpty())
 	{
-		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(Error);
+		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+			Error.IsEmpty() ? TEXT("No objects were imported") : Error);
 	}
 
 	// Apply SRGB, Compression, FlipGreenChannel, and MipGen settings to imported textures
@@ -288,7 +361,6 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleImportTexture(
 	}
 
 	FAssetCompilingManager::Get().FinishAllCompilation();
-	FlushRenderingCommands();
 
 	MarkPackagesDirty(ImportedObjects);
 
@@ -302,6 +374,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleImportTexture(
 	}
 
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetBoolField(TEXT("success"), true);
 	Result->SetArrayField(TEXT("imported_assets"), ImportedAssets);
 	Result->SetNumberField(TEXT("count"), ImportedAssets.Num());
 	Result->SetStringField(TEXT("source_path"), SourcePath);
@@ -350,6 +423,9 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleImportAudio(
 			FString::Printf(TEXT("Unsupported audio format: %s"), *Extension));
 	}
 
+	// Root the factory to prevent GC during import
+	Factory->AddToRoot();
+
 	// Configure SoundFactory options
 	USoundFactory* SoundFactory = Cast<USoundFactory>(Factory);
 	if (SoundFactory)
@@ -360,13 +436,19 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleImportAudio(
 	UAssetImportTask* Task = CreateImportTask(SourcePath, DestinationPath, AssetName, Factory, nullptr);
 	if (!Task)
 	{
+		Factory->RemoveFromRoot();
 		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create import task"));
 	}
 
 	TArray<UObject*> ImportedObjects = ProcessImportTask(Task, Error);
+
+	// Release GC protection for factory
+	Factory->RemoveFromRoot();
+
 	if (ImportedObjects.IsEmpty())
 	{
-		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(Error);
+		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+			Error.IsEmpty() ? TEXT("No objects were imported") : Error);
 	}
 
 	MarkPackagesDirty(ImportedObjects);
@@ -381,6 +463,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleImportAudio(
 	}
 
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetBoolField(TEXT("success"), true);
 	Result->SetArrayField(TEXT("imported_assets"), ImportedAssets);
 	Result->SetNumberField(TEXT("count"), ImportedAssets.Num());
 	Result->SetStringField(TEXT("source_path"), SourcePath);
@@ -439,16 +522,25 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleImportGeneric(
 				"Enable the plugin in Edit > Plugins and restart the editor."), *FormatName));
 	}
 
+	// Root the factory to prevent GC during import
+	Factory->AddToRoot();
+
 	UAssetImportTask* Task = CreateImportTask(SourcePath, DestinationPath, AssetName, Factory, nullptr);
 	if (!Task)
 	{
+		Factory->RemoveFromRoot();
 		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create import task"));
 	}
 
 	TArray<UObject*> ImportedObjects = ProcessImportTask(Task, Error);
+
+	// Release GC protection for factory
+	Factory->RemoveFromRoot();
+
 	if (ImportedObjects.IsEmpty())
 	{
-		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(Error);
+		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+			Error.IsEmpty() ? TEXT("No objects were imported") : Error);
 	}
 
 	// Auto-generate materials if requested
@@ -479,6 +571,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleImportGeneric(
 	}
 
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetBoolField(TEXT("success"), true);
 	Result->SetArrayField(TEXT("imported_assets"), ImportedAssets);
 	Result->SetNumberField(TEXT("count"), ImportedAssets.Num());
 	if (GeneratedMaterials > 0)
@@ -518,23 +611,56 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleReimportAsset(
 			FString::Printf(TEXT("Failed to load asset: %s"), *AssetPath));
 	}
 
-	// Use FReimportManager to reimport the asset
-	bool bSuccess = FReimportManager::Instance()->Reimport(
-		Asset,
-		/* bAskForNewFileIfMissing = */ false,
-		/* bShowNotification = */ true,
-		/* PreferredReimportPath = */ TEXT(""),
-		/* SourceFileDialogOverride = */ nullptr,
-		/* PreferredImportDataIndex = */ INDEX_NONE,
-		/* bForceFullReimport = */ true
-	);
+	bool bSuccess = false;
+	bool bInterchangeCVarFound = false;
+
+	FReimportManager* ReimportManager = FReimportManager::Instance();
+	if (ReimportManager)
+	{
+		FAssetCompilingManager::Get().FinishAllCompilation();
+
+		{
+			FScopedBoolConsoleVariableOverride DisableInterchangeImport(
+				TEXT("Interchange.FeatureFlags.Import.Enable"),
+				false);
+			bInterchangeCVarFound = DisableInterchangeImport.IsValid();
+
+			bSuccess = ReimportManager->Reimport(
+				Asset,
+				/* bAskForNewFileIfMissing = */ false,
+				/* bShowNotification = */ false,
+				/* PreferredReimportFile = */ TEXT(""),
+				/* SpecifiedReimportHandler = */ nullptr,
+				/* SourceFileIndex = */ INDEX_NONE,
+				/* bForceNewFile = */ false,
+				/* bAutomated = */ true,
+				/* bInForceShowDialog = */ false);
+		}
+
+		if (bSuccess)
+		{
+			FAssetCompilingManager::Get().FinishCompilationForObjects({Asset});
+			if (UPackage* Package = Asset->GetOutermost())
+			{
+				Package->SetDirtyFlag(true);
+			}
+		}
+	}
+	else
+	{
+		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("FReimportManager is not available"));
+	}
 
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
 	Result->SetBoolField(TEXT("success"), bSuccess);
 	Result->SetStringField(TEXT("asset_path"), AssetPath);
+	Result->SetStringField(TEXT("method"), TEXT("automated_legacy_reimport"));
+	Result->SetBoolField(TEXT("interchange_temporarily_disabled"), bInterchangeCVarFound);
 	if (!bSuccess)
 	{
-		Result->SetStringField(TEXT("error"), TEXT("Reimport failed. Ensure the source file still exists and the asset has valid import data."));
+		Result->SetStringField(
+			TEXT("error"),
+			TEXT("Reimport failed using the automated legacy path. Ensure the source file still exists and the asset has valid import data; Interchange-only assets may need an async reimport workflow."));
 	}
 	return Result;
 }
@@ -588,9 +714,6 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleExportAsset(
 
 	// -------------------------------------------------------------------------
 	// UAssetExportTask approach (UE5 standard API)
-	// UExporter::RunAssetExportTask automatically resolves the correct exporter
-	// from registered classes, avoiding the CDO-not-in-memory issue that
-	// TObjectIterator<UExporter> and manual class lookup suffer from.
 	// -------------------------------------------------------------------------
 	UAssetExportTask* ExportTask = NewObject<UAssetExportTask>();
 	ExportTask->AddToRoot(); // GC protection during export
@@ -602,19 +725,19 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleExportAsset(
 	ExportTask->bReplaceIdentical = true;
 	ExportTask->bSelected = false;
 
-	// Use UExporter::FindExporter to resolve the best exporter for this
-	// asset type + format combination. This scans all registered exporter
-	// classes (not just existing CDO instances).
+	// Use UExporter::FindExporter to resolve the best exporter
 	UExporter* Exporter = UExporter::FindExporter(Asset, *ExportFormat);
 	if (Exporter)
 	{
 		ExportTask->Exporter = Exporter;
 	}
 
-	// Format-specific export options
+	// Format-specific export options — root to prevent GC
+	UObject* ExportOptions = nullptr;
 	if (ExportFormat.Equals(TEXT("fbx"), ESearchCase::IgnoreCase))
 	{
 		UFbxExportOption* FbxOpts = NewObject<UFbxExportOption>();
+		FbxOpts->AddToRoot();
 
 		// Parse optional FBX settings from MCP params
 		bool bExportCollision = false;
@@ -626,17 +749,25 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleExportAsset(
 		FbxOpts->VertexColor = bExportVertexColor;
 
 		ExportTask->Options = FbxOpts;
+		ExportOptions = FbxOpts;
 	}
 
 	// Execute export via UE5 standard API
-	bool bExportSuccess = UExporter::RunAssetExportTask(ExportTask);
+	bool bExportSuccess = false;
+	
+	{
+		bExportSuccess = UExporter::RunAssetExportTask(ExportTask);
+	}
 
-	ExportTask->RemoveFromRoot(); // Release GC protection
+	// Release GC protection
+	ExportTask->RemoveFromRoot();
+	if (ExportOptions)
+	{
+		ExportOptions->RemoveFromRoot();
+	}
 
 	// -------------------------------------------------------------------------
 	// Fallback for textures: use IImageWrapper to write source data directly
-	// This handles edge cases where the UExporter system can't find a
-	// suitable exporter for the texture format.
 	// -------------------------------------------------------------------------
 	if (!bExportSuccess && Asset->IsA<UTexture2D>())
 	{
@@ -657,10 +788,240 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleExportAsset(
 	}
 
 	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetBoolField(TEXT("success"), true);
 	Result->SetStringField(TEXT("asset_path"), AssetPath);
 	Result->SetStringField(TEXT("output_path"), OutputPath);
 	Result->SetStringField(TEXT("format"), ExportFormat);
 	Result->SetStringField(TEXT("message"), TEXT("Export successful"));
+
+	return Result;
+}
+
+// ---------------------------------------------------------------------------
+// Screenshot Handler
+// ---------------------------------------------------------------------------
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleTakeScreenshot(
+	const TSharedPtr<FJsonObject>& Params)
+{
+	// Determine output path
+	FString OutputPath;
+	if (!Params->TryGetStringField(TEXT("output_path"), OutputPath) || OutputPath.IsEmpty())
+	{
+		// Generate default path
+		FString ScreenshotsDir = FPaths::ProjectSavedDir() / TEXT("Screenshots");
+		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+		if (!PlatformFile.DirectoryExists(*ScreenshotsDir))
+		{
+			PlatformFile.CreateDirectoryTree(*ScreenshotsDir);
+		}
+		
+		FString Timestamp = FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"));
+		OutputPath = ScreenshotsDir / FString::Printf(TEXT("MCP_Screenshot_%s.png"), *Timestamp);
+	}
+
+	// Ensure output directory exists
+	FString OutputDir = FPaths::GetPath(OutputPath);
+	if (!OutputDir.IsEmpty())
+	{
+		IFileManager::Get().MakeDirectory(*OutputDir, true);
+	}
+
+	// Get resolution from params or use viewport size
+	int32 Width = 1920;
+	int32 Height = 1080;
+	Params->TryGetNumberField(TEXT("width"), Width);
+	Params->TryGetNumberField(TEXT("height"), Height);
+
+	if (Width <= 0) Width = 1920;
+	if (Height <= 0) Height = 1080;
+
+	// Use current viewport size as fallback
+	if (GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport)
+	{
+		FIntPoint ViewportSize = GEngine->GameViewport->Viewport->GetSizeXY();
+		if (ViewportSize.X > 0 && ViewportSize.Y > 0)
+		{
+			// Use viewport size if user didn't specify
+			double W = 0, H = 0;
+			if (!Params->TryGetNumberField(TEXT("width"), W) || W <= 0)
+			{
+				Width = ViewportSize.X;
+			}
+			if (!Params->TryGetNumberField(TEXT("height"), H) || H <= 0)
+			{
+				Height = ViewportSize.Y;
+			}
+		}
+	}
+
+	// Use UE5.7 HighResScreenshot API
+	FHighResScreenshotConfig& ScreenshotConfig = GetHighResScreenshotConfig();
+	
+	
+	ScreenshotConfig.SetFilename(OutputPath);
+	ScreenshotConfig.SetResolution(Width, Height);
+	ScreenshotConfig.bCaptureHDR = false;
+
+	// Request the screenshot via GEngine->Exec (works in both editor and game mode)
+	bool bSuccess = false;
+	if (GEngine)
+	{
+		UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		FString Cmd = FString::Printf(TEXT("HighResShot %d %d"), Width, Height);
+		GEngine->Exec(World, *Cmd, *GLog);
+		bSuccess = true;
+		
+		// Flush to ensure the screenshot is written
+		FlushRenderingCommands();
+		
+		// Wait a moment for file I/O
+		FPlatformProcess::Sleep(1.0f);
+	}
+
+	// Check if the screenshot was saved
+	FString ActualOutputPath = OutputPath;
+	if (!FPaths::FileExists(ActualOutputPath))
+	{
+		// Try UE's default screenshot directory
+		FString ScreenShotDir = FPaths::ScreenShotDir();
+		TArray<FString> FoundFiles;
+		IFileManager::Get().FindFiles(FoundFiles, *ScreenShotDir, TEXT(".png"));
+		if (FoundFiles.Num() > 0)
+		{
+			// Use the most recent screenshot
+			ActualOutputPath = ScreenShotDir / FoundFiles.Last();
+		}
+	}
+
+	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetBoolField(TEXT("success"), bSuccess);
+	Result->SetStringField(TEXT("output_path"), ActualOutputPath);
+	Result->SetNumberField(TEXT("width"), Width);
+	Result->SetNumberField(TEXT("height"), Height);
+
+	if (!bSuccess)
+	{
+		Result->SetStringField(TEXT("error"), TEXT("Failed to capture screenshot. Ensure the editor viewport is active."));
+	}
+
+	return Result;
+}
+
+// ---------------------------------------------------------------------------
+// Level Export Handler
+// ---------------------------------------------------------------------------
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleExportLevel(
+	const TSharedPtr<FJsonObject>& Params)
+{
+	// Determine output path
+	FString OutputPath;
+	if (!Params->TryGetStringField(TEXT("output_path"), OutputPath) || OutputPath.IsEmpty())
+	{
+		FString ExportDir = FPaths::ProjectSavedDir() / TEXT("LevelExports");
+		IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
+		if (!PlatformFile.DirectoryExists(*ExportDir))
+		{
+			PlatformFile.CreateDirectoryTree(*ExportDir);
+		}
+		
+		FString Timestamp = FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"));
+		OutputPath = ExportDir / FString::Printf(TEXT("LevelExport_%s.json"), *Timestamp);
+	}
+
+	// Ensure output directory exists
+	FString OutputDir = FPaths::GetPath(OutputPath);
+	if (!OutputDir.IsEmpty())
+	{
+		IFileManager::Get().MakeDirectory(*OutputDir, true);
+	}
+
+	// Get current level
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World)
+	{
+		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor world available. Ensure the editor is fully loaded."));
+	}
+
+	// Collect all actors
+	TArray<TSharedPtr<FJsonValue>> ActorsArray;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		AActor* Actor = *It;
+		if (!Actor || !IsValid(Actor))
+		{
+			continue;
+		}
+
+		// Skip transient actors
+		if (Actor->HasAnyFlags(RF_Transient))
+		{
+			continue;
+		}
+
+		TSharedPtr<FJsonObject> ActorObj = MakeShared<FJsonObject>();
+		ActorObj->SetStringField(TEXT("name"), Actor->GetName());
+		ActorObj->SetStringField(TEXT("class"), Actor->GetClass()->GetName());
+
+		FVector Location = Actor->GetActorLocation();
+		TArray<TSharedPtr<FJsonValue>> LocArray;
+		LocArray.Add(MakeShared<FJsonValueNumber>(Location.X));
+		LocArray.Add(MakeShared<FJsonValueNumber>(Location.Y));
+		LocArray.Add(MakeShared<FJsonValueNumber>(Location.Z));
+		ActorObj->SetArrayField(TEXT("location"), LocArray);
+
+		FRotator Rotation = Actor->GetActorRotation();
+		TArray<TSharedPtr<FJsonValue>> RotArray;
+		RotArray.Add(MakeShared<FJsonValueNumber>(Rotation.Pitch));
+		RotArray.Add(MakeShared<FJsonValueNumber>(Rotation.Yaw));
+		RotArray.Add(MakeShared<FJsonValueNumber>(Rotation.Roll));
+		ActorObj->SetArrayField(TEXT("rotation"), RotArray);
+
+		FVector Scale = Actor->GetActorScale3D();
+		TArray<TSharedPtr<FJsonValue>> ScaleArray;
+		ScaleArray.Add(MakeShared<FJsonValueNumber>(Scale.X));
+		ScaleArray.Add(MakeShared<FJsonValueNumber>(Scale.Y));
+		ScaleArray.Add(MakeShared<FJsonValueNumber>(Scale.Z));
+		ActorObj->SetArrayField(TEXT("scale"), ScaleArray);
+
+		// Check for static mesh
+		UStaticMeshComponent* MeshComp = Cast<UStaticMeshComponent>(Actor->GetComponentByClass(UStaticMeshComponent::StaticClass()));
+		if (MeshComp && MeshComp->GetStaticMesh())
+		{
+			ActorObj->SetStringField(TEXT("static_mesh"), MeshComp->GetStaticMesh()->GetPathName());
+		}
+
+		ActorsArray.Add(MakeShared<FJsonValueObject>(ActorObj));
+	}
+
+	// Build root JSON
+	TSharedPtr<FJsonObject> RootObj = MakeShared<FJsonObject>();
+	RootObj->SetStringField(TEXT("level"), World->GetName());
+	RootObj->SetNumberField(TEXT("actor_count"), ActorsArray.Num());
+	RootObj->SetArrayField(TEXT("actors"), ActorsArray);
+	RootObj->SetStringField(TEXT("format"), TEXT("json"));
+
+	// Write to file
+	FString JsonString;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&JsonString);
+	if (!FJsonSerializer::Serialize(RootObj.ToSharedRef(), Writer))
+	{
+		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to serialize level data to JSON"));
+	}
+
+	if (!FFileHelper::SaveStringToFile(JsonString, *OutputPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+	{
+		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+			FString::Printf(TEXT("Failed to write level export to: %s"), *OutputPath));
+	}
+
+	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetBoolField(TEXT("success"), true);
+	Result->SetStringField(TEXT("output_path"), OutputPath);
+	Result->SetNumberField(TEXT("actor_count"), ActorsArray.Num());
+	Result->SetStringField(TEXT("format"), TEXT("json"));
+	Result->SetStringField(TEXT("level"), World->GetName());
 
 	return Result;
 }
@@ -787,6 +1148,7 @@ UFactory* FEpicUnrealMCPAssetImportCommands::ResolveFactoryForExtension(const FS
 
 UFbxImportUI* FEpicUnrealMCPAssetImportCommands::BuildFbxImportOptions(const TSharedPtr<FJsonObject>& Params)
 {
+	// Create FBX import options from the CDO archetype to get default values
 	UFbxImportUI* Options = NewObject<UFbxImportUI>(
 		GetTransientPackage(),
 		UFbxImportUI::StaticClass(),
@@ -794,6 +1156,25 @@ UFbxImportUI* FEpicUnrealMCPAssetImportCommands::BuildFbxImportOptions(const TSh
 		RF_NoFlags,
 		GetMutableDefault<UFbxImportUI>()
 	);
+	
+	if (!Options)
+	{
+		UE_LOG(LogTemp, Error, TEXT("BuildFbxImportOptions: Failed to create UFbxImportUI"));
+		return nullptr;
+	}
+
+	// Ensure sub-objects exist (they may be null on some UE versions)
+	// If they're null, create them so we can configure them
+	if (!Options->StaticMeshImportData)
+	{
+		Options->StaticMeshImportData = NewObject<UFbxStaticMeshImportData>(Options);
+		UE_LOG(LogTemp, Log, TEXT("BuildFbxImportOptions: Created StaticMeshImportData"));
+	}
+	if (!Options->SkeletalMeshImportData)
+	{
+		Options->SkeletalMeshImportData = NewObject<UFbxSkeletalMeshImportData>(Options);
+		UE_LOG(LogTemp, Log, TEXT("BuildFbxImportOptions: Created SkeletalMeshImportData"));
+	}
 	
 	// Get import type (static/skeletal/auto)
 	FString ImportTypeStr;
@@ -813,13 +1194,8 @@ UFbxImportUI* FEpicUnrealMCPAssetImportCommands::BuildFbxImportOptions(const TSh
 	// Route import options to the correct sub-object based on mesh type
 	const bool bIsSkeletal = (Options->MeshTypeToImport == FBXIT_SkeletalMesh);
 
-	if (bIsSkeletal)
+	if (bIsSkeletal && Options->SkeletalMeshImportData)
 	{
-		if (!Options->SkeletalMeshImportData)
-		{
-			return nullptr;
-		}
-
 		// Scale settings
 		double Scale = 1.0;
 		if (Params->TryGetNumberField(TEXT("scale"), Scale))
@@ -833,21 +1209,9 @@ UFbxImportUI* FEpicUnrealMCPAssetImportCommands::BuildFbxImportOptions(const TSh
 		{
 			Options->SkeletalMeshImportData->bConvertSceneUnit = bConvertSceneUnit;
 		}
-
-		// Collision import
-		bool bImportCollision = false;
-		if (Params->TryGetBoolField(TEXT("import_collision"), bImportCollision))
-		{
-			Options->SkeletalMeshImportData->bTransformVertexToAbsolute = true;
-		}
 	}
-	else
+	else if (Options->StaticMeshImportData)
 	{
-		if (!Options->StaticMeshImportData)
-		{
-			return nullptr;
-		}
-
 		// Scale settings
 		double Scale = 1.0;
 		if (Params->TryGetNumberField(TEXT("scale"), Scale))
@@ -888,23 +1252,6 @@ UFbxImportUI* FEpicUnrealMCPAssetImportCommands::BuildFbxImportOptions(const TSh
 		if (Params->TryGetStringField(TEXT("lod_group"), LODGroup))
 		{
 			Options->StaticMeshImportData->StaticMeshLODGroup = FName(*LODGroup);
-		}
-
-		// LOD screen sizes (per-LOD screen size thresholds)
-		// NOTE: In UE 5.7, BuildSettings lives on UStaticMesh::GetSourceModel(), not on
-		// UFbxStaticMeshImportData. LOD tuning is applied post-import in HandleImportFbxMesh.
-		const TArray<TSharedPtr<FJsonValue>>* ScreenSizes = nullptr;
-		if (Params->TryGetArrayField(TEXT("lod_screen_sizes"), ScreenSizes) && ScreenSizes)
-		{
-			// Store in a transient tag for post-import application
-			// (applied after the mesh is imported via UStaticMesh::GetSourceModel())
-		}
-
-		// LOD count override
-		int32 LODCount = -1;
-		if (Params->TryGetNumberField(TEXT("lod_count"), LODCount) && LODCount > 0)
-		{
-			// bBuildAdjacencyBuffer is applied post-import in UE 5.7
 		}
 	}
 
@@ -1230,7 +1577,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleSaveImportPrese
 
 	TSharedPtr<FJsonObject> PresetData;
 	const TSharedPtr<FJsonObject>* FoundData = nullptr;
-	if (Params->TryGetObjectField(TEXT("data"), FoundData) && FoundData)
+	if (Params->TryGetObjectField(TEXT("preset_data"), FoundData) && FoundData)
 	{
 		PresetData = *FoundData;
 	}
@@ -1298,9 +1645,12 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAssetImportCommands::HandleLoadImportPrese
 		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to parse preset JSON"));
 	}
 
-	PresetData->SetStringField(TEXT("preset_name"), PresetName);
-	PresetData->SetBoolField(TEXT("success"), true);
-	return PresetData;
+	TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+	Result->SetBoolField(TEXT("success"), true);
+	Result->SetStringField(TEXT("preset_name"), PresetName);
+	Result->SetStringField(TEXT("file_path"), FilePath);
+	Result->SetObjectField(TEXT("preset_data"), PresetData);
+	return Result;
 }
 
 int32 FEpicUnrealMCPAssetImportCommands::AutoGenerateMaterialsForMesh(UStaticMesh* StaticMesh, const FString& DestinationPath)

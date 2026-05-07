@@ -294,3 +294,385 @@ def get_blueprint_function_details(
     except Exception as e:
         logger.error(f"get_blueprint_function_details error: {e}")
         return make_error_response(str(e))
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: Missing Blueprint Features
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def set_blueprint_parent_class(blueprint_path: str, parent_class: str) -> Dict[str, Any]:
+    """Change the parent class of a Blueprint."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"blueprint_path": blueprint_path, "parent_class": parent_class}
+        response = unreal.send_command("set_blueprint_parent_class", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"set_blueprint_parent_class error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def set_blueprint_class_settings(
+    blueprint_path: str,
+    generate_overlap_events: bool = None,
+    run_construction_script: bool = None
+) -> Dict[str, Any]:
+    """Update Blueprint class settings."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"blueprint_path": blueprint_path}
+        if generate_overlap_events is not None:
+            params["generate_overlap_events"] = generate_overlap_events
+        if run_construction_script is not None:
+            params["run_construction_script"] = run_construction_script
+        response = unreal.send_command("set_blueprint_class_settings", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"set_blueprint_class_settings error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def set_blueprint_class_defaults(blueprint_path: str, defaults: List[Dict[str, str]]) -> Dict[str, Any]:
+    """Update Blueprint class default variable values."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"blueprint_path": blueprint_path, "defaults": defaults}
+        response = unreal.send_command("set_blueprint_class_defaults", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"set_blueprint_class_defaults error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def set_component_defaults(blueprint_path: str, component_name: str, properties: Dict[str, Any]) -> Dict[str, Any]:
+    """Update component default property values in a Blueprint."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {
+            "blueprint_path": blueprint_path,
+            "component_name": component_name,
+            "properties": properties
+        }
+        response = unreal.send_command("set_component_defaults", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"set_component_defaults error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def edit_construction_script(blueprint_path: str, add_node: str = None) -> Dict[str, Any]:
+    """Access and edit the Blueprint Construction Script."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"blueprint_path": blueprint_path}
+        if add_node:
+            params["add_node"] = add_node
+        response = unreal.send_command("edit_construction_script", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"edit_construction_script error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def create_event_dispatcher(blueprint_path: str, dispatcher_name: str) -> Dict[str, Any]:
+    """Create an Event Dispatcher in a Blueprint."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"blueprint_path": blueprint_path, "dispatcher_name": dispatcher_name}
+        response = unreal.send_command("create_event_dispatcher", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_event_dispatcher error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def bind_event_dispatcher(
+    blueprint_path: str,
+    dispatcher_name: str,
+    target_function: str
+) -> Dict[str, Any]:
+    """Configure Event Dispatcher binding to a target function."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {
+            "blueprint_path": blueprint_path,
+            "dispatcher_name": dispatcher_name,
+            "target_function": target_function
+        }
+        response = unreal.send_command("bind_event_dispatcher", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"bind_event_dispatcher error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def create_enum(enum_path: str, values: List[str]) -> Dict[str, Any]:
+    """Create a new Blueprint Enum asset."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"enum_path": enum_path, "values": values}
+        response = unreal.send_command("create_enum", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_enum error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def create_struct(struct_path: str) -> Dict[str, Any]:
+    """Create a new Blueprint Struct asset."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"struct_path": struct_path}
+        response = unreal.send_command("create_struct", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_struct error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def edit_enum(enum_path: str, add_values: List[str] = None) -> Dict[str, Any]:
+    """Edit an existing Enum by adding new values."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"enum_path": enum_path}
+        if add_values:
+            params["add_values"] = add_values
+        response = unreal.send_command("edit_enum", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"edit_enum error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def edit_struct(struct_path: str) -> Dict[str, Any]:
+    """Get information about a Blueprint Struct."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"struct_path": struct_path}
+        response = unreal.send_command("edit_struct", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"edit_struct error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def create_blueprint_interface(interface_path: str) -> Dict[str, Any]:
+    """Create a new Blueprint Interface asset."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"interface_path": interface_path}
+        response = unreal.send_command("create_blueprint_interface", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_blueprint_interface error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def implement_interface(blueprint_path: str, interface_path: str) -> Dict[str, Any]:
+    """Implement a Blueprint Interface in a Blueprint."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {
+            "blueprint_path": blueprint_path,
+            "interface_path": interface_path
+        }
+        response = unreal.send_command("implement_interface", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"implement_interface error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def create_function_library(library_path: str) -> Dict[str, Any]:
+    """Create a new Blueprint Function Library."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"library_path": library_path}
+        response = unreal.send_command("create_function_library", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_function_library error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def create_macro_library(library_path: str) -> Dict[str, Any]:
+    """Create a new Blueprint Macro Library."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"library_path": library_path}
+        response = unreal.send_command("create_macro_library", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_macro_library error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def add_comment_node(blueprint_path: str, graph_name: str = "EventGraph") -> Dict[str, Any]:
+    """Add a comment node to a Blueprint graph."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"blueprint_path": blueprint_path, "graph_name": graph_name}
+        response = unreal.send_command("add_comment_node", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"add_comment_node error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def add_reroute_node(
+    blueprint_path: str,
+    source_node_id: int,
+    graph_name: str = "EventGraph"
+) -> Dict[str, Any]:
+    """Add a reroute node to a Blueprint graph."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {
+            "blueprint_path": blueprint_path,
+            "source_node_id": source_node_id,
+            "graph_name": graph_name
+        }
+        response = unreal.send_command("add_reroute_node", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"add_reroute_node error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def format_graph(blueprint_path: str, graph_name: str = "EventGraph") -> Dict[str, Any]:
+    """Format/arrange nodes in a Blueprint graph."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"blueprint_path": blueprint_path, "graph_name": graph_name}
+        response = unreal.send_command("format_graph", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"format_graph error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def create_collapsed_graph(blueprint_path: str, graph_name: str = "EventGraph") -> Dict[str, Any]:
+    """Create a collapsed graph from selected nodes in a Blueprint."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"blueprint_path": blueprint_path, "graph_name": graph_name}
+        response = unreal.send_command("create_collapsed_graph", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_collapsed_graph error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def set_blueprint_breakpoint(
+    blueprint_path: str,
+    graph_name: str,
+    node_id: int,
+    enable: bool = True
+) -> Dict[str, Any]:
+    """Set or clear a breakpoint on a Blueprint node."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {
+            "blueprint_path": blueprint_path,
+            "graph_name": graph_name,
+            "node_id": node_id,
+            "enable": enable
+        }
+        response = unreal.send_command("set_blueprint_breakpoint", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"set_blueprint_breakpoint error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def get_blueprint_debug_info(blueprint_path: str) -> Dict[str, Any]:
+    """Get debug information about a Blueprint."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"blueprint_path": blueprint_path}
+        response = unreal.send_command("get_blueprint_debug_info", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"get_blueprint_debug_info error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def blueprint_diff(blueprint_path: str, other_blueprint_path: str) -> Dict[str, Any]:
+    """Compare two Blueprints and return differences."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {
+            "blueprint_path": blueprint_path,
+            "other_blueprint_path": other_blueprint_path
+        }
+        response = unreal.send_command("blueprint_diff", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"blueprint_diff error: {e}")
+        return make_error_response(str(e))

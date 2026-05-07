@@ -18,7 +18,6 @@
 #include "Misc/PackageName.h"
 #include "Misc/FileHelper.h"
 #include "ObjectTools.h"
-#include "RenderingThread.h"
 #include "AssetCompilingManager.h"
 #include "Engine/AssetManager.h"
 #include "AssetRegistry/IAssetRegistry.h"
@@ -760,16 +759,44 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPContentBrowserCommands::HandleDeleteAsset(
 
     const FString PackagePathToDelete = AssetData.PackageName.ToString();
     
-    // Ensure all pending render commands (like thumbnail generation or texture updates) are finished before deleting
+    // Finish asset compilation, but avoid FlushRenderingCommands here. These commands are
+    // already deferred by the MCP bridge, and an explicit flush can recurse during editor saves.
     FAssetCompilingManager::Get().FinishAllCompilation();
-    FlushRenderingCommands();
-    
-    if (!UEditorAssetLibrary::DeleteAsset(PackagePathToDelete))
+
+    UObject* AssetObject = AssetData.GetAsset();
+    if (!AssetObject)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Failed to load asset before delete: %s"), *AssetPath));
+    }
+
+    TArray<FName> Referencers;
+    GetAssetRegistry().GetReferencers(FName(*PackagePathToDelete), Referencers, UE::AssetRegistry::EDependencyCategory::Package);
+    Referencers.RemoveAll([&PackagePathToDelete](const FName& Referencer)
+    {
+        return Referencer.ToString() == PackagePathToDelete;
+    });
+
+    if (Referencers.Num() > 0)
+    {
+        TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+        Result->SetBoolField(TEXT("success"), false);
+        Result->SetStringField(TEXT("asset_path"), AssetPath);
+        Result->SetStringField(TEXT("error"), FString::Printf(
+            TEXT("Asset is still referenced by %d package(s); delete or update referencers before deleting this asset."),
+            Referencers.Num()));
+        Result->SetArrayField(TEXT("referencers"), NameArrayToJson(Referencers));
+        return Result;
+    }
+
+    TArray<UObject*> ObjectsToDelete;
+    ObjectsToDelete.Add(AssetObject);
+    if (ObjectTools::DeleteObjects(ObjectsToDelete, false, ObjectTools::EAllowCancelDuringDelete::CancelNotAllowed) != ObjectsToDelete.Num())
     {
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to delete asset"));
     }
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
     Result->SetStringField(TEXT("asset_path"), AssetPath);
     Result->SetStringField(TEXT("message"), TEXT("Asset deleted"));
     return Result;
@@ -815,8 +842,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPContentBrowserCommands::HandleUnloadAsset(
         return Result;
     }
 
-    // Safely mark package for GC instead of forcing immediate unload
-    FlushRenderingCommands();
+    // Safely mark package for GC instead of forcing immediate unload.
     Package->ClearFlags(RF_Standalone);
     Package->RemoveFromRoot();
     // Do NOT force CollectGarbage here — immediate GC can destroy objects
@@ -848,25 +874,9 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPContentBrowserCommands::HandleSaveAssets(c
             continue;
         }
 
-        FString PackageName = PackagePathFromAssetPath(AssetPath);
-        UPackage* Package = LoadPackage(nullptr, *PackageName, LOAD_None);
-        if (!Package)
-        {
-            FailedAssets.Add(AssetPath + TEXT(" (load failed)"));
-            continue;
-        }
-
-        FString FileName;
-        if (!FPackageName::TryConvertLongPackageNameToFilename(PackageName, FileName, FPackageName::GetAssetPackageExtension()))
-        {
-            FailedAssets.Add(AssetPath + TEXT(" (path conversion failed)"));
-            continue;
-        }
-
-        FSavePackageArgs SaveArgs;
-        SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-        SaveArgs.Error = nullptr;
-        bool bSaved = UPackage::SavePackage(Package, nullptr, *FileName, SaveArgs);
+        const FString PackageName = PackagePathFromAssetPath(AssetPath);
+        FAssetCompilingManager::Get().FinishAllCompilation();
+        const bool bSaved = UEditorAssetLibrary::SaveAsset(PackageName, false);
 
         if (bSaved)
         {
@@ -1594,37 +1604,42 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPContentBrowserCommands::HandleCreatePrimar
     }
 
     UPrimaryAssetLabel* NewLabel = nullptr;
-    EObjectFlags Flags = RF_Public | RF_Standalone | RF_MarkAsNative;
-
-    UPackage* Package = CreatePackage(*PackageName);
+    UPackage* Package = FindPackage(nullptr, *PackageName);
     if (Package)
     {
-        NewLabel = NewObject<UPrimaryAssetLabel>(Package, LabelClass, FName(*LabelName), Flags);
+        Package->FullyLoad();
+        UObject* ExistingObject = FindObject<UObject>(Package, *LabelName);
+        if (!ExistingObject && UEditorAssetLibrary::DoesAssetExist(PackageName))
+        {
+            ExistingObject = UEditorAssetLibrary::LoadAsset(PackageName);
+        }
 
+        if (ExistingObject)
+        {
+            NewLabel = Cast<UPrimaryAssetLabel>(ExistingObject);
+            if (!NewLabel)
+            {
+                return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+                    FString::Printf(TEXT("Existing asset is not a PrimaryAssetLabel: %s"), *PackageName));
+            }
+        }
+    }
+
+    if (!Package)
+    {
+        Package = CreatePackage(*PackageName);
+    }
+    if (!Package)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Failed to create package: %s"), *PackageName));
+    }
+
+    if (!NewLabel)
+    {
+        NewLabel = NewObject<UPrimaryAssetLabel>(Package, LabelClass, FName(*LabelName), RF_Public | RF_Standalone);
         if (NewLabel)
         {
-            TArray<FString> AssetPaths;
-            TryGetStringArrayField(Params, TEXT("asset_paths"), AssetPaths);
-            if (AssetPaths.Num() > 0)
-            {
-                for (const FString& AssetPath : AssetPaths)
-                {
-                    FString AssetPackageName = PackageNameFromAnyAssetPath(AssetPath);
-                    NewLabel->ExplicitAssets.Add(TSoftObjectPtr<UObject>(FSoftObjectPath(AssetPackageName)));
-                }
-            }
-
-            Package->MarkPackageDirty();
-            FString LabelFileName;
-            if (FPackageName::TryConvertLongPackageNameToFilename(PackageName, LabelFileName, FPackageName::GetAssetPackageExtension()))
-            {
-                FSavePackageArgs SaveArgs;
-                SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-                if (UPackage::SavePackage(Package, NewLabel, *LabelFileName, SaveArgs))
-                {
-                    GetAssetRegistry().ScanPathsSynchronous({FolderPath});
-                }
-            }
+            FAssetRegistryModule::AssetCreated(NewLabel);
         }
     }
 
@@ -1633,9 +1648,42 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPContentBrowserCommands::HandleCreatePrimar
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create Primary Asset Label"));
     }
 
+    NewLabel->Modify();
+    NewLabel->ExplicitAssets.Reset();
+    TArray<FString> AssetPaths;
+    TryGetStringArrayField(Params, TEXT("asset_paths"), AssetPaths);
+    for (const FString& AssetPath : AssetPaths)
+    {
+        const FString AssetPackageName = PackageNameFromAnyAssetPath(AssetPath);
+        NewLabel->ExplicitAssets.Add(TSoftObjectPtr<UObject>(FSoftObjectPath(MakeObjectPath(AssetPackageName))));
+    }
+
+    Package->FullyLoad();
+    Package->MarkPackageDirty();
+
+    FString LabelFileName;
+    if (!FPackageName::TryConvertLongPackageNameToFilename(PackageName, LabelFileName, FPackageName::GetAssetPackageExtension()))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to resolve label filename"));
+    }
+
+    FSavePackageArgs SaveArgs;
+    SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+    SaveArgs.Error = GWarn;
+    const bool bSaved = UPackage::SavePackage(Package, NewLabel, *LabelFileName, SaveArgs);
+    UPackage::WaitForAsyncFileWrites();
+    if (!bSaved)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Failed to save Primary Asset Label: %s"), *LabelFileName));
+    }
+
+    GetAssetRegistry().ScanFilesSynchronous({LabelFileName}, true);
+
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
     Result->SetStringField(TEXT("label_path"), MakeObjectPath(PackageName, LabelName));
     Result->SetNumberField(TEXT("asset_count"), NewLabel->ExplicitAssets.Num());
+    Result->SetBoolField(TEXT("saved"), true);
     Result->SetStringField(TEXT("message"), TEXT("Primary Asset Label created"));
     return Result;
 }

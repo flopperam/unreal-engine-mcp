@@ -19,6 +19,8 @@
 #include "Misc/PackageName.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformFileManager.h"
+#include "AssetToolsModule.h"
+#include "IAssetTools.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "EditorAssetLibrary.h"
 #include "IAssetViewport.h"
@@ -34,16 +36,23 @@
 #include "Modules/ModuleManager.h"
 #include "PlayInEditorDataTypes.h"
 #include "Components/BrushComponent.h"
+#include "Components/BoxComponent.h"
 #include "GameFramework/Volume.h"
+#include "Engine/LevelBounds.h"
 #include "UObject/Package.h"
+#include "UObject/SavePackage.h"
+#include "UObject/GarbageCollection.h"
 #include "WorldPartition/WorldPartition.h"
 #include "WorldPartition/DataLayer/DataLayerAsset.h"
+#include "WorldPartition/DataLayer/DataLayerInstance.h"
 #include "WorldPartition/HLOD/HLODLayer.h"
+#include "DataLayer/DataLayerEditorSubsystem.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "WidgetBlueprint.h"
 #include "Blueprint/UserWidget.h"
 #include "FileHelpers.h"
+#include "Factories/WorldFactory.h"
 #include "ImageUtils.h"
 
 FEpicUnrealMCPProjectEditorCommands::FEpicUnrealMCPProjectEditorCommands() {}
@@ -216,6 +225,181 @@ static bool IsCurrentEditorWorldPackage(const FString& AssetPath)
     }
 
     return CurrentPackageName == NormalizeLevelPackageName(AssetPath);
+}
+
+static bool IsLevelReferencedByCurrentWorld(const FString& AssetPath)
+{
+    if (!GEditor)
+    {
+        return false;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        return false;
+    }
+
+    const FString PackageName = NormalizeLevelPackageName(AssetPath);
+    for (ULevelStreaming* StreamingLevel : World->GetStreamingLevels())
+    {
+        if (!StreamingLevel)
+        {
+            continue;
+        }
+
+        if (StreamingLevel->GetWorldAssetPackageName() == PackageName)
+        {
+            return true;
+        }
+
+        if (ULevel* LoadedLevel = StreamingLevel->GetLoadedLevel())
+        {
+            if (LoadedLevel->GetOutermost() && LoadedLevel->GetOutermost()->GetName() == PackageName)
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+static FString MakeSafeAssetName(const FString& Name)
+{
+    FString SafeName = FPaths::MakeValidFileName(Name);
+    SafeName.ReplaceInline(TEXT(" "), TEXT("_"));
+    return SafeName.IsEmpty() ? TEXT("MCP_DataLayer") : SafeName;
+}
+
+static FString GetDataLayerAssetPath(const FString& DataLayerName)
+{
+    return FString::Printf(TEXT("/Game/DataLayers/%s"), *MakeSafeAssetName(DataLayerName));
+}
+
+static UDataLayerAsset* FindDataLayerAssetByName(const FString& DataLayerName)
+{
+    const FString SafeName = MakeSafeAssetName(DataLayerName);
+    const FString DirectObjectPath = FString::Printf(TEXT("/Game/DataLayers/%s.%s"), *SafeName, *SafeName);
+    if (UDataLayerAsset* LoadedAsset = LoadObject<UDataLayerAsset>(nullptr, *DirectObjectPath))
+    {
+        return LoadedAsset;
+    }
+
+    FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+    IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+    TArray<FAssetData> Assets;
+    AssetRegistry.GetAssetsByClass(UDataLayerAsset::StaticClass()->GetClassPathName(), Assets, true);
+    for (const FAssetData& Asset : Assets)
+    {
+        if (Asset.AssetName.ToString() == DataLayerName || Asset.AssetName.ToString() == SafeName)
+        {
+            return Cast<UDataLayerAsset>(Asset.GetAsset());
+        }
+    }
+
+    return nullptr;
+}
+
+static UDataLayerAsset* FindOrCreateDataLayerAsset(const FString& DataLayerName, FString* OutAssetPath = nullptr)
+{
+    const FString AssetPath = GetDataLayerAssetPath(DataLayerName);
+    if (OutAssetPath)
+    {
+        *OutAssetPath = AssetPath;
+    }
+
+    if (UDataLayerAsset* ExistingAsset = FindDataLayerAssetByName(DataLayerName))
+    {
+        return ExistingAsset;
+    }
+
+    UEditorAssetLibrary::MakeDirectory(TEXT("/Game/DataLayers"));
+    UPackage* Package = CreatePackage(*AssetPath);
+    if (!Package)
+    {
+        return nullptr;
+    }
+
+    const FString AssetName = FPackageName::GetLongPackageAssetName(AssetPath);
+    UDataLayerAsset* DataLayerAsset = NewObject<UDataLayerAsset>(Package, FName(*AssetName), RF_Public | RF_Standalone);
+    if (!DataLayerAsset)
+    {
+        return nullptr;
+    }
+
+    FAssetRegistryModule::AssetCreated(DataLayerAsset);
+    Package->MarkPackageDirty();
+    UEditorAssetLibrary::SaveLoadedAsset(DataLayerAsset, false);
+    return DataLayerAsset;
+}
+
+static UDataLayerInstance* FindOrCreateDataLayerInstance(const FString& DataLayerName, UDataLayerAsset* DataLayerAsset)
+{
+    if (!GEditor || !DataLayerAsset)
+    {
+        return nullptr;
+    }
+
+    UDataLayerEditorSubsystem* DataLayerSubsystem = GEditor->GetEditorSubsystem<UDataLayerEditorSubsystem>();
+    if (!DataLayerSubsystem)
+    {
+        return nullptr;
+    }
+
+    if (UDataLayerInstance* ExistingInstance = DataLayerSubsystem->GetDataLayerInstance(DataLayerAsset))
+    {
+        return ExistingInstance;
+    }
+    if (UDataLayerInstance* ExistingInstance = DataLayerSubsystem->GetDataLayerInstance(FName(*DataLayerName)))
+    {
+        return ExistingInstance;
+    }
+
+    FDataLayerCreationParameters CreationParameters;
+    CreationParameters.DataLayerAsset = DataLayerAsset;
+    return DataLayerSubsystem->CreateDataLayerInstance(CreationParameters);
+}
+
+static TArray<AActor*> ResolveActorsByNames(UWorld* World, const TArray<TSharedPtr<FJsonValue>>& ActorNames)
+{
+    TArray<AActor*> Actors;
+    if (!World)
+    {
+        return Actors;
+    }
+
+    for (const TSharedPtr<FJsonValue>& Val : ActorNames)
+    {
+        const FString ActorName = Val->AsString();
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            if (It->GetName() == ActorName || It->GetActorLabel() == ActorName)
+            {
+                Actors.Add(*It);
+                break;
+            }
+        }
+    }
+    return Actors;
+}
+
+static bool TryUnloadInactiveLevelPackage(const FString& PackageName, FString& OutError)
+{
+    UPackage* ExistingPackage = FindPackage(nullptr, *PackageName);
+    if (!ExistingPackage)
+    {
+        return true;
+    }
+
+    FText UnloadError;
+    if (FEditorFileUtils::AttemptUnloadInactiveWorldPackage(ExistingPackage, UnloadError))
+    {
+        return true;
+    }
+
+    OutError = UnloadError.ToString();
+    return false;
 }
 
 static bool IsEditorPlayBusy(FString* OutReason = nullptr)
@@ -624,7 +808,20 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleSaveAll(const
     bool bPrompt = false; Params->TryGetBoolField(TEXT("prompt"), bPrompt);
     bool bSaved = false;
     if (bPrompt) { bSaved = UEditorLoadingAndSavingUtils::SaveDirtyPackagesWithDialog(true, true); }
-    else { bSaved = UEditorLoadingAndSavingUtils::SaveDirtyPackages(true, true); }
+    else
+    {
+        bool bPackagesNeededSaving = false;
+        bSaved = FEditorFileUtils::SaveDirtyPackages(
+            false,  // Do not show the save prompt for MCP automation.
+            true,
+            true,
+            true,   // Fast save avoids checkout dialogs and Slate-heavy save prompts.
+            false,
+            true,
+            &bPackagesNeededSaving,
+            FEditorFileUtils::FShouldIgnorePackage::Default,
+            true);
+    }
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true); R->SetBoolField(TEXT("saved"), bSaved); return R;
 }
@@ -692,10 +889,33 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleCreateUtility
     }
 
     FString FullPackagePath = PackagePath / AssetName;
+    if (UEditorAssetLibrary::DoesAssetExist(FullPackagePath))
+    {
+        UObject* ExistingAsset = UEditorAssetLibrary::LoadAsset(FullPackagePath);
+        if (!ExistingAsset || !ExistingAsset->IsA<UWidgetBlueprint>())
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("Asset already exists but is not a Widget Blueprint: %s"), *FullPackagePath));
+        }
+
+        TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+        R->SetBoolField(TEXT("success"), true);
+        R->SetBoolField(TEXT("already_exists"), true);
+        R->SetStringField(TEXT("asset_path"), FullPackagePath);
+        R->SetStringField(TEXT("asset_name"), AssetName);
+        R->SetStringField(TEXT("parent_class"), UUserWidget::StaticClass()->GetName());
+        return R;
+    }
+
     UPackage* Package = CreatePackage(*FullPackagePath);
     if (!Package)
     {
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create package for utility widget"));
+    }
+    if (FindObject<UBlueprint>(Package, *AssetName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Blueprint object already exists in package: %s"), *FullPackagePath));
     }
 
     UWidgetBlueprint* WidgetBP = Cast<UWidgetBlueprint>(
@@ -717,10 +937,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleCreateUtility
 
     FAssetRegistryModule::AssetCreated(WidgetBP);
     Package->MarkPackageDirty();
-
-    TArray<UPackage*> PackagesToSave;
-    PackagesToSave.Add(Package);
-    FEditorFileUtils::PromptForCheckoutAndSave(PackagesToSave, false, false);
+    UEditorAssetLibrary::SaveLoadedAsset(WidgetBP, false);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);
@@ -742,10 +959,34 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleCreateUtility
     }
 
     FString FullPackagePath = PackagePath / AssetName;
+    if (UEditorAssetLibrary::DoesAssetExist(FullPackagePath))
+    {
+        UObject* ExistingAsset = UEditorAssetLibrary::LoadAsset(FullPackagePath);
+        if (!ExistingAsset || !ExistingAsset->IsA<UBlueprint>())
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("Asset already exists but is not a Blueprint: %s"), *FullPackagePath));
+        }
+
+        TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+        R->SetBoolField(TEXT("success"), true);
+        R->SetBoolField(TEXT("already_exists"), true);
+        R->SetStringField(TEXT("asset_path"), FullPackagePath);
+        R->SetStringField(TEXT("asset_name"), AssetName);
+        R->SetStringField(TEXT("blueprint_type"), TEXT("FunctionLibrary"));
+        R->SetStringField(TEXT("category"), TEXT("Editor"));
+        return R;
+    }
+
     UPackage* Package = CreatePackage(*FullPackagePath);
     if (!Package)
     {
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create package for utility blueprint"));
+    }
+    if (FindObject<UBlueprint>(Package, *AssetName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Blueprint object already exists in package: %s"), *FullPackagePath));
     }
 
     UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(
@@ -766,10 +1007,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleCreateUtility
     Blueprint->BlueprintCategory = TEXT("Editor");
     FAssetRegistryModule::AssetCreated(Blueprint);
     Package->MarkPackageDirty();
-
-    TArray<UPackage*> PackagesToSave;
-    PackagesToSave.Add(Package);
-    FEditorFileUtils::PromptForCheckoutAndSave(PackagesToSave, false, false);
+    UEditorAssetLibrary::SaveLoadedAsset(Blueprint, false);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);
@@ -1206,59 +1444,73 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleCreateLevel(c
     if (!GEditor) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("GEditor not available")); }
     if (TSharedPtr<FJsonObject> Busy = CreateEditorPlayBusyError(TEXT("create level"))) { return Busy; }
     FString AssetPath; if (!Params->TryGetStringField(TEXT("asset_path"), AssetPath)) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing asset_path")); }
+    const FString PackageName = NormalizeLevelPackageName(AssetPath);
 
-    if (UEditorAssetLibrary::DoesAssetExist(AssetPath))
-    {
-        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Asset already exists: %s"), *AssetPath));
-    }
-
-    TArray<FString> TemplatePaths;
-    TemplatePaths.Add(TEXT("/Engine/Maps/Templates/Template_Default"));
-    TemplatePaths.Add(TEXT("/Engine/Maps/Templates/OpenWorld"));
-    TemplatePaths.Add(TEXT("/Game/Maps/E2E_Advanced_Main"));
-
-    FString SourcePath;
     FString TargetFilename;
-    if (!TryMapPackageToFilename(AssetPath, TargetFilename))
+    if (!FPackageName::TryConvertLongPackageNameToFilename(PackageName, TargetFilename, FPackageName::GetMapPackageExtension()))
     {
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid map package path: %s"), *AssetPath));
     }
 
-    for (const FString& TemplatePath : TemplatePaths)
+    if (UEditorAssetLibrary::DoesAssetExist(AssetPath) || FPlatformFileManager::Get().GetPlatformFile().FileExists(*TargetFilename))
     {
-        FString TemplateFilename;
-        if (!TryMapPackageToFilename(TemplatePath, TemplateFilename) || !FPaths::FileExists(TemplateFilename))
-        {
-            continue;
-        }
-
-        IFileManager::Get().MakeDirectory(*FPaths::GetPath(TargetFilename), true);
-        const uint32 CopyResult = IFileManager::Get().Copy(*TargetFilename, *TemplateFilename, true, true);
-        if (CopyResult == COPY_OK)
-        {
-            SourcePath = TemplatePath;
-            ScanAssetFile(TargetFilename);
-            break;
-        }
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Asset already exists: %s"), *AssetPath));
     }
 
-    if (SourcePath.IsEmpty())
+    UPackage* Package = CreatePackage(*PackageName);
+    if (!Package)
     {
-        ULevelEditorSubsystem* LevelSubsystem = GEditor->GetEditorSubsystem<ULevelEditorSubsystem>();
-        if (!LevelSubsystem) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("LevelEditorSubsystem not available")); }
-
-        const bool bSuccess = LevelSubsystem->NewLevel(AssetPath);
-        if (!bSuccess)
-        {
-            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create new level"));
-        }
-        SourcePath = TEXT("LevelEditorSubsystem::NewLevel");
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Failed to create package: %s"), *PackageName));
     }
+
+    UWorldFactory* WorldFactory = NewObject<UWorldFactory>();
+    WorldFactory->WorldType = EWorldType::Inactive;
+    WorldFactory->bInformEngineOfWorld = false;
+
+    const FString AssetName = FPackageName::GetLongPackageAssetName(PackageName);
+    UWorld* NewWorld = Cast<UWorld>(WorldFactory->FactoryCreateNew(
+        UWorld::StaticClass(),
+        Package,
+        FName(*AssetName),
+        RF_Public | RF_Standalone,
+        nullptr,
+        GWarn
+    ));
+    if (!NewWorld)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Failed to create world asset: %s"), *AssetPath));
+    }
+
+    IFileManager::Get().MakeDirectory(*FPaths::GetPath(TargetFilename), true);
+
+    Package->MarkPackageDirty();
+    FSavePackageArgs SaveArgs;
+    SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+    SaveArgs.Error = GWarn;
+    const bool bSaved = UPackage::SavePackage(Package, NewWorld, *TargetFilename, SaveArgs);
+    UPackage::WaitForAsyncFileWrites();
+
+    if (!bSaved)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Failed to save new level: %s"), *TargetFilename));
+    }
+
+    FAssetRegistryModule::AssetCreated(NewWorld);
+    ScanAssetFile(TargetFilename);
+
+    FString UnloadWarning;
+    const bool bUnloadedPackage = TryUnloadInactiveLevelPackage(PackageName, UnloadWarning);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);
     R->SetStringField(TEXT("asset_path"), AssetPath);
-    R->SetStringField(TEXT("source_path"), SourcePath);
+    R->SetStringField(TEXT("filename"), TargetFilename);
+    R->SetStringField(TEXT("source_path"), TEXT("UWorldFactory::FactoryCreateNew"));
+    R->SetBoolField(TEXT("unloaded_package"), bUnloadedPackage);
+    if (!bUnloadedPackage)
+    {
+        R->SetStringField(TEXT("warning"), FString::Printf(TEXT("Level was saved but its inactive package could not be unloaded: %s"), *UnloadWarning));
+    }
     return R;
 }
 
@@ -1337,6 +1589,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleLoadLevel(con
     if (TSharedPtr<FJsonObject> Busy = CreateEditorPlayBusyError(TEXT("load level"))) { return Busy; }
 
     FString AssetPath; if (!Params->TryGetStringField(TEXT("asset_path"), AssetPath)) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing asset_path")); }
+    const FString PackageName = NormalizeLevelPackageName(AssetPath);
 
     if (IsCurrentEditorWorldPackage(AssetPath))
     {
@@ -1347,10 +1600,34 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleLoadLevel(con
         return R;
     }
 
-    ULevelEditorSubsystem* LevelSubsystem = GEditor->GetEditorSubsystem<ULevelEditorSubsystem>();
-    if (!LevelSubsystem) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("LevelEditorSubsystem not available")); }
+    FString MapFilename;
+    if (!FPackageName::TryConvertLongPackageNameToFilename(PackageName, MapFilename, FPackageName::GetMapPackageExtension()))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid map package path: %s"), *AssetPath));
+    }
 
-    bool bLoaded = LevelSubsystem->LoadLevel(AssetPath);
+    if (!FPlatformFileManager::Get().GetPlatformFile().FileExists(*MapFilename))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Map file does not exist: %s"), *MapFilename));
+    }
+
+    if (UPackage* ExistingPackage = FindPackage(nullptr, *PackageName))
+    {
+        FText UnloadError;
+        const bool bUnloaded = FEditorFileUtils::AttemptUnloadInactiveWorldPackage(ExistingPackage, UnloadError);
+
+        if (!bUnloaded)
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(
+                TEXT("Cannot safely load level because package is already resident and could not be unloaded: %s. Reason: %s"),
+                *PackageName,
+                *UnloadError.ToString()
+            ));
+        }
+    }
+
+    UWorld* LoadedWorld = UEditorLoadingAndSavingUtils::LoadMap(MapFilename);
+    bool bLoaded = LoadedWorld != nullptr;
 
     // After loading a new level, rebuild the actor index so that
     // actors saved in previous sessions are tracked and won't cause
@@ -1368,6 +1645,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleLoadLevel(con
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), bLoaded);
     R->SetStringField(TEXT("asset_path"), AssetPath);
+    R->SetStringField(TEXT("map_filename"), MapFilename);
     return R;
 }
 
@@ -1377,13 +1655,51 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleDuplicateLeve
     FString SourcePath; if (!Params->TryGetStringField(TEXT("source_path"), SourcePath)) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing source_path")); }
     FString DestPath; if (!Params->TryGetStringField(TEXT("dest_path"), DestPath)) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing dest_path")); }
 
-    // Use path-based duplication for better safety with worlds and to handle unloaded assets.
-    UObject* Duplicated = UEditorAssetLibrary::DuplicateAsset(SourcePath, DestPath);
+    const FString SourcePackageName = NormalizeLevelPackageName(SourcePath);
+    const FString DestPackageName = NormalizeLevelPackageName(DestPath);
+
+    FString SourceFilename;
+    FString DestFilename;
+    if (!FPackageName::TryConvertLongPackageNameToFilename(SourcePackageName, SourceFilename, FPackageName::GetMapPackageExtension()))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid source map path: %s"), *SourcePath));
+    }
+    if (!FPackageName::TryConvertLongPackageNameToFilename(DestPackageName, DestFilename, FPackageName::GetMapPackageExtension()))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid destination map path: %s"), *DestPath));
+    }
+    if (!FPlatformFileManager::Get().GetPlatformFile().FileExists(*SourceFilename))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Source map file does not exist: %s"), *SourceFilename));
+    }
+    if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*DestFilename) || UEditorAssetLibrary::DoesAssetExist(DestPackageName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Destination level already exists: %s"), *DestPackageName));
+    }
+
+    IFileManager::Get().MakeDirectory(*FPaths::GetPath(DestFilename), true);
+    const bool bCopied = IFileManager::Get().Copy(*DestFilename, *SourceFilename, true, true) == COPY_OK;
+    if (bCopied)
+    {
+        ScanAssetFile(SourceFilename);
+        ScanAssetFile(DestFilename);
+    }
+
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
-    R->SetBoolField(TEXT("success"), Duplicated != nullptr);
-    R->SetStringField(TEXT("source_path"), SourcePath);
-    R->SetStringField(TEXT("dest_path"), DestPath);
-    if (Duplicated) { R->SetStringField(TEXT("new_asset_path"), Duplicated->GetPathName()); }
+    R->SetBoolField(TEXT("success"), bCopied);
+    R->SetStringField(TEXT("source_path"), SourcePackageName);
+    R->SetStringField(TEXT("dest_path"), DestPackageName);
+    R->SetStringField(TEXT("source_filename"), SourceFilename);
+    R->SetStringField(TEXT("dest_filename"), DestFilename);
+    if (bCopied)
+    {
+        R->SetStringField(TEXT("new_asset_path"), DestPackageName);
+        R->SetStringField(TEXT("method"), TEXT("file_copy"));
+    }
+    else
+    {
+        R->SetStringField(TEXT("error"), FString::Printf(TEXT("Failed to copy map file from %s to %s"), *SourceFilename, *DestFilename));
+    }
     return R;
 }
 
@@ -1393,12 +1709,94 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleRenameLevel(c
     FString SourcePath; if (!Params->TryGetStringField(TEXT("source_path"), SourcePath)) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing source_path")); }
     FString DestPath; if (!Params->TryGetStringField(TEXT("dest_path"), DestPath)) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing dest_path")); }
 
-    // Use path-based rename for better safety with worlds.
-    bool bRenamed = UEditorAssetLibrary::RenameAsset(SourcePath, DestPath);
+    const FString SourcePackageName = NormalizeLevelPackageName(SourcePath);
+    const FString DestPackageName = NormalizeLevelPackageName(DestPath);
+    if (IsCurrentEditorWorldPackage(SourcePackageName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Cannot rename the currently loaded level: %s. Load a different level first."), *SourcePackageName));
+    }
+
+    FString SourceFilename;
+    FString DestFilename;
+    const bool bHasSourceMapFilename = FPackageName::TryConvertLongPackageNameToFilename(
+        SourcePackageName, SourceFilename, FPackageName::GetMapPackageExtension());
+    const bool bHasDestMapFilename = FPackageName::TryConvertLongPackageNameToFilename(
+        DestPackageName, DestFilename, FPackageName::GetMapPackageExtension());
+
+    const bool bDestAssetExists = UEditorAssetLibrary::DoesAssetExist(DestPackageName);
+    const bool bDestFileExists = bHasDestMapFilename && FPlatformFileManager::Get().GetPlatformFile().FileExists(*DestFilename);
+    if (bDestAssetExists || bDestFileExists)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Destination level already exists: %s"), *DestPackageName));
+    }
+
+    bool bRenamed = false;
+    FString RenameMethod;
+
+    if (bHasSourceMapFilename && bHasDestMapFilename)
+    {
+        FString UnloadError;
+        if (!TryUnloadInactiveLevelPackage(SourcePackageName, UnloadError))
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("Cannot unload source level before rename: %s. %s. Load a different map and remove it from streaming levels before retrying."),
+                    *SourcePackageName,
+                    *UnloadError));
+        }
+
+        const bool bSourceFileExists = FPlatformFileManager::Get().GetPlatformFile().FileExists(*SourceFilename);
+        if (bSourceFileExists)
+        {
+            IFileManager::Get().MakeDirectory(*FPaths::GetPath(DestFilename), true);
+            bRenamed = IFileManager::Get().Move(*DestFilename, *SourceFilename, false, true, true, true);
+            if (bRenamed)
+            {
+                RenameMethod = TEXT("file_move");
+                ScanAssetFile(SourceFilename);
+                ScanAssetFile(DestFilename);
+            }
+        }
+    }
+
+    if (!bRenamed && !bHasSourceMapFilename)
+    {
+        if (UObject* SourceAsset = UEditorAssetLibrary::LoadAsset(SourcePackageName))
+        {
+            TArray<FAssetRenameData> RenameData;
+            RenameData.Emplace(SourceAsset, FPaths::GetPath(DestPackageName), FPackageName::GetLongPackageAssetName(DestPackageName));
+
+            FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
+            bRenamed = AssetToolsModule.Get().RenameAssets(RenameData);
+            if (bRenamed)
+            {
+                RenameMethod = TEXT("asset_tools");
+                UEditorAssetLibrary::SaveAsset(DestPackageName, false);
+            }
+        }
+    }
+
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), bRenamed);
-    R->SetStringField(TEXT("source_path"), SourcePath);
-    R->SetStringField(TEXT("dest_path"), DestPath);
+    R->SetStringField(TEXT("source_path"), SourcePackageName);
+    R->SetStringField(TEXT("dest_path"), DestPackageName);
+    if (!RenameMethod.IsEmpty())
+    {
+        R->SetStringField(TEXT("method"), RenameMethod);
+    }
+    if (!bRenamed)
+    {
+        R->SetStringField(TEXT("error"), FString::Printf(TEXT("Failed to rename level from %s to %s"), *SourcePackageName, *DestPackageName));
+        if (bHasSourceMapFilename)
+        {
+            R->SetStringField(TEXT("source_filename"), SourceFilename);
+        }
+        if (bHasDestMapFilename)
+        {
+            R->SetStringField(TEXT("dest_filename"), DestFilename);
+        }
+    }
     return R;
 }
 
@@ -1412,44 +1810,66 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleDeleteLevel(c
     }
 
     const FString PackageName = NormalizeLevelPackageName(AssetPath);
-    FString MapFilename;
-    if (FPackageName::TryConvertLongPackageNameToFilename(PackageName, MapFilename, FPackageName::GetMapPackageExtension()))
+    if (IsLevelReferencedByCurrentWorld(PackageName))
     {
-        const bool bFileExists = FPlatformFileManager::Get().GetPlatformFile().FileExists(*MapFilename);
-        if (!bFileExists && !UEditorAssetLibrary::DoesAssetExist(AssetPath))
-        {
-            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Asset not found: %s"), *AssetPath));
-        }
-
-        const bool bDeletedFile = bFileExists && IFileManager::Get().Delete(*MapFilename, false, true, true);
-        if (bDeletedFile)
-        {
-            FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
-            TArray<FString> ModifiedFiles;
-            ModifiedFiles.Add(MapFilename);
-            AssetRegistryModule.Get().ScanModifiedAssetFiles(ModifiedFiles);
-        }
-
-        TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
-        R->SetBoolField(TEXT("success"), bDeletedFile);
-        R->SetStringField(TEXT("asset_path"), AssetPath);
-        R->SetStringField(TEXT("filename"), MapFilename);
-        if (!bDeletedFile)
-        {
-            R->SetStringField(TEXT("error"), FString::Printf(TEXT("Failed to delete map file: %s"), *MapFilename));
-        }
-        return R;
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Cannot delete level while it is referenced by the current world's streaming levels: %s. Remove or unload the sublevel first."), *PackageName));
     }
 
-    if (!UEditorAssetLibrary::DoesAssetExist(AssetPath))
+    FString MapFilename;
+    const bool bHasMapFilename = FPackageName::TryConvertLongPackageNameToFilename(PackageName, MapFilename, FPackageName::GetMapPackageExtension());
+    FString UnloadError;
+    if (!TryUnloadInactiveLevelPackage(PackageName, UnloadError))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Cannot unload level package before delete: %s. %s. Load a different map and remove it from streaming levels before retrying."),
+                *PackageName,
+                *UnloadError));
+    }
+
+    const bool bAssetExists = UEditorAssetLibrary::DoesAssetExist(PackageName);
+    const bool bFileExists = bHasMapFilename && FPlatformFileManager::Get().GetPlatformFile().FileExists(*MapFilename);
+    if (!bAssetExists && !bFileExists)
     {
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Asset not found: %s"), *AssetPath));
     }
 
-    bool bDeleted = UEditorAssetLibrary::DeleteAsset(AssetPath);
+    bool bDeleted = false;
+    FString DeleteMethod;
+
+    if (bFileExists)
+    {
+        bDeleted = IFileManager::Get().Delete(*MapFilename, false, true, true);
+        if (bDeleted)
+        {
+            DeleteMethod = TEXT("file_delete");
+            ScanAssetFile(MapFilename);
+        }
+    }
+    else if (bAssetExists && bHasMapFilename)
+    {
+        ScanAssetFile(MapFilename);
+        bDeleted = true;
+        DeleteMethod = TEXT("registry_rescan_missing_file");
+    }
+
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), bDeleted);
-    R->SetStringField(TEXT("asset_path"), AssetPath);
+    R->SetStringField(TEXT("asset_path"), PackageName);
+    if (bHasMapFilename)
+    {
+        R->SetStringField(TEXT("filename"), MapFilename);
+    }
+    if (!DeleteMethod.IsEmpty())
+    {
+        R->SetStringField(TEXT("method"), DeleteMethod);
+    }
+    if (!bDeleted)
+    {
+        R->SetStringField(TEXT("error"), bHasMapFilename
+            ? FString::Printf(TEXT("Failed to delete map asset or file: %s"), *MapFilename)
+            : FString::Printf(TEXT("Failed to delete asset: %s"), *AssetPath));
+    }
     return R;
 }
 
@@ -1887,19 +2307,36 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleUnloadWorldPa
 TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleCreateDataLayer(const TSharedPtr<FJsonObject>& Params)
 {
     FString DataLayerName; if (!Params->TryGetStringField(TEXT("name"), DataLayerName)) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing name")); }
+    if (!GEditor) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("GEditor not available")); }
     UWorld* World = GEditor->GetEditorWorldContext().World();
     if (!World) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor world available")); }
 
-    // Use GConfig to register a new data layer asset stub entry (full asset creation via commandlet is safer)
-    FString ConfigPath = GetConfigFilePath(TEXT("DefaultEngine.ini"));
-    FString Section = FString::Printf(TEXT("DataLayers.%s"), *DataLayerName);
-    GConfig->SetString(*Section, TEXT("Name"), *DataLayerName, *ConfigPath);
-    GConfig->Flush(false, *ConfigPath);
+    FString AssetPath;
+    UDataLayerAsset* DataLayerAsset = FindOrCreateDataLayerAsset(DataLayerName, &AssetPath);
+    if (!DataLayerAsset)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Failed to create DataLayerAsset for '%s'"), *DataLayerName));
+    }
+
+    UDataLayerInstance* DataLayerInstance = FindOrCreateDataLayerInstance(DataLayerName, DataLayerAsset);
+    if (DataLayerInstance)
+    {
+        World->MarkPackageDirty();
+    }
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);
     R->SetStringField(TEXT("data_layer_name"), DataLayerName);
-    R->SetStringField(TEXT("note"), TEXT("Data layer registered in config. Use editor to finalize asset creation."));
+    R->SetStringField(TEXT("asset_path"), AssetPath);
+    if (DataLayerInstance)
+    {
+        R->SetStringField(TEXT("instance_name"), DataLayerInstance->GetDataLayerShortName());
+    }
+    else
+    {
+        R->SetStringField(TEXT("warning"), TEXT("DataLayerAsset was created, but this world does not expose WorldDataLayers for an editor instance."));
+    }
     return R;
 }
 
@@ -1912,57 +2349,45 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleAddActorsToDa
     UWorld* World = GEditor->GetEditorWorldContext().World();
     if (!World) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor world available")); }
 
-    // Load the DataLayerAsset by name using the asset registry
-    UDataLayerAsset* DataLayerAsset = nullptr;
-    {
-        FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
-        IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
-        TArray<FAssetData> Assets;
-        AssetRegistry.GetAssetsByClass(UDataLayerAsset::StaticClass()->GetClassPathName(), Assets, true);
-        for (const FAssetData& Asset : Assets)
-        {
-            if (Asset.AssetName.ToString() == DataLayerName)
-            {
-                DataLayerAsset = Cast<UDataLayerAsset>(Asset.GetAsset());
-                break;
-            }
-        }
-    }
+    UDataLayerAsset* DataLayerAsset = FindOrCreateDataLayerAsset(DataLayerName);
     if (!DataLayerAsset)
     {
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
             FString::Printf(TEXT("DataLayerAsset '%s' not found. Create it first."), *DataLayerName));
     }
 
-    int32 ModifiedCount = 0;
-    for (const TSharedPtr<FJsonValue>& Val : *ActorNames)
+    TArray<AActor*> Actors = ResolveActorsByNames(World, *ActorNames);
+    UDataLayerInstance* DataLayerInstance = FindOrCreateDataLayerInstance(DataLayerName, DataLayerAsset);
+    int32 ModifiedCount = Actors.Num();
+    if (DataLayerInstance)
     {
-        FString ActorName = Val->AsString();
-        for (TActorIterator<AActor> It(World); It; ++It)
+        if (UDataLayerEditorSubsystem* DataLayerSubsystem = GEditor->GetEditorSubsystem<UDataLayerEditorSubsystem>())
         {
-            if (It->GetName() == ActorName || It->GetActorLabel() == ActorName)
+            DataLayerSubsystem->AddActorsToDataLayer(Actors, DataLayerInstance);
+        }
+    }
+    else
+    {
+        for (AActor* Actor : Actors)
+        {
+            FProperty* Prop = Actor->GetClass()->FindPropertyByName(FName(TEXT("DataLayerAssets")));
+            if (Prop && Prop->IsA<FArrayProperty>())
             {
-                FProperty* Prop = It->GetClass()->FindPropertyByName(FName(TEXT("DataLayerAssets")));
-                if (Prop && Prop->IsA<FArrayProperty>())
+                FArrayProperty* ArrProp = CastField<FArrayProperty>(Prop);
+                FScriptArrayHelper ArrayHelper(ArrProp, ArrProp->ContainerPtrToValuePtr<void>(Actor));
+                FProperty* InnerProp = ArrProp->Inner;
+                if (InnerProp)
                 {
-                    FArrayProperty* ArrProp = CastField<FArrayProperty>(Prop);
-                    FScriptArrayHelper ArrayHelper(ArrProp, ArrProp->ContainerPtrToValuePtr<void>(*It));
-                    FProperty* InnerProp = ArrProp->Inner;
-                    if (InnerProp)
-                    {
-                        // Use CopyCompleteValue to safely set the TSoftObjectPtr<UDataLayerAsset>
-                        int32 NewIndex = ArrayHelper.AddValue();
-                        void* ElementPtr = ArrayHelper.GetRawPtr(NewIndex);
-                        TSoftObjectPtr<UDataLayerAsset> TargetPtr(DataLayerAsset);
-                        InnerProp->CopyCompleteValue(ElementPtr, &TargetPtr);
-                        It->Modify();
-                        ModifiedCount++;
-                    }
+                    const int32 NewIndex = ArrayHelper.AddValue();
+                    void* ElementPtr = ArrayHelper.GetRawPtr(NewIndex);
+                    TSoftObjectPtr<UDataLayerAsset> TargetPtr(DataLayerAsset);
+                    InnerProp->CopyCompleteValue(ElementPtr, &TargetPtr);
+                    Actor->Modify();
                 }
-                break;
             }
         }
     }
+    World->MarkPackageDirty();
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);
@@ -1980,64 +2405,52 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleRemoveActorsF
     UWorld* World = GEditor->GetEditorWorldContext().World();
     if (!World) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor world available")); }
 
-    // Load the DataLayerAsset by name using the asset registry
-    UDataLayerAsset* DataLayerAsset = nullptr;
-    {
-        FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
-        IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
-        TArray<FAssetData> Assets;
-        AssetRegistry.GetAssetsByClass(UDataLayerAsset::StaticClass()->GetClassPathName(), Assets, true);
-        for (const FAssetData& Asset : Assets)
-        {
-            if (Asset.AssetName.ToString() == DataLayerName)
-            {
-                DataLayerAsset = Cast<UDataLayerAsset>(Asset.GetAsset());
-                break;
-            }
-        }
-    }
+    UDataLayerAsset* DataLayerAsset = FindDataLayerAssetByName(DataLayerName);
     if (!DataLayerAsset)
     {
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
             FString::Printf(TEXT("DataLayerAsset '%s' not found."), *DataLayerName));
     }
 
-    int32 ModifiedCount = 0;
-    for (const TSharedPtr<FJsonValue>& Val : *ActorNames)
+    TArray<AActor*> Actors = ResolveActorsByNames(World, *ActorNames);
+    UDataLayerInstance* DataLayerInstance = FindOrCreateDataLayerInstance(DataLayerName, DataLayerAsset);
+    int32 ModifiedCount = Actors.Num();
+    if (DataLayerInstance)
     {
-        FString ActorName = Val->AsString();
-        for (TActorIterator<AActor> It(World); It; ++It)
+        if (UDataLayerEditorSubsystem* DataLayerSubsystem = GEditor->GetEditorSubsystem<UDataLayerEditorSubsystem>())
         {
-            if (It->GetName() == ActorName || It->GetActorLabel() == ActorName)
+            DataLayerSubsystem->RemoveActorsFromDataLayer(Actors, DataLayerInstance);
+        }
+    }
+    else
+    {
+        for (AActor* Actor : Actors)
+        {
+            FProperty* Prop = Actor->GetClass()->FindPropertyByName(FName(TEXT("DataLayerAssets")));
+            if (Prop && Prop->IsA<FArrayProperty>())
             {
-                FProperty* Prop = It->GetClass()->FindPropertyByName(FName(TEXT("DataLayerAssets")));
-                if (Prop && Prop->IsA<FArrayProperty>())
+                FArrayProperty* ArrProp = CastField<FArrayProperty>(Prop);
+                FScriptArrayHelper ArrayHelper(ArrProp, ArrProp->ContainerPtrToValuePtr<void>(Actor));
+                FProperty* InnerProp = ArrProp->Inner;
+                if (InnerProp)
                 {
-                    FArrayProperty* ArrProp = CastField<FArrayProperty>(Prop);
-                    FScriptArrayHelper ArrayHelper(ArrProp, ArrProp->ContainerPtrToValuePtr<void>(*It));
-                    FProperty* InnerProp = ArrProp->Inner;
-                    if (InnerProp)
+                    TSoftObjectPtr<UDataLayerAsset> TargetPtr(DataLayerAsset);
+                    for (int32 i = ArrayHelper.Num() - 1; i >= 0; --i)
                     {
-                        TSoftObjectPtr<UDataLayerAsset> TargetPtr(DataLayerAsset);
-                        // Remove only entries matching the target data layer
-                        for (int32 i = ArrayHelper.Num() - 1; i >= 0; --i)
+                        void* ElementPtr = ArrayHelper.GetRawPtr(i);
+                        TSoftObjectPtr<UDataLayerAsset> CurrentPtr;
+                        InnerProp->CopyCompleteValue(&CurrentPtr, ElementPtr);
+                        if (CurrentPtr == TargetPtr)
                         {
-                            void* ElementPtr = ArrayHelper.GetRawPtr(i);
-                            TSoftObjectPtr<UDataLayerAsset> CurrentPtr;
-                            InnerProp->CopyCompleteValue(&CurrentPtr, ElementPtr);
-                            if (CurrentPtr == TargetPtr)
-                            {
-                                ArrayHelper.RemoveValues(i);
-                                It->Modify();
-                                ModifiedCount++;
-                            }
+                            ArrayHelper.RemoveValues(i);
+                            Actor->Modify();
                         }
                     }
                 }
-                break;
             }
         }
     }
+    World->MarkPackageDirty();
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);
@@ -2051,20 +2464,22 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleSetDataLayerE
     FString DataLayerName; if (!Params->TryGetStringField(TEXT("data_layer_name"), DataLayerName)) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing data_layer_name")); }
     bool bEnabled = true; Params->TryGetBoolField(TEXT("enabled"), bEnabled);
 
-    // Use Python script execution to toggle data layer visibility in editor
-    FString PyCmd = FString::Printf(TEXT("import unreal; dl = unreal.DataLayerAsset.find_data_layer_by_name('%s'); unreal.EditorLevelLibrary.set_data_layer_runtime_state(dl, unreal.DataLayerRuntimeState.%s)"),
-        *DataLayerName,
-        bEnabled ? TEXT("Activated") : TEXT("Unloaded"));
-    if (GEditor)
+    UDataLayerAsset* DataLayerAsset = FindOrCreateDataLayerAsset(DataLayerName);
+    UDataLayerInstance* DataLayerInstance = FindOrCreateDataLayerInstance(DataLayerName, DataLayerAsset);
+    if (UDataLayerEditorSubsystem* DataLayerSubsystem = GEditor ? GEditor->GetEditorSubsystem<UDataLayerEditorSubsystem>() : nullptr)
     {
-        GEditor->Exec(GEditor->GetEditorWorldContext().World(), *FString::Printf(TEXT("py %s"), *PyCmd));
+        if (DataLayerInstance)
+        {
+            DataLayerSubsystem->SetDataLayerVisibility(DataLayerInstance, bEnabled);
+            DataLayerSubsystem->SetDataLayerIsLoadedInEditor(DataLayerInstance, bEnabled, true);
+        }
     }
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);
     R->SetStringField(TEXT("data_layer_name"), DataLayerName);
     R->SetBoolField(TEXT("enabled"), bEnabled);
-    R->SetStringField(TEXT("note"), TEXT("Data layer state toggled via Python console (requires PythonScriptPlugin)."));
+    if (DataLayerAsset) { R->SetStringField(TEXT("asset_path"), DataLayerAsset->GetPathName()); }
     return R;
 }
 
@@ -2156,17 +2571,23 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleSetLevelBound
     UWorld* World = GEditor->GetEditorWorldContext().World();
     if (!World) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor world available")); }
 
-    // Find the LevelBounds actor by name pattern to avoid needing the full ALevelBounds type
-    AActor* BoundsActor = nullptr;
-    for (TActorIterator<AActor> It(World); It; ++It)
+    ALevelBounds* BoundsActor = nullptr;
+    for (TActorIterator<ALevelBounds> It(World); It; ++It)
     {
-        if (It->GetName().Contains(TEXT("LevelBounds")) || It->GetName().Contains(TEXT("Level_Bounds")))
-        {
-            BoundsActor = *It;
-            break;
-        }
+        BoundsActor = *It;
+        break;
     }
-    if (!BoundsActor) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No LevelBounds actor found in world")); }
+    if (!BoundsActor)
+    {
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.Name = MakeUniqueObjectName(World, ALevelBounds::StaticClass(), TEXT("MCP_LevelBounds"));
+        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        BoundsActor = World->SpawnActor<ALevelBounds>(FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+    }
+    if (!BoundsActor)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to find or create LevelBounds actor in world"));
+    }
 
     FVector Min(0.0f, 0.0f, 0.0f), Max(0.0f, 0.0f, 0.0f);
     const TArray<TSharedPtr<FJsonValue>>* MinArr = nullptr;
@@ -2184,17 +2605,23 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleSetLevelBound
         Max.Z = static_cast<float>((*MaxArr)[2]->AsNumber());
     }
 
-    UBrushComponent* BrushComp = BoundsActor->FindComponentByClass<UBrushComponent>();
-    if (BrushComp)
+    BoundsActor->Modify();
+    BoundsActor->bAutoUpdateBounds = false;
+    const FVector Center = (Min + Max) * 0.5f;
+    const FVector Extent = (Max - Min) * 0.5f;
+    if (BoundsActor->BoxComponent)
     {
-        BrushComp->Bounds.BoxExtent = (Max - Min) * 0.5f;
+        BoundsActor->BoxComponent->Modify();
+        BoundsActor->BoxComponent->SetBoxExtent(Extent.GetAbs());
     }
-    BoundsActor->SetActorLocation((Min + Max) * 0.5f);
+    BoundsActor->SetActorLocation(Center);
+    BoundsActor->MarkLevelBoundsDirty();
     World->MarkPackageDirty();
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);
     R->SetStringField(TEXT("actor_name"), BoundsActor->GetName());
+    R->SetBoolField(TEXT("auto_update_bounds"), BoundsActor->bAutoUpdateBounds);
     return R;
 }
 

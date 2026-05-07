@@ -22,6 +22,7 @@
 #include "Engine/Selection.h"
 #include "Kismet/GameplayStatics.h"
 #include "Async/Async.h"
+#include "Containers/Ticker.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Factories/BlueprintFactory.h"
@@ -47,6 +48,9 @@
 #include "GameFramework/InputSettings.h"
 #include "EditorSubsystem.h"
 #include "Subsystems/EditorActorSubsystem.h"
+#include "HAL/CriticalSection.h"
+#include "HAL/PlatformProcess.h"
+#include "Misc/ScopeLock.h"
 #include "Commands/EpicUnrealMCPEditorCommands.h"
 #include "Commands/EpicUnrealMCPBlueprintCommands.h"
 #include "Commands/EpicUnrealMCPBlueprintGraphCommands.h"
@@ -70,6 +74,100 @@ static TAutoConsoleVariable<int32> CVarMCPPort(
 
 #define MCP_SERVER_HOST "127.0.0.1"
 #define MCP_SERVER_PORT 55557
+
+namespace
+{
+double GetDeferredEditorCommandDelaySeconds(const FString& CommandType)
+{
+    static const TSet<FString> SlowDeferredCommands = {
+        TEXT("create_level"),
+        TEXT("save_level"),
+        TEXT("load_level"),
+        TEXT("duplicate_level"),
+        TEXT("rename_level"),
+        TEXT("delete_level"),
+        TEXT("add_sublevel"),
+        TEXT("remove_sublevel"),
+        TEXT("set_sublevel_visible"),
+        TEXT("set_sublevel_loaded"),
+        TEXT("create_streaming_volume"),
+        TEXT("set_level_streaming_settings"),
+        TEXT("enable_world_partition"),
+        TEXT("set_world_partition_grid"),
+        TEXT("load_world_partition_cell"),
+        TEXT("unload_world_partition_cell"),
+        TEXT("create_data_layer"),
+        TEXT("add_actors_to_data_layer"),
+        TEXT("remove_actors_from_data_layer"),
+        TEXT("set_data_layer_enabled"),
+        TEXT("create_hlod_layer"),
+        TEXT("build_hlod"),
+        TEXT("rebuild_hlod"),
+        TEXT("set_one_file_per_actor"),
+        TEXT("set_level_bounds"),
+        TEXT("set_world_origin_rebasing"),
+        TEXT("start_pie"),
+        TEXT("stop_pie"),
+        TEXT("start_standalone_game"),
+        TEXT("start_simulate"),
+        TEXT("undo"),
+        TEXT("redo"),
+        TEXT("save_all"),
+        TEXT("save_asset"),
+        TEXT("create_utility_widget"),
+        TEXT("create_utility_blueprint"),
+        TEXT("import_fbx_mesh"),
+        TEXT("import_texture"),
+        TEXT("import_audio"),
+        TEXT("import_gltf"),
+        TEXT("import_obj"),
+        TEXT("import_usd"),
+        TEXT("import_mp3"),
+        TEXT("import_alembic"),
+        TEXT("import_datasmith"),
+        TEXT("reimport_asset"),
+        TEXT("export_asset"),
+        TEXT("take_screenshot"),
+        TEXT("export_level"),
+        TEXT("save_import_preset"),
+        TEXT("load_import_preset")
+    };
+
+    if (SlowDeferredCommands.Contains(CommandType))
+    {
+        return 0.5;
+    }
+
+    static const TSet<FString> AssetLifecycleCommands = {
+        TEXT("create_blueprint"),
+        TEXT("compile_blueprint"),
+        TEXT("create_folder"),
+        TEXT("delete_folder"),
+        TEXT("move_asset"),
+        TEXT("copy_asset"),
+        TEXT("duplicate_asset"),
+        TEXT("rename_asset"),
+        TEXT("delete_asset"),
+        TEXT("unload_asset"),
+        TEXT("save_assets"),
+        TEXT("set_asset_metadata"),
+        TEXT("tag_asset"),
+        TEXT("fixup_redirectors"),
+        TEXT("bulk_rename"),
+        TEXT("bulk_move"),
+        TEXT("bulk_delete"),
+        TEXT("create_primary_asset_label"),
+        TEXT("delete_primary_asset_label"),
+        TEXT("set_asset_manager_settings"),
+        TEXT("add_primary_asset_bundle")
+    };
+
+    return AssetLifecycleCommands.Contains(CommandType) ? 0.25 : 0.0;
+}
+
+FCriticalSection GDeferredEditorCommandMutex;
+double GLastDeferredEditorCommandEndSeconds = 0.0;
+}
 
 UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
     : bIsRunning(false)
@@ -412,7 +510,7 @@ namespace
             {TEXT("set_camera_position"), 5},
             {TEXT("viewport_action"), 5},
             {TEXT("take_screenshot"), 5},
-            {TEXT("export_level"), 5},
+            {TEXT("export_level"), 7},
             // Content Browser Commands (6)
             {TEXT("create_folder"), 6},
             {TEXT("delete_folder"), 6},
@@ -478,7 +576,37 @@ namespace
             {TEXT("mesh_boolean"), 8},
             {TEXT("mesh_remesh"), 8},
             {TEXT("mesh_simplify"), 8},
-            {TEXT("mesh_uv_unwrap"), 8}
+            {TEXT("mesh_uv_unwrap"), 8},
+            {TEXT("mesh_voxel_remesh"), 8},
+            {TEXT("mesh_uv_layout"), 8},
+            {TEXT("set_pivot"), 8},
+            {TEXT("mesh_merge"), 8},
+            {TEXT("set_vertex_colors"), 8},
+            {TEXT("mesh_bake"), 8},
+            {TEXT("poly_edit"), 8},
+            {TEXT("generate_lods"), 8},
+            {TEXT("generate_lightmap_uvs"), 8},
+            {TEXT("import_ucx_collision"), 8},
+            
+            // UV Operations (UStaticMeshEditorSubsystem alternatives)
+            {TEXT("generate_box_uv_channel"), 8},
+            {TEXT("generate_planar_uv_channel"), 8},
+            {TEXT("generate_cylindrical_uv_channel"), 8},
+            {TEXT("add_uv_channel"), 8},
+            {TEXT("remove_uv_channel"), 8},
+            
+            // LOD Operations (UStaticMeshEditorSubsystem alternatives)
+            {TEXT("set_lods"), 8},
+            {TEXT("remove_lods"), 8},
+            
+            // Mesh Merge Operations (UStaticMeshEditorSubsystem alternatives)
+            {TEXT("join_static_mesh_actors"), 8},
+            {TEXT("merge_static_mesh_actors"), 8},
+            {TEXT("create_proxy_mesh_actor"), 8},
+            
+            // Other utilities
+            {TEXT("set_generate_lightmap_uvs"), 8},
+            {TEXT("has_vertex_colors"), 8}
         };
         const int32* Found = Router.Find(CommandType);
         return Found ? *Found : -1;
@@ -581,6 +709,36 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
     if (IsInGameThread())
     {
         return ExecuteOnCurrentThread();
+    }
+
+    const double DeferredEditorCommandDelaySeconds = GetDeferredEditorCommandDelaySeconds(CommandType);
+    if (DeferredEditorCommandDelaySeconds > 0.0)
+    {
+        FScopeLock DeferredCommandLock(&GDeferredEditorCommandMutex);
+        const double SecondsUntilSafeDispatch =
+            (GLastDeferredEditorCommandEndSeconds + DeferredEditorCommandDelaySeconds) - FPlatformTime::Seconds();
+        if (SecondsUntilSafeDispatch > 0.0)
+        {
+            FPlatformProcess::Sleep(static_cast<float>(SecondsUntilSafeDispatch));
+        }
+
+        TSharedRef<TPromise<FString>, ESPMode::ThreadSafe> Promise =
+            MakeShared<TPromise<FString>, ESPMode::ThreadSafe>();
+        TFuture<FString> Future = Promise->GetFuture();
+
+        FTSTicker::GetCoreTicker().AddTicker(
+            TEXT("UnrealMCP.DeferredEditorCommand"),
+            0.0f,
+            [ExecuteOnCurrentThread, Promise](float) mutable
+            {
+                Promise->SetValue(ExecuteOnCurrentThread());
+                return false;
+            }
+        );
+
+        FString Result = Future.Get();
+        GLastDeferredEditorCommandEndSeconds = FPlatformTime::Seconds();
+        return Result;
     }
 
     TPromise<FString> Promise;

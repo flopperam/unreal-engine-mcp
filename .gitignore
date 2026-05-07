@@ -156,3 +156,10 @@ docs/research
 docs/superpowers/plans/*
 !docs/superpowers/plans/tasks.md
 !docs/superpowers/plans/jules-implementation-brief.md
+
+# Local/Temporary
+test_ping.py
+scripts/fix_*.py
+scripts/test_blueprint_phase6.py
+scripts/test_new_mesh_apis.py
+FlopperamUnrealMCP/Content/Tests/MCP_Runtime/

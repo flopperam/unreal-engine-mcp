@@ -191,13 +191,12 @@ class TestToolCommandMapping:
 
 
 class TestConnectionFailureConsistentError:
-    def test_tools_return_consistent_error_on_connection_failure(self):
+    def test_tools_return_consistent_error_on_connection_failure(self, fake_conn_factory):
         """
         Return a consistent error shape on connection failure.
         (get_unreal_connection normally returns UnrealConnection,
          so failure is simulated by patching send_command.)
         """
-        from tests.conftest import FakeUnrealConnection
         real_conn = srv.get_unreal_connection()
         
         # Simulating connect failure through helper internals is heavier; patch send_command instead.
@@ -215,9 +214,8 @@ class TestMutableDefaultArguments:
     Requirement note: add_component_to_blueprint(location=[], rotation=[], scale=[], component_properties={})
     """
 
-    def test_add_component_to_blueprint_mutable_defaults_not_shared(self):
-        from tests.conftest import FakeUnrealConnection
-        fake_conn = FakeUnrealConnection()
+    def test_add_component_to_blueprint_mutable_defaults_not_shared(self, fake_conn_factory):
+        fake_conn = fake_conn_factory()
         with _patch_tool_connections(fake_conn):
             # First call.
             r1 = srv.add_component_to_blueprint(
