@@ -71,9 +71,16 @@ private:
     TSharedPtr<FJsonObject> HandleAddRerouteNode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleFormatGraph(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleCreateCollapsedGraph(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCreateMacroGraph(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCreateMacroInstance(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCreateTimeline(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleEditTimeline(const TSharedPtr<FJsonObject>& Params);
     
-    // Debug / Diff / Breakpoint
+    // Debug / Profiler / Breakpoint / Watch
     TSharedPtr<FJsonObject> HandleSetBlueprintBreakpoint(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSetBlueprintWatch(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleClearBlueprintWatches(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleStepBlueprintDebugger(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleGetBlueprintDebugInfo(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleBlueprintDiff(const TSharedPtr<FJsonObject>& Params);
 

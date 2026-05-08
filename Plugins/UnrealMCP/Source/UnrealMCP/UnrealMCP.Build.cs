@@ -40,9 +40,12 @@ public class UnrealMCP : ModuleRules
 				"HTTP",
 				"Json",
 				"JsonUtilities",
+				"GameplayTags",       // For Enhanced Input input modes
+				"AIModule",           // For AIController and gameplay framework
 				"DeveloperSettings",
 				"PhysicsCore",
 				"EngineSettings",     // For Project/Game Maps settings
+				"EnhancedInput",      // For UE5 Enhanced Input assets/subsystems
 				"UnrealEd",           // For Blueprint editing
 				"BlueprintGraph",     // For K2Node classes (F15-F22)
 				"KismetCompiler",     // For Blueprint compilation (F15-F22)
@@ -69,7 +72,10 @@ public class UnrealMCP : ModuleRules
 				"RenderCore",			// For FlushRenderingCommands()
 				"ImageWrapper",			// For IImageWrapper texture export fallback
 				"UMGEditor",				// For UWidgetBlueprint and Editor Utility Widget creation
-				"UMG"					// For UUserWidget class reference
+				"UMG",					// For UUserWidget and WidgetTree operations
+				"MovieScene",			// For UWidgetAnimation MovieScene assets
+				"CommonUI",				// For Common UI widget class support
+				"CommonInput"			// For Common UI input routing dependencies
 			}
 		);
 
@@ -96,6 +102,7 @@ public class UnrealMCP : ModuleRules
 					"LevelEditor",         // For level/map management operations
 					"StaticMeshEditor",     // For StaticMeshEditorSubsystem
 					"GraphEditor",          // For graph node manipulation (Comment, Reroute, Format)
+					"InputBlueprintNodes",   // For UK2Node_EnhancedInputAction
 					"EditorWidgets",        // For editor widget utilities
 					"ApplicationCore",      // For SlateApplication window management
 					"WorkspaceMenuStructure", // For editor workspace access

@@ -136,6 +136,43 @@ from server.mesh_editing_tools import (
     asset_mesh_editing_tool,
 )
 
+from server.enhanced_input_tools import (
+    enhanced_input_tool,
+)
+
+from server.gameplay_framework_tools import (
+    create_gamemode_blueprint,
+    create_gamemode_cpp_class,
+    set_default_gamemode,
+    create_gamestate,
+    create_playerstate,
+    create_playercontroller,
+    create_aicontroller,
+    create_pawn,
+    create_character,
+    set_default_pawn,
+    set_hud_class,
+    set_spectator_pawn,
+    place_player_start,
+    set_spawn_rules,
+    set_possess_rules,
+    set_camera_manager,
+    setup_camera_component,
+    setup_spring_arm,
+    create_savegame_class,
+    create_gameinstance,
+    create_gameinstance_subsystem,
+    create_world_subsystem,
+    create_localplayer_subsystem,
+    setup_gameplay_tags,
+    add_gameplay_tag,
+    create_gameplay_tag_query,
+)
+
+from server.umg_tools import (
+    umg_tool,
+)
+
 
 # Explicitly bootstrap tool registration to avoid heavy import side-effects.
 from server import bootstrap
@@ -231,6 +268,34 @@ __all__ = [
     "audio_import_tool",
     "asset_export_tool",
     "asset_mesh_editing_tool",
+    "enhanced_input_tool",
+    "create_gamemode_blueprint",
+    "create_gamemode_cpp_class",
+    "set_default_gamemode",
+    "create_gamestate",
+    "create_playerstate",
+    "create_playercontroller",
+    "create_aicontroller",
+    "create_pawn",
+    "create_character",
+    "set_default_pawn",
+    "set_hud_class",
+    "set_spectator_pawn",
+    "place_player_start",
+    "set_spawn_rules",
+    "set_possess_rules",
+    "set_camera_manager",
+    "setup_camera_component",
+    "setup_spring_arm",
+    "create_savegame_class",
+    "create_gameinstance",
+    "create_gameinstance_subsystem",
+    "create_world_subsystem",
+    "create_localplayer_subsystem",
+    "setup_gameplay_tags",
+    "add_gameplay_tag",
+    "create_gameplay_tag_query",
+    "umg_tool",
 ]
 
 

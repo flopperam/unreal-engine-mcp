@@ -71,7 +71,49 @@ class UnrealConnection:
         "construct_mansion",
         "create_suspension_bridge",
         "create_aqueduct",
-        "create_maze"
+        "create_maze",
+        "execute_commandlet",
+        "build_hlod",
+        "rebuild_hlod",
+        "import_fbx_mesh",
+        "import_texture",
+        "import_audio",
+        "import_gltf",
+        "import_obj",
+        "import_usd",
+        "import_datasmith",
+        "import_alembic",
+        "reimport_asset",
+        "export_asset",
+        "mesh_boolean",
+        "mesh_remesh",
+        "mesh_simplify",
+        "mesh_voxel_remesh",
+        "mesh_uv_layout",
+        "mesh_merge",
+        "mesh_bake",
+        "poly_edit",
+        "modeling_tool_execute",
+        "generate_lods",
+        "generate_lightmap_uvs",
+        "join_static_mesh_actors",
+        "merge_static_mesh_actors",
+        "create_proxy_mesh_actor",
+        "create_widget_blueprint",
+        "add_widget_to_widget_blueprint",
+        "remove_widget_from_widget_blueprint",
+        "bind_widget_button_on_clicked",
+        "bind_widget_property",
+        "create_widget_animation",
+        "compile_widget_blueprint",
+        "create_ui_template",
+        "add_widget_to_viewport"
+    }
+
+    COMMAND_RECV_TIMEOUT_OVERRIDES = {
+        "execute_commandlet": 1800,
+        "build_hlod": 3600,
+        "rebuild_hlod": 3600,
     }
 
     def __init__(self):
@@ -147,6 +189,8 @@ class UnrealConnection:
             logger.debug("Disconnected from Unreal Engine")
 
     def _get_timeout_for_command(self, command_type: str) -> int:
+        if command_type in self.COMMAND_RECV_TIMEOUT_OVERRIDES:
+            return self.COMMAND_RECV_TIMEOUT_OVERRIDES[command_type]
         if command_type in self.LARGE_OPERATION_COMMANDS:
             return self.LARGE_OP_RECV_TIMEOUT
         return self.DEFAULT_RECV_TIMEOUT

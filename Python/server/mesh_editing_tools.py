@@ -47,6 +47,8 @@ def asset_mesh_editing_tool(
     plane_normal: Optional[Dict[str, float]] = None,
     extrude_distance: Optional[float] = None,
     unwrap_mode: Optional[str] = None,
+    tool_name: Optional[str] = None,
+    tool_parameters: Optional[Dict[str, Any]] = None,
     # UV Operation parameters
     generate: Optional[bool] = None,
     lightmap_coordinate_index: Optional[int] = None,
@@ -81,6 +83,7 @@ def asset_mesh_editing_tool(
             - set_vertex_colors
             - mesh_bake
             - poly_edit
+            - modeling_tool_execute
             - generate_lods
             - generate_lightmap_uvs
             - import_ucx_collision
@@ -126,6 +129,8 @@ def asset_mesh_editing_tool(
         plane_normal: Plane normal for poly edit: {"x": 0.0, "y": 0.0, "z": 1.0}
         extrude_distance: Extrude distance for poly edit.
         unwrap_mode: UV unwrap mode ("auto_plot" or "repack").
+        tool_name: Modeling Mode tool name for modeling_tool_execute diagnostics.
+        tool_parameters: Tool-specific parameters for modeling_tool_execute.
     """
     unreal = get_unreal_connection()
     if not unreal:
@@ -249,6 +254,12 @@ def asset_mesh_editing_tool(
             if plane_normal is not None: params["plane_normal"] = plane_normal
             if extrude_distance is not None: params["extrude_distance"] = extrude_distance
             return unreal.send_command("poly_edit", params)
+
+        elif action == "modeling_tool_execute":
+            params = {"asset_path": asset_path}
+            if tool_name is not None: params["tool_name"] = tool_name
+            if tool_parameters is not None: params["tool_parameters"] = tool_parameters
+            return unreal.send_command("modeling_tool_execute", params)
 
         elif action == "generate_lods":
             params = {"asset_path": asset_path}

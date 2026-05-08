@@ -16,6 +16,9 @@
 #include "Commands/EpicUnrealMCPContentBrowserCommands.h"
 #include "Commands/EpicUnrealMCPAssetImportCommands.h"
 #include "Commands/EpicUnrealMCPMeshEditingCommands.h"
+#include "Commands/EpicUnrealMCPEnhancedInputCommands.h"
+#include "Commands/EpicUnrealMCPGameplayFrameworkCommands.h"
+#include "Commands/EpicUnrealMCPUMGCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "MCPServerRunnable.h"
 #include "EpicUnrealMCPBridge.generated.h"
@@ -78,6 +81,9 @@ private:
 	TSharedPtr<FEpicUnrealMCPContentBrowserCommands> ContentBrowserCommands;
 	TSharedPtr<FEpicUnrealMCPAssetImportCommands> AssetImportCommands;
 	TSharedPtr<FEpicUnrealMCPMeshEditingCommands> MeshEditingCommands;
+	TSharedPtr<FEpicUnrealMCPEnhancedInputCommands> EnhancedInputCommands;
+	TSharedPtr<FEpicUnrealMCPGameplayFrameworkCommands> GameplayFrameworkCommands;
+	TSharedPtr<FEpicUnrealMCPUMGCommands> UMGCommands;
 };
 
 #endif // WITH_EDITOR

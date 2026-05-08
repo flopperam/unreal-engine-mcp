@@ -9,6 +9,7 @@ from server.project_editor_tools import (
     project_settings_tool,
     viewport_tool,
 )
+from server.enhanced_input_tools import enhanced_input_tool
 
 
 @pytest.fixture
@@ -66,4 +67,52 @@ def test_viewport_camera_routing(mock_unreal):
     viewport_tool(action="set_camera_position", location=[1, 2, 3], rotation=[4, 5, 6])
     mock_unreal.send_command.assert_called_with(
         "set_camera_position", {"location": [1, 2, 3], "rotation": [4, 5, 6]}
+    )
+
+
+def test_enhanced_input_create_action_routing(mock_unreal, monkeypatch):
+    monkeypatch.setattr(
+        "server.enhanced_input_tools.get_unreal_connection",
+        lambda: mock_unreal,
+    )
+    enhanced_input_tool(
+        action="create_input_action",
+        asset_path="/Game/Input/IA_Jump",
+        value_type="Boolean",
+    )
+    mock_unreal.send_command.assert_called_with(
+        "create_input_action",
+        {"asset_path": "/Game/Input/IA_Jump", "value_type": "Boolean"},
+    )
+
+
+def test_enhanced_input_mapping_dead_zone_routing(mock_unreal, monkeypatch):
+    monkeypatch.setattr(
+        "server.enhanced_input_tools.get_unreal_connection",
+        lambda: mock_unreal,
+    )
+    enhanced_input_tool(
+        action="set_dead_zone",
+        mapping_context_path="/Game/Input/IMC_Default",
+        input_action_path="/Game/Input/IA_Move",
+        key="Gamepad_Left2D",
+        lower_threshold=0.15,
+        upper_threshold=0.95,
+        dead_zone_type="radial",
+    )
+    mock_unreal.send_command.assert_called_with(
+        "configure_enhanced_input_mapping",
+        {
+            "mapping_context_path": "/Game/Input/IMC_Default",
+            "input_action_path": "/Game/Input/IA_Move",
+            "key": "Gamepad_Left2D",
+            "modifiers": [
+                {
+                    "type": "dead_zone",
+                    "lower_threshold": 0.15,
+                    "upper_threshold": 0.95,
+                    "dead_zone_type": "radial",
+                }
+            ],
+        },
     )

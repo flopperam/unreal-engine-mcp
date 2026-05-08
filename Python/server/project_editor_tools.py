@@ -235,6 +235,7 @@ def world_partition_tool(
     max_x: Optional[float] = None,
     max_y: Optional[float] = None,
     max_z: Optional[float] = None,
+    clear_all: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Manage World Partition settings, cells, and grid.
 
@@ -243,7 +244,7 @@ def world_partition_tool(
       set_grid          - Set WP grid settings (optional placement_grid_size, foliage_grid_size, minimap_threshold).
       get_cells         - Return current WP editor bounds and loaded regions.
       load_cell         - Load a WP cell region (requires min_x/y/z, max_x/y/z).
-      unload_cell       - Clear custom loaded WP regions.
+      unload_cell       - Unload a matching/intersecting WP region, or clear all custom loaded regions.
     """
     try:
         validate_string(action, "action")
@@ -284,7 +285,15 @@ def world_partition_tool(
             return unreal.send_command("load_world_partition_cell", params)
 
         elif action == "unload_cell":
-            return unreal.send_command("unload_world_partition_cell", {})
+            params = {}
+            if min_x is not None: params["min_x"] = min_x
+            if min_y is not None: params["min_y"] = min_y
+            if min_z is not None: params["min_z"] = min_z
+            if max_x is not None: params["max_x"] = max_x
+            if max_y is not None: params["max_y"] = max_y
+            if max_z is not None: params["max_z"] = max_z
+            if clear_all is not None: params["clear_all"] = clear_all
+            return unreal.send_command("unload_world_partition_cell", params)
 
         else:
             return make_error_response(f"Unknown world_partition_tool action: {action}")
@@ -564,6 +573,8 @@ def editor_control_tool(
     script: Optional[str] = None,
     commandlet_name: Optional[str] = None,
     args: Optional[str] = None,
+    wait_for_completion: Optional[bool] = None,
+    timeout_seconds: Optional[float] = None,
 ) -> Dict[str, Any]:
     """General editor control: undo, redo, save, logs, scripts, commandlets.
 
@@ -621,10 +632,15 @@ def editor_control_tool(
         elif action == "execute_commandlet":
             if not commandlet_name:
                 return make_error_response("commandlet_name is required")
-            return unreal.send_command("execute_commandlet", {
+            params = {
                 "commandlet_name": commandlet_name,
                 "args": args or "",
-            })
+            }
+            if wait_for_completion is not None:
+                params["wait_for_completion"] = wait_for_completion
+            if timeout_seconds is not None:
+                params["timeout_seconds"] = timeout_seconds
+            return unreal.send_command("execute_commandlet", params)
         else:
             return make_error_response(f"Unknown editor_control_tool action: {action}")
     except Exception as e:
@@ -772,6 +788,14 @@ def advanced_world_tool(
     map_path: Optional[str] = None,
     min_extent: Optional[List[float]] = None,
     max_extent: Optional[List[float]] = None,
+    wait_for_completion: Optional[bool] = None,
+    timeout_seconds: Optional[float] = None,
+    extra_args: Optional[str] = None,
+    setup_hlods: Optional[bool] = None,
+    build_hlods: Optional[bool] = None,
+    rebuild_hlods: Optional[bool] = None,
+    delete_hlods: Optional[bool] = None,
+    dump_stats: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Manage Data Layers, HLOD, OFPA, Level Bounds, and World Origin Rebasing.
 
@@ -835,12 +859,36 @@ def advanced_world_tool(
             params = {}
             if map_path:
                 params["map_path"] = map_path
+            if wait_for_completion is not None:
+                params["wait_for_completion"] = wait_for_completion
+            if timeout_seconds is not None:
+                params["timeout_seconds"] = timeout_seconds
+            if extra_args:
+                params["extra_args"] = extra_args
+            if setup_hlods is not None:
+                params["setup_hlods"] = setup_hlods
+            if build_hlods is not None:
+                params["build_hlods"] = build_hlods
+            if dump_stats is not None:
+                params["dump_stats"] = dump_stats
             return unreal.send_command("build_hlod", params)
 
         elif action == "rebuild_hlod":
             params = {}
             if map_path:
                 params["map_path"] = map_path
+            if wait_for_completion is not None:
+                params["wait_for_completion"] = wait_for_completion
+            if timeout_seconds is not None:
+                params["timeout_seconds"] = timeout_seconds
+            if extra_args:
+                params["extra_args"] = extra_args
+            if delete_hlods is not None:
+                params["delete_hlods"] = delete_hlods
+            if rebuild_hlods is not None:
+                params["rebuild_hlods"] = rebuild_hlods
+            if dump_stats is not None:
+                params["dump_stats"] = dump_stats
             return unreal.send_command("rebuild_hlod", params)
 
         elif action == "set_one_file_per_actor":

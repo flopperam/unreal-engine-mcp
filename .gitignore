@@ -114,6 +114,12 @@ scripts/__pycache__/
 *.code-workspace
 .ignore
 
+# Redundant source files
+FlopperamUnrealMCP/Source/MyGameInstanceSubsystem.*
+FlopperamUnrealMCP/Source/MyLocalPlayerSubsystem.*
+FlopperamUnrealMCP/Source/MyWorldSubsystem.*
+FlopperamUnrealMCP/Source/TestGameModeCPP.*
+
 # Clang
 .clang-format
 .clangd

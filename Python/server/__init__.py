@@ -29,6 +29,10 @@ def bootstrap():
     from server import asset_management_tools  # noqa: F401
     from server import asset_import_tools        # noqa: F401
     from server import mesh_editing_tools        # noqa: F401
+    from server import project_editor_tools      # noqa: F401
+    from server import enhanced_input_tools      # noqa: F401
+    from server import gameplay_framework_tools  # noqa: F401
+    from server import umg_tools                 # noqa: F401
 
 
 if __name__ == "__main__":

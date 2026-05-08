@@ -23,7 +23,7 @@ import pytest
 
 import unreal_mcp_server_advanced as srv
 from unreal_mcp_server_advanced import mcp, get_unreal_connection
-from server import actor_tools, blueprint_tools, blueprint_graph_tools, material_graph_tools, material_tools, world_building_tools
+from server import actor_tools, blueprint_tools, blueprint_graph_tools, gameplay_framework_tools, material_graph_tools, material_tools, umg_tools, world_building_tools
 
 
 def _collect_source_tools():
@@ -49,8 +49,10 @@ def _patch_tool_connections(fake_conn):
         actor_tools,
         blueprint_tools,
         blueprint_graph_tools,
+        gameplay_framework_tools,
         material_graph_tools,
         material_tools,
+        umg_tools,
         world_building_tools,
     ]:
         stack.enter_context(patch.object(module, "get_unreal_connection", return_value=fake_conn, create=True))
@@ -360,7 +362,7 @@ class TestPythonToCppCommandMapping:
             "world_settings_tool", "editor_control_tool", "play_tool", "viewport_tool",
             "asset_management_tool", "fbx_mesh_import_tool",
             "texture_import_tool", "audio_import_tool", "asset_export_tool",
-            "asset_mesh_editing_tool", # Skip dynamic multi-action tools
+            "asset_mesh_editing_tool", "enhanced_input_tool", "umg_tool", # Skip dynamic multi-action tools
         }
         registered = self._collect_registered_tool_names()
         missing = []

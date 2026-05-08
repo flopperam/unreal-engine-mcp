@@ -116,6 +116,11 @@ double GetDeferredEditorCommandDelaySeconds(const FString& CommandType)
         TEXT("save_asset"),
         TEXT("create_utility_widget"),
         TEXT("create_utility_blueprint"),
+        TEXT("create_collapsed_graph"),
+        TEXT("create_macro_graph"),
+        TEXT("create_macro_instance"),
+        TEXT("create_timeline"),
+        TEXT("edit_timeline"),
         TEXT("import_fbx_mesh"),
         TEXT("import_texture"),
         TEXT("import_audio"),
@@ -130,7 +135,28 @@ double GetDeferredEditorCommandDelaySeconds(const FString& CommandType)
         TEXT("take_screenshot"),
         TEXT("export_level"),
         TEXT("save_import_preset"),
-        TEXT("load_import_preset")
+        TEXT("load_import_preset"),
+        TEXT("create_input_action"),
+        TEXT("create_input_mapping_context"),
+        TEXT("add_enhanced_input_mapping"),
+        TEXT("remove_enhanced_input_mapping"),
+        TEXT("configure_enhanced_input_action"),
+        TEXT("configure_enhanced_input_mapping"),
+        TEXT("add_runtime_mapping_context"),
+        TEXT("remove_runtime_mapping_context"),
+        TEXT("setup_enhanced_input_binding"),
+        TEXT("setup_rebind_ui"),
+        TEXT("rebind_enhanced_input_key"),
+        TEXT("configure_local_multiplayer_input"),
+        TEXT("create_widget_blueprint"),
+        TEXT("add_widget_to_widget_blueprint"),
+        TEXT("remove_widget_from_widget_blueprint"),
+        TEXT("set_widget_slot_properties"),
+        TEXT("bind_widget_button_on_clicked"),
+        TEXT("bind_widget_property"),
+        TEXT("create_widget_animation"),
+        TEXT("compile_widget_blueprint"),
+        TEXT("create_ui_template")
     };
 
     if (SlowDeferredCommands.Contains(CommandType))
@@ -153,13 +179,70 @@ double GetDeferredEditorCommandDelaySeconds(const FString& CommandType)
         TEXT("set_asset_metadata"),
         TEXT("tag_asset"),
         TEXT("fixup_redirectors"),
+        TEXT("set_blueprint_parent_class"),
+        TEXT("set_blueprint_class_settings"),
+        TEXT("set_blueprint_class_defaults"),
+        TEXT("set_component_defaults"),
+        TEXT("edit_construction_script"),
+        TEXT("create_event_dispatcher"),
+        TEXT("bind_event_dispatcher"),
+        TEXT("create_enum"),
+        TEXT("create_struct"),
+        TEXT("edit_enum"),
+        TEXT("edit_struct"),
+        TEXT("create_blueprint_interface"),
+        TEXT("implement_interface"),
+        TEXT("create_function_library"),
+        TEXT("create_macro_library"),
+        TEXT("add_comment_node"),
+        TEXT("add_reroute_node"),
+        TEXT("create_collapsed_graph"),
+        TEXT("create_macro_graph"),
+        TEXT("create_macro_instance"),
+        TEXT("create_timeline"),
+        TEXT("edit_timeline"),
         TEXT("bulk_rename"),
         TEXT("bulk_move"),
         TEXT("bulk_delete"),
         TEXT("create_primary_asset_label"),
         TEXT("delete_primary_asset_label"),
         TEXT("set_asset_manager_settings"),
-        TEXT("add_primary_asset_bundle")
+        TEXT("add_primary_asset_bundle"),
+        // Gameplay Framework commands that modify assets
+        TEXT("create_gamemode_blueprint"),
+        TEXT("create_gamemode_cpp_class"),
+        TEXT("create_gamestate"),
+        TEXT("create_playerstate"),
+        TEXT("create_playercontroller"),
+        TEXT("create_aicontroller"),
+        TEXT("create_pawn"),
+        TEXT("create_character"),
+        TEXT("set_hud_class"),
+        TEXT("set_spectator_pawn"),
+        TEXT("set_camera_manager"),
+        TEXT("setup_camera_component"),
+        TEXT("setup_spring_arm"),
+        TEXT("create_savegame_class"),
+        TEXT("create_gameinstance"),
+        TEXT("create_gameinstance_subsystem"),
+        TEXT("create_world_subsystem"),
+        TEXT("create_localplayer_subsystem"),
+        TEXT("setup_gameplay_tags"),
+        TEXT("add_gameplay_tag"),
+        TEXT("place_player_start"),
+        TEXT("create_widget_blueprint"),
+        TEXT("add_widget_to_widget_blueprint"),
+        TEXT("remove_widget_from_widget_blueprint"),
+        TEXT("set_widget_text"),
+        TEXT("set_widget_font"),
+        TEXT("set_widget_color"),
+        TEXT("set_widget_brush"),
+        TEXT("set_widget_style"),
+        TEXT("bind_widget_button_on_clicked"),
+        TEXT("bind_widget_property"),
+        TEXT("create_widget_animation"),
+        TEXT("compile_widget_blueprint"),
+        TEXT("create_ui_template")
     };
 
     return AssetLifecycleCommands.Contains(CommandType) ? 0.25 : 0.0;
@@ -184,6 +267,9 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
     ContentBrowserCommands = MakeShared<FEpicUnrealMCPContentBrowserCommands>();
     AssetImportCommands = MakeShared<FEpicUnrealMCPAssetImportCommands>();
     MeshEditingCommands = MakeShared<FEpicUnrealMCPMeshEditingCommands>();
+    EnhancedInputCommands = MakeShared<FEpicUnrealMCPEnhancedInputCommands>();
+    GameplayFrameworkCommands = MakeShared<FEpicUnrealMCPGameplayFrameworkCommands>();
+    UMGCommands = MakeShared<FEpicUnrealMCPUMGCommands>();
 
     const UUnrealMCPSettings* Settings = GetDefault<UUnrealMCPSettings>();
     FString HostStr = Settings ? Settings->Host : TEXT(MCP_SERVER_HOST);
@@ -237,6 +323,11 @@ UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
     MaterialCommands.Reset();
     ProjectEditorCommands.Reset();
     ContentBrowserCommands.Reset();
+    AssetImportCommands.Reset();
+    MeshEditingCommands.Reset();
+    EnhancedInputCommands.Reset();
+    GameplayFrameworkCommands.Reset();
+    UMGCommands.Reset();
 }
 
 void UEpicUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
@@ -381,7 +472,7 @@ void UEpicUnrealMCPBridge::EnsureActorIndexInitialized()
 
 namespace
 {
-    // Command routing: 0=ping, 1=EditorCommands, 2=BlueprintCommands, 3=BlueprintGraphCommands, 4=MaterialCommands, 5=ProjectEditorCommands, 6=ContentBrowserCommands, 7=AssetImportCommands, 8=MeshEditingCommands
+    // Command routing: 0=ping, 1=EditorCommands, 2=BlueprintCommands, 3=BlueprintGraphCommands, 4=MaterialCommands, 5=ProjectEditorCommands, 6=ContentBrowserCommands, 7=AssetImportCommands, 8=MeshEditingCommands, 9=EnhancedInputCommands, 10=GameplayFrameworkCommands, 11=UMGCommands
     int32 RouteCommand(const FString& CommandType)
     {
         static const TMap<FString, int32> Router = {
@@ -425,6 +516,35 @@ namespace
             {TEXT("analyze_blueprint_graph"), 2},
             {TEXT("get_blueprint_variable_details"), 2},
             {TEXT("get_blueprint_function_details"), 2},
+            {TEXT("set_blueprint_parent_class"), 2},
+            {TEXT("set_blueprint_class_settings"), 2},
+            {TEXT("set_blueprint_class_defaults"), 2},
+            {TEXT("set_component_defaults"), 2},
+            {TEXT("edit_construction_script"), 2},
+            {TEXT("create_event_dispatcher"), 2},
+            {TEXT("bind_event_dispatcher"), 2},
+            {TEXT("create_enum"), 2},
+            {TEXT("create_struct"), 2},
+            {TEXT("edit_enum"), 2},
+            {TEXT("edit_struct"), 2},
+            {TEXT("create_blueprint_interface"), 2},
+            {TEXT("implement_interface"), 2},
+            {TEXT("create_function_library"), 2},
+            {TEXT("create_macro_library"), 2},
+            {TEXT("add_comment_node"), 2},
+            {TEXT("add_reroute_node"), 2},
+            {TEXT("format_graph"), 2},
+            {TEXT("create_collapsed_graph"), 2},
+            {TEXT("create_macro_graph"), 2},
+            {TEXT("create_macro_instance"), 2},
+            {TEXT("create_timeline"), 2},
+            {TEXT("edit_timeline"), 2},
+            {TEXT("set_blueprint_breakpoint"), 2},
+            {TEXT("set_blueprint_watch"), 2},
+            {TEXT("clear_blueprint_watches"), 2},
+            {TEXT("step_blueprint_debugger"), 2},
+            {TEXT("get_blueprint_debug_info"), 2},
+            {TEXT("blueprint_diff"), 2},
             {TEXT("add_blueprint_node"), 3},
             {TEXT("connect_nodes"), 3},
             {TEXT("create_variable"), 3},
@@ -584,6 +704,7 @@ namespace
             {TEXT("set_vertex_colors"), 8},
             {TEXT("mesh_bake"), 8},
             {TEXT("poly_edit"), 8},
+            {TEXT("modeling_tool_execute"), 8},
             {TEXT("generate_lods"), 8},
             {TEXT("generate_lightmap_uvs"), 8},
             {TEXT("import_ucx_collision"), 8},
@@ -606,7 +727,73 @@ namespace
             
             // Other utilities
             {TEXT("set_generate_lightmap_uvs"), 8},
-            {TEXT("has_vertex_colors"), 8}
+            {TEXT("has_vertex_colors"), 8},
+
+            // Enhanced Input Commands (9)
+            {TEXT("create_input_action"), 9},
+            {TEXT("create_input_mapping_context"), 9},
+            {TEXT("add_enhanced_input_mapping"), 9},
+            {TEXT("remove_enhanced_input_mapping"), 9},
+            {TEXT("configure_enhanced_input_action"), 9},
+            {TEXT("configure_enhanced_input_mapping"), 9},
+            {TEXT("list_enhanced_input_assets"), 9},
+            {TEXT("get_enhanced_input_debug_info"), 9},
+            {TEXT("add_runtime_mapping_context"), 9},
+            {TEXT("remove_runtime_mapping_context"), 9},
+            {TEXT("setup_enhanced_input_binding"), 9},
+            {TEXT("setup_rebind_ui"), 9},
+            {TEXT("rebind_enhanced_input_key"), 9},
+            {TEXT("configure_local_multiplayer_input"), 9},
+
+            // Gameplay Framework Commands (10)
+            {TEXT("create_gamemode_blueprint"), 10},
+            {TEXT("create_gamemode_cpp_class"), 10},
+            {TEXT("set_default_gamemode"), 10},
+            {TEXT("create_gamestate"), 10},
+            {TEXT("create_playerstate"), 10},
+            {TEXT("create_playercontroller"), 10},
+            {TEXT("create_aicontroller"), 10},
+            {TEXT("create_pawn"), 10},
+            {TEXT("create_character"), 10},
+            {TEXT("set_default_pawn"), 10},
+            {TEXT("set_hud_class"), 10},
+            {TEXT("set_spectator_pawn"), 10},
+            {TEXT("place_player_start"), 10},
+            {TEXT("set_spawn_rules"), 10},
+            {TEXT("set_possess_rules"), 10},
+            {TEXT("set_camera_manager"), 10},
+            {TEXT("setup_camera_component"), 10},
+            {TEXT("setup_spring_arm"), 10},
+            {TEXT("create_savegame_class"), 10},
+            {TEXT("create_gameinstance"), 10},
+            {TEXT("create_gameinstance_subsystem"), 10},
+            {TEXT("create_world_subsystem"), 10},
+            {TEXT("create_localplayer_subsystem"), 10},
+            {TEXT("setup_gameplay_tags"), 10},
+            {TEXT("add_gameplay_tag"), 10},
+            {TEXT("create_gameplay_tag_query"), 10},
+
+            // UI / UMG / Common UI Commands (11)
+            {TEXT("create_widget_blueprint"), 11},
+            {TEXT("add_widget_to_widget_blueprint"), 11},
+            {TEXT("remove_widget_from_widget_blueprint"), 11},
+            {TEXT("set_widget_slot_properties"), 11},
+            {TEXT("set_widget_text"), 11},
+            {TEXT("set_widget_font"), 11},
+            {TEXT("set_widget_color"), 11},
+            {TEXT("set_widget_brush"), 11},
+            {TEXT("set_widget_style"), 11},
+            {TEXT("bind_widget_button_on_clicked"), 11},
+            {TEXT("bind_widget_property"), 11},
+            {TEXT("create_widget_animation"), 11},
+            {TEXT("compile_widget_blueprint"), 11},
+            {TEXT("inspect_widget_blueprint"), 11},
+            {TEXT("add_widget_to_viewport"), 11},
+            {TEXT("remove_widget_from_parent"), 11},
+            {TEXT("click_widget_button"), 11},
+            {TEXT("set_ui_input_mode"), 11},
+            {TEXT("set_mouse_cursor_visible"), 11},
+            {TEXT("create_ui_template"), 11}
         };
         const int32* Found = Router.Find(CommandType);
         return Found ? *Found : -1;
@@ -658,6 +845,15 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 break;
             case 8: // MeshEditingCommands
                 ResultJson = MeshEditingCommands->HandleCommand(CommandType, Params);
+                break;
+            case 9: // EnhancedInputCommands
+                ResultJson = EnhancedInputCommands->HandleCommand(CommandType, Params);
+                break;
+            case 10: // GameplayFrameworkCommands
+                ResultJson = GameplayFrameworkCommands->HandleCommand(CommandType, Params);
+                break;
+            case 11: // UMGCommands
+                ResultJson = UMGCommands->HandleCommand(CommandType, Params);
                 break;
             default:
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));

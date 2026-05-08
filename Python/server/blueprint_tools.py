@@ -606,13 +606,25 @@ def format_graph(blueprint_path: str, graph_name: str = "EventGraph") -> Dict[st
 
 
 @mcp.tool()
-def create_collapsed_graph(blueprint_path: str, graph_name: str = "EventGraph") -> Dict[str, Any]:
-    """Create a collapsed graph from selected nodes in a Blueprint."""
+def create_collapsed_graph(
+    blueprint_path: str,
+    graph_name: str = "EventGraph",
+    collapsed_graph_name: str = "CollapsedGraph",
+    pos_x: int = 0,
+    pos_y: int = 0
+) -> Dict[str, Any]:
+    """Create a collapsed graph node in a Blueprint graph."""
     unreal = get_unreal_connection()
     if not unreal:
         return make_error_response("Failed to connect to Unreal Engine")
     try:
-        params = {"blueprint_path": blueprint_path, "graph_name": graph_name}
+        params = {
+            "blueprint_path": blueprint_path,
+            "graph_name": graph_name,
+            "collapsed_graph_name": collapsed_graph_name,
+            "pos_x": pos_x,
+            "pos_y": pos_y,
+        }
         response = unreal.send_command("create_collapsed_graph", params)
         return response or make_error_response("No response from Unreal")
     except Exception as e:
@@ -621,13 +633,30 @@ def create_collapsed_graph(blueprint_path: str, graph_name: str = "EventGraph") 
 
 
 @mcp.tool()
-def set_blueprint_breakpoint(
+def create_macro_graph(blueprint_path: str, macro_name: str) -> Dict[str, Any]:
+    """Create a macro graph inside a Blueprint or Macro Library."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {"blueprint_path": blueprint_path, "macro_name": macro_name}
+        response = unreal.send_command("create_macro_graph", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_macro_graph error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def create_macro_instance(
     blueprint_path: str,
-    graph_name: str,
-    node_id: int,
-    enable: bool = True
+    macro_graph_name: str,
+    graph_name: str = "EventGraph",
+    macro_blueprint_path: str = None,
+    pos_x: int = 0,
+    pos_y: int = 0
 ) -> Dict[str, Any]:
-    """Set or clear a breakpoint on a Blueprint node."""
+    """Place a macro instance node in a Blueprint graph."""
     unreal = get_unreal_connection()
     if not unreal:
         return make_error_response("Failed to connect to Unreal Engine")
@@ -635,13 +664,204 @@ def set_blueprint_breakpoint(
         params = {
             "blueprint_path": blueprint_path,
             "graph_name": graph_name,
-            "node_id": node_id,
-            "enable": enable
+            "macro_graph_name": macro_graph_name,
+            "pos_x": pos_x,
+            "pos_y": pos_y,
         }
+        if macro_blueprint_path:
+            params["macro_blueprint_path"] = macro_blueprint_path
+        response = unreal.send_command("create_macro_instance", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_macro_instance error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def create_timeline(
+    blueprint_path: str,
+    timeline_name: str,
+    graph_name: str = "EventGraph",
+    pos_x: int = 0,
+    pos_y: int = 0,
+    length: float = None,
+    autoplay: bool = None,
+    loop: bool = None,
+    replicated: bool = None,
+    ignore_time_dilation: bool = None
+) -> Dict[str, Any]:
+    """Create a Timeline template and a Timeline node in a Blueprint graph."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {
+            "blueprint_path": blueprint_path,
+            "timeline_name": timeline_name,
+            "graph_name": graph_name,
+            "pos_x": pos_x,
+            "pos_y": pos_y,
+        }
+        if length is not None:
+            params["length"] = length
+        if autoplay is not None:
+            params["autoplay"] = autoplay
+        if loop is not None:
+            params["loop"] = loop
+        if replicated is not None:
+            params["replicated"] = replicated
+        if ignore_time_dilation is not None:
+            params["ignore_time_dilation"] = ignore_time_dilation
+        response = unreal.send_command("create_timeline", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_timeline error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def edit_timeline(
+    blueprint_path: str,
+    timeline_name: str,
+    track_action: str = "list",
+    track_type: str = "float",
+    track_name: str = None,
+    curve_path: str = None,
+    keys: List[Dict[str, Any]] = None,
+    length: float = None,
+    autoplay: bool = None,
+    loop: bool = None,
+    replicated: bool = None,
+    ignore_time_dilation: bool = None
+) -> Dict[str, Any]:
+    """Edit Timeline settings and add/remove Timeline tracks."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params = {
+            "blueprint_path": blueprint_path,
+            "timeline_name": timeline_name,
+            "track_action": track_action,
+            "track_type": track_type,
+        }
+        if track_name:
+            params["track_name"] = track_name
+        if curve_path:
+            params["curve_path"] = curve_path
+        if keys:
+            params["keys"] = keys
+        if length is not None:
+            params["length"] = length
+        if autoplay is not None:
+            params["autoplay"] = autoplay
+        if loop is not None:
+            params["loop"] = loop
+        if replicated is not None:
+            params["replicated"] = replicated
+        if ignore_time_dilation is not None:
+            params["ignore_time_dilation"] = ignore_time_dilation
+        response = unreal.send_command("edit_timeline", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"edit_timeline error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def set_blueprint_breakpoint(
+    blueprint_path: str,
+    node_id: Any,
+    graph_name: str = "EventGraph",
+    enable: bool = True,
+    action: str = "set",
+    remove: bool = False
+) -> Dict[str, Any]:
+    """Set or clear a breakpoint on a Blueprint node."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    if node_id is None and action != "clear_all":
+        return make_error_response("node_id is required unless action='clear_all'")
+    try:
+        params = {
+            "blueprint_path": blueprint_path,
+            "graph_name": graph_name,
+            "enable": enable,
+            "action": action,
+            "remove": remove,
+        }
+        if node_id is not None:
+            params["node_id"] = node_id
         response = unreal.send_command("set_blueprint_breakpoint", params)
         return response or make_error_response("No response from Unreal")
     except Exception as e:
         logger.error(f"set_blueprint_breakpoint error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def set_blueprint_watch(
+    blueprint_path: str,
+    node_id: Any,
+    pin_name: str,
+    graph_name: str = "EventGraph",
+    pin_id: Any = None,
+    action: str = "set",
+    remove: bool = False
+) -> Dict[str, Any]:
+    """Set or remove a watch on a Blueprint node pin."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    if node_id is None:
+        return make_error_response("node_id is required")
+    if not pin_name and pin_id is None:
+        return make_error_response("pin_name or pin_id is required")
+    try:
+        params = {
+            "blueprint_path": blueprint_path,
+            "graph_name": graph_name,
+            "node_id": node_id,
+            "action": action,
+            "remove": remove,
+        }
+        if pin_name:
+            params["pin_name"] = pin_name
+        if pin_id is not None:
+            params["pin_id"] = pin_id
+        response = unreal.send_command("set_blueprint_watch", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"set_blueprint_watch error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def clear_blueprint_watches(blueprint_path: str) -> Dict[str, Any]:
+    """Clear all pin watches for a Blueprint."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("clear_blueprint_watches", {"blueprint_path": blueprint_path})
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"clear_blueprint_watches error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def step_blueprint_debugger(action: str) -> Dict[str, Any]:
+    """Request a Blueprint debugger step action: step_in, step_over, or step_out."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("step_blueprint_debugger", {"action": action})
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"step_blueprint_debugger error: {e}")
         return make_error_response(str(e))
 
 

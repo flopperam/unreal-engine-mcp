@@ -20,6 +20,7 @@
 #include "Engine/Selection.h"
 #include "EditorAssetLibrary.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "AssetRegistry/ARFilter.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "BlueprintNodeSpawner.h"
 #include "BlueprintActionDatabase.h"
@@ -339,6 +340,30 @@ UBlueprint* FEpicUnrealMCPCommonUtils::FindBlueprintByName(const FString& Bluepr
         if (Blueprint)
         {
             return Blueprint;
+        }
+    }
+
+    // Fallback for cases where the asset lives outside /Game/Blueprints.
+    // Gameplay Framework helpers create assets in domain-specific folders.
+    if (!BlueprintName.StartsWith(TEXT("/")))
+    {
+        FARFilter Filter;
+        Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+        Filter.PackagePaths.Add(FName(TEXT("/Game")));
+        Filter.bRecursivePaths = true;
+
+        TArray<FAssetData> BlueprintAssets;
+        AssetRegistryModule.Get().GetAssets(Filter, BlueprintAssets);
+        for (const FAssetData& Candidate : BlueprintAssets)
+        {
+            if (Candidate.AssetName.ToString().Equals(BlueprintName, ESearchCase::IgnoreCase))
+            {
+                Blueprint = Cast<UBlueprint>(Candidate.GetAsset());
+                if (Blueprint)
+                {
+                    return Blueprint;
+                }
+            }
         }
     }
 

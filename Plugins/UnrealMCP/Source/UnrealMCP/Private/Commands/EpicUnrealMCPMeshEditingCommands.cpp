@@ -46,6 +46,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPMeshEditingCommands::HandleCommand(const F
 	if (CommandType == TEXT("set_vertex_colors")) return HandleSetVertexColors(Params);
 	if (CommandType == TEXT("mesh_bake")) return HandleMeshBake(Params);
 	if (CommandType == TEXT("poly_edit")) return HandlePolyEdit(Params);
+	if (CommandType == TEXT("modeling_tool_execute")) return HandleModelingToolExecute(Params);
 	if (CommandType == TEXT("generate_lods")) return HandleGenerateLODs(Params);
 	if (CommandType == TEXT("generate_lightmap_uvs")) return HandleGenerateLightmapUVs(Params);
 	if (CommandType == TEXT("import_ucx_collision")) return HandleImportUCXCollision(Params);
@@ -2395,5 +2396,94 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPMeshEditingCommands::HandleHasVertexColors
 
 TSharedPtr<FJsonObject> FEpicUnrealMCPMeshEditingCommands::HandleModelingToolExecute(const TSharedPtr<FJsonObject>& Params)
 {
-	return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Modeling tool execution requires interactive editor mode. Use specific geometry commands instead."));
+	FString ToolName;
+	if (!Params->TryGetStringField(TEXT("tool_name"), ToolName))
+	{
+		return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'tool_name'. Supported non-interactive Modeling Mode mappings: boolean, remesh, simplify, uv_unwrap, uv_layout, pivot, bake, poly_edit, merge."));
+	}
+
+	const FString NormalizedTool = ToolName.ToLower();
+	FString MappedCommand;
+	TSharedPtr<FJsonObject> Result;
+
+	if (NormalizedTool.Contains(TEXT("boolean")) || NormalizedTool.Contains(TEXT("bool")))
+	{
+		MappedCommand = TEXT("mesh_boolean");
+		Result = HandleMeshBoolean(Params);
+	}
+	else if (NormalizedTool.Contains(TEXT("voxel")))
+	{
+		MappedCommand = TEXT("mesh_voxel_remesh");
+		Result = HandleMeshVoxelRemesh(Params);
+	}
+	else if (NormalizedTool.Contains(TEXT("remesh")))
+	{
+		MappedCommand = TEXT("mesh_remesh");
+		Result = HandleMeshRemesh(Params);
+	}
+	else if (NormalizedTool.Contains(TEXT("simplify")) || NormalizedTool.Contains(TEXT("reduce")))
+	{
+		MappedCommand = TEXT("mesh_simplify");
+		Result = HandleMeshSimplify(Params);
+	}
+	else if (NormalizedTool.Contains(TEXT("unwrap")))
+	{
+		MappedCommand = TEXT("mesh_uv_unwrap");
+		Result = HandleMeshUVUnwrap(Params);
+	}
+	else if (NormalizedTool.Contains(TEXT("layout")) || NormalizedTool.Contains(TEXT("repack")))
+	{
+		MappedCommand = TEXT("mesh_uv_layout");
+		Result = HandleMeshUVLayout(Params);
+	}
+	else if (NormalizedTool.Contains(TEXT("pivot")))
+	{
+		MappedCommand = TEXT("set_pivot");
+		Result = HandleSetPivot(Params);
+	}
+	else if (NormalizedTool.Contains(TEXT("bake")))
+	{
+		MappedCommand = TEXT("mesh_bake");
+		Result = HandleMeshBake(Params);
+	}
+	else if (NormalizedTool.Contains(TEXT("poly")) || NormalizedTool.Contains(TEXT("cut")) || NormalizedTool.Contains(TEXT("extrude")))
+	{
+		MappedCommand = TEXT("poly_edit");
+		Result = HandlePolyEdit(Params);
+	}
+	else if (NormalizedTool.Contains(TEXT("merge")) || NormalizedTool.Contains(TEXT("join")))
+	{
+		MappedCommand = TEXT("mesh_merge");
+		Result = HandleMeshMerge(Params);
+	}
+	else
+	{
+		TSharedPtr<FJsonObject> Error = FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unsupported Modeling Mode tool mapping: %s"), *ToolName));
+		TArray<TSharedPtr<FJsonValue>> SupportedTools;
+		const TArray<FString> SupportedToolNames = {
+			TEXT("boolean"),
+			TEXT("voxel_remesh"),
+			TEXT("remesh"),
+			TEXT("simplify"),
+			TEXT("uv_unwrap"),
+			TEXT("uv_layout"),
+			TEXT("pivot"),
+			TEXT("bake"),
+			TEXT("poly_edit"),
+			TEXT("merge")
+		};
+		for (const FString& SupportedTool : SupportedToolNames)
+		{
+			SupportedTools.Add(MakeShared<FJsonValueString>(SupportedTool));
+		}
+		Error->SetArrayField(TEXT("supported_tools"), SupportedTools);
+		return Error;
+	}
+
+	if (Result.IsValid())
+	{
+		Result->SetStringField(TEXT("modeling_tool_name"), ToolName);
+		Result->SetStringField(TEXT("mapped_command"), MappedCommand);
+	}
+	return Result;
 }

@@ -159,6 +159,180 @@ static void SetGameMapsConfigString(const TCHAR* Key, const FString& Value)
     GConfig->Flush(false, GEngineIni);
 }
 
+static FString GetEditorCommandletExecutablePath()
+{
+    FString EditorExe = FPaths::EngineDir() / TEXT("Binaries/Win64/UnrealEditor-Cmd.exe");
+#if PLATFORM_LINUX
+    EditorExe = FPaths::EngineDir() / TEXT("Binaries/Linux/UnrealEditor-Cmd");
+#elif PLATFORM_MAC
+    EditorExe = FPaths::EngineDir() / TEXT("Binaries/Mac/UnrealEditor-Cmd");
+#endif
+    return FPaths::ConvertRelativePathToFull(EditorExe);
+}
+
+static FString QuoteCommandletArg(const FString& Arg)
+{
+    FString Escaped = Arg;
+    Escaped.ReplaceInline(TEXT("\""), TEXT("\\\""));
+    return FString::Printf(TEXT("\"%s\""), *Escaped);
+}
+
+static FString MakeCommandletLogPath(const FString& CommandletName)
+{
+    const FString SafeName = CommandletName.Replace(TEXT("."), TEXT("_")).Replace(TEXT(" "), TEXT("_"));
+    const FString LogDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectLogDir() / TEXT("MCPCommandlets"));
+    IFileManager::Get().MakeDirectory(*LogDir, true);
+    return LogDir / FString::Printf(
+        TEXT("%s-%s-%u.log"),
+        *SafeName,
+        *FDateTime::UtcNow().ToString(TEXT("%Y%m%d-%H%M%S")),
+        FPlatformProcess::GetCurrentProcessId());
+}
+
+static FString ReadCommandletLogTail(const FString& CommandletLogFilename, int32 MaxChars = 32000)
+{
+    FString LogContent;
+    if (!CommandletLogFilename.IsEmpty() && FFileHelper::LoadFileToString(LogContent, *CommandletLogFilename))
+    {
+        if (LogContent.Len() > MaxChars)
+        {
+            return LogContent.Right(MaxChars);
+        }
+        return LogContent;
+    }
+    return FString();
+}
+
+static TSharedPtr<FJsonObject> RunEditorCommandletProcess(
+    const FString& CommandletName,
+    const FString& CommandletArgs,
+    bool bWaitForCompletion,
+    double TimeoutSeconds)
+{
+    const FString EditorExe = GetEditorCommandletExecutablePath();
+    if (!FPaths::FileExists(EditorExe))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("UnrealEditor-Cmd executable not found: %s"), *EditorExe));
+    }
+
+    const FString ProjectFile = FPaths::GetProjectFilePath();
+    if (ProjectFile.IsEmpty() || !FPaths::FileExists(ProjectFile))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Project file path is unavailable; commandlets require a .uproject path"));
+    }
+
+    const FString CommandletLogFilename = MakeCommandletLogPath(CommandletName);
+    const FString FullArgs = FString::Printf(
+        TEXT("%s -run=%s %s -unattended -nop4 -abslog=%s"),
+        *QuoteCommandletArg(ProjectFile),
+        *CommandletName,
+        *CommandletArgs,
+        *QuoteCommandletArg(CommandletLogFilename));
+
+    uint32 ProcessId = 0;
+    FProcHandle Handle = FPlatformProcess::CreateProc(
+        *EditorExe,
+        *FullArgs,
+        false,
+        false,
+        false,
+        &ProcessId,
+        0,
+        nullptr,
+        nullptr);
+
+    if (!Handle.IsValid())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Failed to launch commandlet: %s %s"), *EditorExe, *FullArgs));
+    }
+
+    bool bTimedOut = false;
+    int32 ReturnCode = 0;
+    if (bWaitForCompletion)
+    {
+        const double StartSeconds = FPlatformTime::Seconds();
+        while (FPlatformProcess::IsProcRunning(Handle))
+        {
+            if (TimeoutSeconds > 0.0 && (FPlatformTime::Seconds() - StartSeconds) > TimeoutSeconds)
+            {
+                bTimedOut = true;
+                FPlatformProcess::TerminateProc(Handle, true);
+                break;
+            }
+            FPlatformProcess::Sleep(0.5f);
+        }
+        FPlatformProcess::GetProcReturnCode(Handle, &ReturnCode);
+    }
+
+    FPlatformProcess::CloseProc(Handle);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("commandlet_name"), CommandletName);
+    Result->SetStringField(TEXT("editor_exe"), EditorExe);
+    Result->SetStringField(TEXT("project_file"), ProjectFile);
+    Result->SetStringField(TEXT("args"), FullArgs);
+    Result->SetStringField(TEXT("log_path"), CommandletLogFilename);
+    Result->SetNumberField(TEXT("process_id"), static_cast<double>(ProcessId));
+    Result->SetBoolField(TEXT("waited"), bWaitForCompletion);
+    Result->SetBoolField(TEXT("timed_out"), bTimedOut);
+    if (bWaitForCompletion)
+    {
+        Result->SetBoolField(TEXT("commandlet_success"), !bTimedOut && ReturnCode == 0);
+        Result->SetNumberField(TEXT("exit_code"), ReturnCode);
+        const FString LogTail = ReadCommandletLogTail(CommandletLogFilename);
+        if (!LogTail.IsEmpty())
+        {
+            Result->SetStringField(TEXT("log_tail"), LogTail);
+        }
+        if (bTimedOut)
+        {
+            Result->SetStringField(TEXT("error"), TEXT("Commandlet timed out and was terminated"));
+        }
+        else if (ReturnCode != 0)
+        {
+            Result->SetStringField(TEXT("error"), TEXT("Commandlet exited with a non-zero exit code; inspect log_tail/log_path"));
+        }
+    }
+    else
+    {
+        Result->SetStringField(TEXT("note"), TEXT("Commandlet process started asynchronously. Use log_path to inspect progress."));
+    }
+    return Result;
+}
+
+static bool TryGetRegionBoxFromParams(const TSharedPtr<FJsonObject>& Params, FBox& OutBox)
+{
+    double MinX = 0.0, MinY = 0.0, MinZ = 0.0, MaxX = 0.0, MaxY = 0.0, MaxZ = 0.0;
+    const bool bHasAllFields =
+        Params->TryGetNumberField(TEXT("min_x"), MinX) &&
+        Params->TryGetNumberField(TEXT("min_y"), MinY) &&
+        Params->TryGetNumberField(TEXT("min_z"), MinZ) &&
+        Params->TryGetNumberField(TEXT("max_x"), MaxX) &&
+        Params->TryGetNumberField(TEXT("max_y"), MaxY) &&
+        Params->TryGetNumberField(TEXT("max_z"), MaxZ);
+
+    if (!bHasAllFields)
+    {
+        return false;
+    }
+
+    OutBox = FBox(
+        FVector(static_cast<double>(MinX), static_cast<double>(MinY), static_cast<double>(MinZ)),
+        FVector(static_cast<double>(MaxX), static_cast<double>(MaxY), static_cast<double>(MaxZ)));
+    return OutBox.IsValid != 0;
+}
+
+static void AddBoxFields(TSharedPtr<FJsonObject> Object, const FString& Prefix, const FBox& Box)
+{
+    Object->SetNumberField(Prefix + TEXT("_min_x"), Box.Min.X);
+    Object->SetNumberField(Prefix + TEXT("_min_y"), Box.Min.Y);
+    Object->SetNumberField(Prefix + TEXT("_min_z"), Box.Min.Z);
+    Object->SetNumberField(Prefix + TEXT("_max_x"), Box.Max.X);
+    Object->SetNumberField(Prefix + TEXT("_max_y"), Box.Max.Y);
+    Object->SetNumberField(Prefix + TEXT("_max_z"), Box.Max.Z);
+}
+
 static bool MatchesStreamingLevelName(ULevelStreaming* StreamingLevel, const FString& LevelName)
 {
     if (!StreamingLevel)
@@ -1038,20 +1212,11 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleExecuteComman
 {
     FString CommandletName; if (!Params->TryGetStringField(TEXT("commandlet_name"), CommandletName)) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing commandlet_name")); }
     FString Args; Params->TryGetStringField(TEXT("args"), Args);
-    // Use the current editor executable path as base
-    FString EditorExe = FPaths::EngineDir() / TEXT("Binaries/Win64/UnrealEditor-Cmd.exe");
-#if PLATFORM_LINUX
-    EditorExe = FPaths::EngineDir() / TEXT("Binaries/Linux/UnrealEditor-Cmd");
-#elif PLATFORM_MAC
-    EditorExe = FPaths::EngineDir() / TEXT("Binaries/Mac/UnrealEditor-Cmd");
-#endif
-    FString FullArgs = FString::Printf(TEXT("\"%s\" -run=%s %s"), *FPaths::GetProjectFilePath(), *CommandletName, *Args);
-    FProcHandle Handle = FPlatformProcess::CreateProc(*EditorExe, *FullArgs, true, false, false, nullptr, 0, nullptr, nullptr);
-    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
-    R->SetBoolField(TEXT("success"), true);
-    R->SetStringField(TEXT("commandlet_name"), CommandletName);
-    R->SetStringField(TEXT("args"), Args);
-    R->SetStringField(TEXT("note"), TEXT("Commandlet process started")); return R;
+    bool bWaitForCompletion = false;
+    Params->TryGetBoolField(TEXT("wait_for_completion"), bWaitForCompletion);
+    double TimeoutSeconds = 1800.0;
+    Params->TryGetNumberField(TEXT("timeout_seconds"), TimeoutSeconds);
+    return RunEditorCommandletProcess(CommandletName, Args, bWaitForCompletion, TimeoutSeconds);
 }
 
 TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleStartPIE(const TSharedPtr<FJsonObject>& Params)
@@ -2239,12 +2404,9 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleGetWorldParti
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);
-    R->SetNumberField(TEXT("editor_bounds_min_x"), Bounds.Min.X);
-    R->SetNumberField(TEXT("editor_bounds_min_y"), Bounds.Min.Y);
-    R->SetNumberField(TEXT("editor_bounds_min_z"), Bounds.Min.Z);
-    R->SetNumberField(TEXT("editor_bounds_max_x"), Bounds.Max.X);
-    R->SetNumberField(TEXT("editor_bounds_max_y"), Bounds.Max.Y);
-    R->SetNumberField(TEXT("editor_bounds_max_z"), Bounds.Max.Z);
+    R->SetBoolField(TEXT("streaming_enabled_in_editor"), WP->IsStreamingEnabledInEditor());
+    R->SetBoolField(TEXT("has_loaded_user_regions"), WP->HasLoadedUserCreatedRegions());
+    AddBoxFields(R, TEXT("editor_bounds"), Bounds);
     R->SetNumberField(TEXT("loaded_region_count"), RegionArray.Num());
     R->SetArrayField(TEXT("loaded_regions"), RegionArray);
     return R;
@@ -2260,23 +2422,34 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleLoadWorldPart
     UWorldPartition* WP = World->GetWorldPartition();
     if (!WP) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("World Partition not initialized")); }
 
-    // Build a region box from params and load it
-    double MinX = 0.0, MinY = 0.0, MinZ = 0.0, MaxX = 0.0, MaxY = 0.0, MaxZ = 0.0;
-    Params->TryGetNumberField(TEXT("min_x"), MinX);
-    Params->TryGetNumberField(TEXT("min_y"), MinY);
-    Params->TryGetNumberField(TEXT("min_z"), MinZ);
-    Params->TryGetNumberField(TEXT("max_x"), MaxX);
-    Params->TryGetNumberField(TEXT("max_y"), MaxY);
-    Params->TryGetNumberField(TEXT("max_z"), MaxZ);
+    FBox RequestedRegion(ForceInit);
+    if (!TryGetRegionBoxFromParams(Params, RequestedRegion))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("load_cell requires min_x/min_y/min_z/max_x/max_y/max_z"));
+    }
 
-    TArray<FBox> Regions;
-    Regions.Add(FBox(FVector(static_cast<float>(MinX), static_cast<float>(MinY), static_cast<float>(MinZ)),
-                     FVector(static_cast<float>(MaxX), static_cast<float>(MaxY), static_cast<float>(MaxZ))));
+    TArray<FBox> Regions = WP->GetUserLoadedEditorRegions();
+    bool bAlreadyLoaded = false;
+    for (const FBox& Region : Regions)
+    {
+        if (Region.Equals(RequestedRegion))
+        {
+            bAlreadyLoaded = true;
+            break;
+        }
+    }
+    if (!bAlreadyLoaded)
+    {
+        Regions.Add(RequestedRegion);
+    }
     WP->LoadLastLoadedRegions(Regions);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);
-    R->SetStringField(TEXT("note"), TEXT("World Partition cell load requested"));
+    R->SetBoolField(TEXT("already_loaded"), bAlreadyLoaded);
+    R->SetNumberField(TEXT("loaded_region_count"), Regions.Num());
+    AddBoxFields(R, TEXT("region"), RequestedRegion);
+    R->SetStringField(TEXT("note"), TEXT("World Partition editor region load requested"));
     return R;
 }
 
@@ -2290,13 +2463,40 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleUnloadWorldPa
     UWorldPartition* WP = World->GetWorldPartition();
     if (!WP) { return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("World Partition not initialized")); }
 
-    // Unloading is done by resetting user loaded regions; we pass an empty array to clear custom loads
-    TArray<FBox> EmptyRegions;
-    WP->LoadLastLoadedRegions(EmptyRegions);
+    TArray<FBox> Regions = WP->GetUserLoadedEditorRegions();
+    const int32 BeforeCount = Regions.Num();
+    FBox RequestedRegion(ForceInit);
+    bool bClearAll = true;
+    Params->TryGetBoolField(TEXT("clear_all"), bClearAll);
+    if (TryGetRegionBoxFromParams(Params, RequestedRegion))
+    {
+        bClearAll = false;
+        Regions.RemoveAll([&RequestedRegion](const FBox& Region)
+        {
+            return Region.Equals(RequestedRegion) || Region.Intersect(RequestedRegion);
+        });
+    }
+    else if (bClearAll)
+    {
+        Regions.Reset();
+    }
+    else
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("unload_cell requires region coordinates or clear_all=true"));
+    }
+
+    WP->LoadLastLoadedRegions(Regions);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);
-    R->SetStringField(TEXT("note"), TEXT("World Partition cell unload requested (cleared custom loaded regions)"));
+    R->SetBoolField(TEXT("cleared_all"), bClearAll);
+    R->SetNumberField(TEXT("previous_loaded_region_count"), BeforeCount);
+    R->SetNumberField(TEXT("loaded_region_count"), Regions.Num());
+    if (!bClearAll && RequestedRegion.IsValid != 0)
+    {
+        AddBoxFields(R, TEXT("region"), RequestedRegion);
+    }
+    R->SetStringField(TEXT("note"), TEXT("World Partition editor region unload requested"));
     return R;
 }
 
@@ -2518,36 +2718,89 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleCreateHLODLay
 TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleBuildHLOD(const TSharedPtr<FJsonObject>& Params)
 {
     FString MapPath; Params->TryGetStringField(TEXT("map_path"), MapPath);
-    FString EditorExe = FPaths::EngineDir() / TEXT("Binaries/Win64/UnrealEditor-Cmd.exe");
-#if PLATFORM_LINUX
-    EditorExe = FPaths::EngineDir() / TEXT("Binaries/Linux/UnrealEditor-Cmd");
-#elif PLATFORM_MAC
-    EditorExe = FPaths::EngineDir() / TEXT("Binaries/Mac/UnrealEditor-Cmd");
-#endif
-    FString Args = FString::Printf(TEXT("\"%s\" -run=WorldPartitionHLODBuilderCommandlet %s"), *FPaths::GetProjectFilePath(), *MapPath);
-    FProcHandle Handle = FPlatformProcess::CreateProc(*EditorExe, *Args, true, false, false, nullptr, 0, nullptr, nullptr);
+    if (MapPath.IsEmpty() && GEditor)
+    {
+        if (UWorld* World = GEditor->GetEditorWorldContext().World())
+        {
+            MapPath = World->GetOutermost() ? World->GetOutermost()->GetName() : FString();
+        }
+    }
+    if (MapPath.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("map_path is required when no editor world map is active"));
+    }
 
-    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
-    R->SetBoolField(TEXT("success"), true);
-    R->SetStringField(TEXT("note"), TEXT("WorldPartitionHLODBuilderCommandlet launched (async, may take time)."));
+    bool bWaitForCompletion = false;
+    Params->TryGetBoolField(TEXT("wait_for_completion"), bWaitForCompletion);
+    double TimeoutSeconds = 3600.0;
+    Params->TryGetNumberField(TEXT("timeout_seconds"), TimeoutSeconds);
+
+    FString ExtraArgs;
+    Params->TryGetStringField(TEXT("extra_args"), ExtraArgs);
+
+    bool bSetupHLODs = true;
+    bool bBuildHLODs = true;
+    bool bDumpStats = false;
+    Params->TryGetBoolField(TEXT("setup_hlods"), bSetupHLODs);
+    Params->TryGetBoolField(TEXT("build_hlods"), bBuildHLODs);
+    Params->TryGetBoolField(TEXT("dump_stats"), bDumpStats);
+
+    FString Args = FString::Printf(
+        TEXT("%s -AllowCommandletRendering -Builder=WorldPartitionHLODsBuilder -SCCProvider=None"),
+        *QuoteCommandletArg(MapPath));
+    if (bSetupHLODs) { Args += TEXT(" -SetupHLODs"); }
+    if (bBuildHLODs) { Args += TEXT(" -BuildHLODs"); }
+    if (bDumpStats) { Args += TEXT(" -DumpStats"); }
+    if (!ExtraArgs.IsEmpty()) { Args += TEXT(" ") + ExtraArgs; }
+
+    TSharedPtr<FJsonObject> R = RunEditorCommandletProcess(TEXT("WorldPartitionBuilderCommandlet"), Args, bWaitForCompletion, TimeoutSeconds);
+    R->SetStringField(TEXT("builder"), TEXT("WorldPartitionHLODsBuilder"));
+    R->SetStringField(TEXT("map_path"), MapPath);
+    R->SetBoolField(TEXT("setup_hlods"), bSetupHLODs);
+    R->SetBoolField(TEXT("build_hlods"), bBuildHLODs);
     return R;
 }
 
 TSharedPtr<FJsonObject> FEpicUnrealMCPProjectEditorCommands::HandleRebuildHLOD(const TSharedPtr<FJsonObject>& Params)
 {
     FString MapPath; Params->TryGetStringField(TEXT("map_path"), MapPath);
-    FString EditorExe = FPaths::EngineDir() / TEXT("Binaries/Win64/UnrealEditor-Cmd.exe");
-#if PLATFORM_LINUX
-    EditorExe = FPaths::EngineDir() / TEXT("Binaries/Linux/UnrealEditor-Cmd");
-#elif PLATFORM_MAC
-    EditorExe = FPaths::EngineDir() / TEXT("Binaries/Mac/UnrealEditor-Cmd");
-#endif
-    FString Args = FString::Printf(TEXT("\"%s\" -run=WorldPartitionHLODBuilderCommandlet -Rebuild %s"), *FPaths::GetProjectFilePath(), *MapPath);
-    FProcHandle Handle = FPlatformProcess::CreateProc(*EditorExe, *Args, true, false, false, nullptr, 0, nullptr, nullptr);
+    if (MapPath.IsEmpty() && GEditor)
+    {
+        if (UWorld* World = GEditor->GetEditorWorldContext().World())
+        {
+            MapPath = World->GetOutermost() ? World->GetOutermost()->GetName() : FString();
+        }
+    }
+    if (MapPath.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("map_path is required when no editor world map is active"));
+    }
 
-    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
-    R->SetBoolField(TEXT("success"), true);
-    R->SetStringField(TEXT("note"), TEXT("WorldPartitionHLODBuilderCommandlet rebuild launched (async, may take time)."));
+    bool bWaitForCompletion = false;
+    Params->TryGetBoolField(TEXT("wait_for_completion"), bWaitForCompletion);
+    double TimeoutSeconds = 3600.0;
+    Params->TryGetNumberField(TEXT("timeout_seconds"), TimeoutSeconds);
+
+    bool bDeleteHLODs = false;
+    bool bDumpStats = true;
+    Params->TryGetBoolField(TEXT("delete_hlods"), bDeleteHLODs);
+    Params->TryGetBoolField(TEXT("dump_stats"), bDumpStats);
+
+    FString ExtraArgs;
+    Params->TryGetStringField(TEXT("extra_args"), ExtraArgs);
+
+    FString Args = FString::Printf(
+        TEXT("%s -AllowCommandletRendering -Builder=WorldPartitionHLODsBuilder -SCCProvider=None -SetupHLODs -BuildHLODs -RebuildHLODs"),
+        *QuoteCommandletArg(MapPath));
+    if (bDeleteHLODs) { Args += TEXT(" -DeleteHLODs"); }
+    if (bDumpStats) { Args += TEXT(" -DumpStats"); }
+    if (!ExtraArgs.IsEmpty()) { Args += TEXT(" ") + ExtraArgs; }
+
+    TSharedPtr<FJsonObject> R = RunEditorCommandletProcess(TEXT("WorldPartitionBuilderCommandlet"), Args, bWaitForCompletion, TimeoutSeconds);
+    R->SetStringField(TEXT("builder"), TEXT("WorldPartitionHLODsBuilder"));
+    R->SetStringField(TEXT("map_path"), MapPath);
+    R->SetBoolField(TEXT("delete_hlods"), bDeleteHLODs);
+    R->SetBoolField(TEXT("rebuild_hlods"), true);
     return R;
 }
 
