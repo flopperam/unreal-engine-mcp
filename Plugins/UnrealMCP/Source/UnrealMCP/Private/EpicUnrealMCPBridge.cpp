@@ -272,6 +272,8 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
     UMGCommands = MakeShared<FEpicUnrealMCPUMGCommands>();
     RenderingCommands = MakeShared<FEpicUnrealMCPRenderingCommands>();
     LightingAtmosphereCommands = MakeShared<FEpicUnrealMCPLightingAtmosphereCommands>();
+    DataTableCommands = MakeShared<FEpicUnrealMCPDataTableCommands>();
+    AudioCommands = MakeShared<FEpicUnrealMCPAudioCommands>();
 
     const UUnrealMCPSettings* Settings = GetDefault<UUnrealMCPSettings>();
     FString HostStr = Settings ? Settings->Host : TEXT(MCP_SERVER_HOST);
@@ -332,6 +334,8 @@ UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
     UMGCommands.Reset();
     RenderingCommands.Reset();
     LightingAtmosphereCommands.Reset();
+    DataTableCommands.Reset();
+    AudioCommands.Reset();
 }
 
 void UEpicUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
@@ -852,7 +856,17 @@ namespace
             {TEXT("create_lightmass_importance_volume"), 13},
             {TEXT("build_lighting"), 13},
             {TEXT("set_lighting_scenario"), 13},
-            {TEXT("set_megaliights"), 13}
+            {TEXT("set_megaliights"), 13},
+
+            // Data Table Commands (14)
+            {TEXT("create_data_table"), 14},
+            {TEXT("import_csv_to_data_table"), 14},
+            {TEXT("add_data_table_row"), 14},
+
+            // Audio Commands (15)
+            {TEXT("create_sound_cue"), 15},
+            {TEXT("add_audio_component"), 15},
+            {TEXT("set_sound_attenuation"), 15}
         };
         const int32* Found = Router.Find(CommandType);
         return Found ? *Found : -1;
@@ -919,6 +933,12 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 break;
             case 13: // LightingAtmosphereCommands
                 ResultJson = LightingAtmosphereCommands->HandleCommand(CommandType, Params);
+                break;
+            case 14: // DataTableCommands
+                ResultJson = DataTableCommands->HandleCommand(CommandType, Params);
+                break;
+            case 15: // AudioCommands
+                ResultJson = AudioCommands->HandleCommand(CommandType, Params);
                 break;
             default:
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));

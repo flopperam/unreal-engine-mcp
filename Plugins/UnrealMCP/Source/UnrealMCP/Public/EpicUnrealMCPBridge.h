@@ -21,6 +21,8 @@
 #include "Commands/EpicUnrealMCPUMGCommands.h"
 #include "Commands/EpicUnrealMCPRenderingCommands.h"
 #include "Commands/EpicUnrealMCPLightingAtmosphereCommands.h"
+#include "Commands/EpicUnrealMCPDataTableCommands.h"
+#include "Commands/EpicUnrealMCPAudioCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "MCPServerRunnable.h"
 #include "EpicUnrealMCPBridge.generated.h"
@@ -88,6 +90,8 @@ private:
 	TSharedPtr<FEpicUnrealMCPUMGCommands> UMGCommands;
 	TSharedPtr<FEpicUnrealMCPRenderingCommands> RenderingCommands;
 	TSharedPtr<FEpicUnrealMCPLightingAtmosphereCommands> LightingAtmosphereCommands;
+	TSharedPtr<FEpicUnrealMCPDataTableCommands> DataTableCommands;
+	TSharedPtr<FEpicUnrealMCPAudioCommands> AudioCommands;
 };
 
 #endif // WITH_EDITOR
