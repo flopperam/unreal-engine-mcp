@@ -51,7 +51,9 @@ public class UnrealMCP : ModuleRules
 				"KismetCompiler",     // For Blueprint compilation (F15-F22)
 				"GeometryScriptingCore",
 				"DynamicMesh",
-				"GeometryFramework"
+				"GeometryFramework",
+				"Renderer",
+				"RHI"
 			}
 		);
 		

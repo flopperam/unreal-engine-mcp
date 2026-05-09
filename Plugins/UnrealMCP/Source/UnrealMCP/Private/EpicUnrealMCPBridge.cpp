@@ -270,6 +270,8 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
     EnhancedInputCommands = MakeShared<FEpicUnrealMCPEnhancedInputCommands>();
     GameplayFrameworkCommands = MakeShared<FEpicUnrealMCPGameplayFrameworkCommands>();
     UMGCommands = MakeShared<FEpicUnrealMCPUMGCommands>();
+    RenderingCommands = MakeShared<FEpicUnrealMCPRenderingCommands>();
+    LightingAtmosphereCommands = MakeShared<FEpicUnrealMCPLightingAtmosphereCommands>();
 
     const UUnrealMCPSettings* Settings = GetDefault<UUnrealMCPSettings>();
     FString HostStr = Settings ? Settings->Host : TEXT(MCP_SERVER_HOST);
@@ -328,6 +330,8 @@ UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
     EnhancedInputCommands.Reset();
     GameplayFrameworkCommands.Reset();
     UMGCommands.Reset();
+    RenderingCommands.Reset();
+    LightingAtmosphereCommands.Reset();
 }
 
 void UEpicUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
@@ -561,6 +565,16 @@ namespace
             {TEXT("analyze_material_graph"), 4},
             {TEXT("add_material_node"), 4},
             {TEXT("connect_material_nodes"), 4},
+            {TEXT("create_material_instance"), 4},
+            {TEXT("create_dynamic_material_instance"), 4},
+            {TEXT("batch_update_material_parameters"), 4},
+            {TEXT("set_material_scalar_parameter"), 4},
+            {TEXT("set_material_vector_parameter"), 4},
+            {TEXT("set_material_texture_parameter"), 4},
+            {TEXT("set_material_static_switch_parameter"), 4},
+            {TEXT("create_material_parameter_collection"), 4},
+            {TEXT("edit_material_parameter_collection"), 4},
+            {TEXT("create_advanced_material"), 4},
             // Project / Editor Commands (5)
             {TEXT("get_project_settings"), 5},
             {TEXT("set_project_setting"), 5},
@@ -793,7 +807,52 @@ namespace
             {TEXT("click_widget_button"), 11},
             {TEXT("set_ui_input_mode"), 11},
             {TEXT("set_mouse_cursor_visible"), 11},
-            {TEXT("create_ui_template"), 11}
+            {TEXT("create_ui_template"), 11},
+
+            // Rendering Commands (12)
+            {TEXT("set_global_illumination"), 12},
+            {TEXT("set_lumen_enabled"), 12},
+            {TEXT("set_lumen_scene_detail"), 12},
+            {TEXT("set_lumen_reflection_quality"), 12},
+            {TEXT("set_hardware_ray_tracing"), 12},
+            {TEXT("set_path_tracing"), 12},
+            {TEXT("set_virtual_shadow_maps"), 12},
+            {TEXT("set_shadow_quality"), 12},
+            {TEXT("set_anti_aliasing"), 12},
+            {TEXT("set_tsr_settings"), 12},
+            {TEXT("set_upscaler"), 12},
+            {TEXT("set_nanite_visualization"), 12},
+            {TEXT("get_shader_compile_status"), 12},
+
+            // Lighting / Atmosphere Commands (13)
+            {TEXT("set_light_intensity"), 13},
+            {TEXT("set_light_color"), 13},
+            {TEXT("set_light_temperature"), 13},
+            {TEXT("set_light_mobility"), 13},
+            {TEXT("set_light_shadow_enabled"), 13},
+            {TEXT("set_light_shadow_bias"), 13},
+            {TEXT("set_light_contact_shadows"), 13},
+            {TEXT("set_light_volumetric_scattering"), 13},
+            {TEXT("set_light_attenuation_radius"), 13},
+            {TEXT("set_light_cone_angles"), 13},
+            {TEXT("set_light_source_radius"), 13},
+            {TEXT("set_light_ies_profile"), 13},
+            {TEXT("set_light_channel"), 13},
+            {TEXT("set_rect_light_properties"), 13},
+            {TEXT("set_sky_light_properties"), 13},
+            {TEXT("set_sky_atmosphere_properties"), 13},
+            {TEXT("set_height_fog_properties"), 13},
+            {TEXT("set_volumetric_fog"), 13},
+            {TEXT("set_directional_light_as_sun"), 13},
+            {TEXT("set_sun_position"), 13},
+            {TEXT("create_hdri_backdrop"), 13},
+            {TEXT("create_reflection_capture"), 13},
+            {TEXT("set_reflection_capture_settings"), 13},
+            {TEXT("build_reflection_captures"), 13},
+            {TEXT("create_lightmass_importance_volume"), 13},
+            {TEXT("build_lighting"), 13},
+            {TEXT("set_lighting_scenario"), 13},
+            {TEXT("set_megaliights"), 13}
         };
         const int32* Found = Router.Find(CommandType);
         return Found ? *Found : -1;
@@ -854,6 +913,12 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 break;
             case 11: // UMGCommands
                 ResultJson = UMGCommands->HandleCommand(CommandType, Params);
+                break;
+            case 12: // RenderingCommands
+                ResultJson = RenderingCommands->HandleCommand(CommandType, Params);
+                break;
+            case 13: // LightingAtmosphereCommands
+                ResultJson = LightingAtmosphereCommands->HandleCommand(CommandType, Params);
                 break;
             default:
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));

@@ -13,11 +13,17 @@
 #include "Engine/Selection.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/StaticMeshActor.h"
+#include "Engine/RectLight.h"
+#include "Engine/ExponentialHeightFog.h"
+#include "Components/RectLightComponent.h"
+#include "Components/SkyAtmosphereComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/PointLight.h"
 #include "Engine/SpotLight.h"
 #include "Engine/SkyLight.h"
 #include "Camera/CameraActor.h"
+#include "Engine/PostProcessVolume.h"
 #include "Components/StaticMeshComponent.h"
 #include "EditorSubsystem.h"
 #include "Subsystems/EditorActorSubsystem.h"
@@ -270,9 +276,30 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleSpawnActor(const TSh
     {
         NewActor = World->SpawnActor<ASkyLight>(ASkyLight::StaticClass(), Location, Rotation, SpawnParams);
     }
+    else if (ActorType == TEXT("RectLight"))
+    {
+        NewActor = World->SpawnActor<ARectLight>(ARectLight::StaticClass(), Location, Rotation, SpawnParams);
+    }
+    else if (ActorType == TEXT("SkyAtmosphere"))
+    {
+        NewActor = World->SpawnActor<ASkyAtmosphere>(ASkyAtmosphere::StaticClass(), Location, Rotation, SpawnParams);
+    }
+    else if (ActorType == TEXT("ExponentialHeightFog"))
+    {
+        NewActor = World->SpawnActor<AExponentialHeightFog>(AExponentialHeightFog::StaticClass(), Location, Rotation, SpawnParams);
+    }
     else if (ActorType == TEXT("CameraActor"))
     {
         NewActor = World->SpawnActor<ACameraActor>(ACameraActor::StaticClass(), Location, Rotation, SpawnParams);
+    }
+    else if (ActorType == TEXT("PostProcessVolume"))
+    {
+        APostProcessVolume* NewPPVolume = World->SpawnActor<APostProcessVolume>(APostProcessVolume::StaticClass(), Location, Rotation, SpawnParams);
+        if (NewPPVolume)
+        {
+            NewPPVolume->bUnbound = true;
+        }
+        NewActor = NewPPVolume;
     }
     else
     {
@@ -376,7 +403,8 @@ FParsedCreateParams FEpicUnrealMCPEditorCommands::ParseCreateParams(const TShare
     // Validate actor type (hardcoded list for common types, others resolved dynamically)
     static const TSet<FString> HardcodedTypes = {
         TEXT("StaticMeshActor"), TEXT("PointLight"), TEXT("SpotLight"),
-        TEXT("DirectionalLight"), TEXT("CameraActor")
+        TEXT("DirectionalLight"), TEXT("SkyLight"), TEXT("RectLight"),
+        TEXT("SkyAtmosphere"), TEXT("ExponentialHeightFog"), TEXT("CameraActor")
     };
     
     // If it's not a hardcoded type, we'll try to resolve it during execution.
@@ -565,6 +593,34 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::ExecuteCreateActor(const F
     {
         NewActor = World->SpawnActorDeferred<ADirectionalLight>(
             ADirectionalLight::StaticClass(), SpawnTransform, nullptr, nullptr,
+            ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+        if (NewActor) { NewActor->FinishSpawning(SpawnTransform); }
+    }
+    else if (Parsed.Type == TEXT("SkyLight"))
+    {
+        NewActor = World->SpawnActorDeferred<ASkyLight>(
+            ASkyLight::StaticClass(), SpawnTransform, nullptr, nullptr,
+            ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+        if (NewActor) { NewActor->FinishSpawning(SpawnTransform); }
+    }
+    else if (Parsed.Type == TEXT("RectLight"))
+    {
+        NewActor = World->SpawnActorDeferred<ARectLight>(
+            ARectLight::StaticClass(), SpawnTransform, nullptr, nullptr,
+            ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+        if (NewActor) { NewActor->FinishSpawning(SpawnTransform); }
+    }
+    else if (Parsed.Type == TEXT("SkyAtmosphere"))
+    {
+        NewActor = World->SpawnActorDeferred<ASkyAtmosphere>(
+            ASkyAtmosphere::StaticClass(), SpawnTransform, nullptr, nullptr,
+            ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+        if (NewActor) { NewActor->FinishSpawning(SpawnTransform); }
+    }
+    else if (Parsed.Type == TEXT("ExponentialHeightFog"))
+    {
+        NewActor = World->SpawnActorDeferred<AExponentialHeightFog>(
+            AExponentialHeightFog::StaticClass(), SpawnTransform, nullptr, nullptr,
             ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
         if (NewActor) { NewActor->FinishSpawning(SpawnTransform); }
     }

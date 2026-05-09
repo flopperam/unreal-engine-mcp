@@ -12,16 +12,23 @@
 #include "K2Node_Self.h"
 #include "EdGraphSchema_K2.h"
 #include "Kismet2/BlueprintEditorUtils.h"
+#include "Components/ExponentialHeightFogComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/LightComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/RectLightComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/SkyAtmosphereComponent.h"
+#include "Components/SkyLightComponent.h"
+#include "Components/SpotLightComponent.h"
 #include "UObject/UObjectIterator.h"
 #include "Engine/Selection.h"
 #include "EditorAssetLibrary.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/ARFilter.h"
 #include "Engine/BlueprintGeneratedClass.h"
+#include "Engine/TextureCube.h"
 #include "BlueprintNodeSpawner.h"
 #include "BlueprintActionDatabase.h"
 #include "Dom/JsonObject.h"
@@ -692,6 +699,83 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPCommonUtils::ActorToJsonObject(AActor* Act
             StaticMeshPath = MeshComp->GetStaticMesh()->GetPathName();
         }
         ActorObject->SetStringField(TEXT("static_mesh"), StaticMeshPath);
+
+        // Light component serialization
+        ULightComponent* LightComp = Cast<ULightComponent>(Actor->GetComponentByClass(ULightComponent::StaticClass()));
+        if (LightComp)
+        {
+            ActorObject->SetNumberField(TEXT("light_intensity"), LightComp->Intensity);
+            FLinearColor Color = LightComp->GetLightColor();
+            TArray<TSharedPtr<FJsonValue>> ColorArray;
+            ColorArray.Add(MakeShared<FJsonValueNumber>(Color.R));
+            ColorArray.Add(MakeShared<FJsonValueNumber>(Color.G));
+            ColorArray.Add(MakeShared<FJsonValueNumber>(Color.B));
+            ActorObject->SetArrayField(TEXT("light_color"), ColorArray);
+            ActorObject->SetBoolField(TEXT("light_temperature_enabled"), LightComp->bUseTemperature);
+            ActorObject->SetNumberField(TEXT("light_temperature"), LightComp->Temperature);
+            ActorObject->SetBoolField(TEXT("cast_shadows"), LightComp->CastShadows);
+            ActorObject->SetNumberField(TEXT("shadow_bias"), LightComp->ShadowBias);
+            ActorObject->SetNumberField(TEXT("contact_shadow_length"), LightComp->ContactShadowLength);
+            ActorObject->SetNumberField(TEXT("volumetric_scattering_intensity"), LightComp->VolumetricScatteringIntensity);
+            ActorObject->SetBoolField(TEXT("affects_world"), LightComp->bAffectsWorld);
+
+            // Point/Spot light specific
+            UPointLightComponent* PointComp = Cast<UPointLightComponent>(LightComp);
+            if (PointComp)
+            {
+                ActorObject->SetNumberField(TEXT("attenuation_radius"), PointComp->AttenuationRadius);
+                ActorObject->SetNumberField(TEXT("source_radius"), PointComp->SourceRadius);
+                ActorObject->SetNumberField(TEXT("soft_source_radius"), PointComp->SoftSourceRadius);
+                ActorObject->SetBoolField(TEXT("use_inverse_squared_falloff"), PointComp->bUseInverseSquaredFalloff);
+            }
+
+            // Spot light specific
+            USpotLightComponent* SpotComp = Cast<USpotLightComponent>(LightComp);
+            if (SpotComp)
+            {
+                ActorObject->SetNumberField(TEXT("inner_cone_angle"), SpotComp->InnerConeAngle);
+                ActorObject->SetNumberField(TEXT("outer_cone_angle"), SpotComp->OuterConeAngle);
+            }
+
+            // Rect light specific
+            URectLightComponent* RectComp = Cast<URectLightComponent>(LightComp);
+            if (RectComp)
+            {
+                ActorObject->SetNumberField(TEXT("source_width"), RectComp->SourceWidth);
+                ActorObject->SetNumberField(TEXT("source_height"), RectComp->SourceHeight);
+                ActorObject->SetNumberField(TEXT("barn_door_angle"), RectComp->BarnDoorAngle);
+                ActorObject->SetNumberField(TEXT("barn_door_length"), RectComp->BarnDoorLength);
+            }
+        }
+
+        // Sky light specific
+        USkyLightComponent* SkyComp = Cast<USkyLightComponent>(Actor->GetComponentByClass(USkyLightComponent::StaticClass()));
+        if (SkyComp)
+        {
+            ActorObject->SetNumberField(TEXT("sky_intensity"), SkyComp->Intensity);
+            if (UTextureCube* Cubemap = SkyComp->Cubemap.Get())
+            {
+                ActorObject->SetStringField(TEXT("cubemap_path"), Cubemap->GetPathName());
+            }
+        }
+
+        // Sky atmosphere specific
+        USkyAtmosphereComponent* AtmosComp = Cast<USkyAtmosphereComponent>(Actor->GetComponentByClass(USkyAtmosphereComponent::StaticClass()));
+        if (AtmosComp)
+        {
+            ActorObject->SetBoolField(TEXT("transform_mode"), AtmosComp->TransformMode == ESkyAtmosphereTransformMode::PlanetTopAtAbsoluteWorldOrigin);
+        }
+
+        // Exponential height fog specific
+        UExponentialHeightFogComponent* FogComp = Cast<UExponentialHeightFogComponent>(Actor->GetComponentByClass(UExponentialHeightFogComponent::StaticClass()));
+        if (FogComp)
+        {
+            ActorObject->SetNumberField(TEXT("fog_density"), FogComp->FogDensity);
+            ActorObject->SetNumberField(TEXT("fog_height_falloff"), FogComp->FogHeightFalloff);
+            ActorObject->SetNumberField(TEXT("fog_max_opacity"), FogComp->FogMaxOpacity);
+            ActorObject->SetNumberField(TEXT("start_distance"), FogComp->StartDistance);
+            ActorObject->SetBoolField(TEXT("volumetric_fog_enabled"), FogComp->bEnableVolumetricFog);
+        }
     }
 
     TArray<TSharedPtr<FJsonValue>> TagsArray;
@@ -788,6 +872,19 @@ bool FEpicUnrealMCPCommonUtils::SetObjectProperty(UObject* Object, const FString
         TEXT("bUseInverseSquaredFalloff"),
         TEXT("SourceRadius"),
         TEXT("SoftSourceRadius"),
+        TEXT("CastShadows"),
+        TEXT("ShadowBias"),
+        TEXT("ContactShadowLength"),
+        TEXT("VolumetricScatteringIntensity"),
+        TEXT("SourceWidth"),
+        TEXT("SourceHeight"),
+        TEXT("BarnDoorAngle"),
+        TEXT("BarnDoorLength"),
+        TEXT("FogDensity"),
+        TEXT("FogHeightFalloff"),
+        TEXT("FogMaxOpacity"),
+        TEXT("StartDistance"),
+        TEXT("bEnableVolumetricFog"),
         // Gameplay
         TEXT("bReplicates"),
         TEXT("bAlwaysRelevant"),

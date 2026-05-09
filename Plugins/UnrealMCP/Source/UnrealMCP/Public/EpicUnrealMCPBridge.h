@@ -19,6 +19,8 @@
 #include "Commands/EpicUnrealMCPEnhancedInputCommands.h"
 #include "Commands/EpicUnrealMCPGameplayFrameworkCommands.h"
 #include "Commands/EpicUnrealMCPUMGCommands.h"
+#include "Commands/EpicUnrealMCPRenderingCommands.h"
+#include "Commands/EpicUnrealMCPLightingAtmosphereCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "MCPServerRunnable.h"
 #include "EpicUnrealMCPBridge.generated.h"
@@ -84,6 +86,8 @@ private:
 	TSharedPtr<FEpicUnrealMCPEnhancedInputCommands> EnhancedInputCommands;
 	TSharedPtr<FEpicUnrealMCPGameplayFrameworkCommands> GameplayFrameworkCommands;
 	TSharedPtr<FEpicUnrealMCPUMGCommands> UMGCommands;
+	TSharedPtr<FEpicUnrealMCPRenderingCommands> RenderingCommands;
+	TSharedPtr<FEpicUnrealMCPLightingAtmosphereCommands> LightingAtmosphereCommands;
 };
 
 #endif // WITH_EDITOR
