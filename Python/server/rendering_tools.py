@@ -276,3 +276,52 @@ def get_shader_compile_status() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"get_shader_compile_status error: {e}")
         return make_error_response(str(e))
+
+
+@mcp.tool()
+def set_post_process_volume(
+    volume_name: str,
+    exposure_method: str = "",
+    exposure_bias: float = 0.0,
+    bloom_intensity: float = 0.0,
+    bloom_threshold: float = 0.0,
+    dof_enabled: bool = False,
+    dof_focal_distance: float = 0.0,
+    dof_aperture: float = 0.0,
+) -> Dict[str, Any]:
+    """Configure an existing PostProcessVolume.
+
+    exposure_method: Manual, AutoHistogram, AutoBasic
+    exposure_bias: exposure compensation in EV
+    bloom_intensity: bloom strength (0 = off)
+    bloom_threshold: minimum brightness for bloom
+    dof_enabled: toggle depth of field
+    dof_focal_distance: focus distance in cm
+    dof_aperture: f-stop value (lower = more blur)
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params: Dict[str, Any] = {"volume_name": volume_name}
+        if exposure_method:
+            params["exposure_method"] = exposure_method
+        if exposure_bias != 0.0:
+            params["exposure_bias"] = exposure_bias
+        if bloom_intensity != 0.0:
+            params["bloom_intensity"] = bloom_intensity
+        if bloom_threshold != 0.0:
+            params["bloom_threshold"] = bloom_threshold
+        if dof_enabled:
+            params["dof_enabled"] = True
+        if dof_focal_distance != 0.0:
+            params["dof_focal_distance"] = dof_focal_distance
+        if dof_aperture != 0.0:
+            params["dof_aperture"] = dof_aperture
+
+        response = unreal.send_command("set_post_process_volume", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"set_post_process_volume error: {e}")
+        return make_error_response(str(e))

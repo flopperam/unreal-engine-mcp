@@ -37,4 +37,5 @@ private:
     TSharedPtr<FJsonObject> HandleSetUpscaler(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetNaniteVisualization(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleGetShaderCompileStatus(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSetPostProcessVolume(const TSharedPtr<FJsonObject>& Params);
 };

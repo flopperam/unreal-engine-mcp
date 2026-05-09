@@ -3,6 +3,8 @@
 #include "HAL/IConsoleManager.h"
 #include "Editor.h"
 #include "ShaderCompiler.h"
+#include "Engine/PostProcessVolume.h"
+#include "Kismet/GameplayStatics.h"
 
 FEpicUnrealMCPRenderingCommands::FEpicUnrealMCPRenderingCommands()
 {
@@ -82,6 +84,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleCommand(const FSt
         {TEXT("set_upscaler"), &FEpicUnrealMCPRenderingCommands::HandleSetUpscaler},
         {TEXT("set_nanite_visualization"), &FEpicUnrealMCPRenderingCommands::HandleSetNaniteVisualization},
         {TEXT("get_shader_compile_status"), &FEpicUnrealMCPRenderingCommands::HandleGetShaderCompileStatus},
+        {TEXT("set_post_process_volume"), &FEpicUnrealMCPRenderingCommands::HandleSetPostProcessVolume},
     };
 
     const Handler* H = Dispatch.Find(CommandType);
@@ -407,5 +410,112 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleGetShaderCompileS
     Result->SetNumberField(TEXT("remaining_jobs"), RemainingJobs);
     Result->SetBoolField(TEXT("is_compiling"), bIsCompiling);
     Result->SetStringField(TEXT("status"), bIsCompiling ? TEXT("compiling") : (RemainingJobs > 0 ? TEXT("queued") : TEXT("idle")));
+    return Result;
+}
+
+// ------------------------------------------------------------------
+// Post Process Volume
+// ------------------------------------------------------------------
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleSetPostProcessVolume(const TSharedPtr<FJsonObject>& Params)
+{
+    FString VolumeName;
+    if (!Params->TryGetStringField(TEXT("volume_name"), VolumeName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'volume_name' parameter"));
+    }
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor world available"));
+    }
+
+    APostProcessVolume* TargetVolume = nullptr;
+    for (TActorIterator<APostProcessVolume> It(World); It; ++It)
+    {
+        if (It->GetName() == VolumeName)
+        {
+            TargetVolume = *It;
+            break;
+        }
+    }
+
+    if (!TargetVolume)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("PostProcessVolume not found: %s"), *VolumeName));
+    }
+
+    FPostProcessSettings& Settings = TargetVolume->Settings;
+
+    FString ExposureMethod;
+    if (Params->TryGetStringField(TEXT("exposure_method"), ExposureMethod))
+    {
+        if (ExposureMethod.Equals(TEXT("Manual"), ESearchCase::IgnoreCase))
+        {
+            Settings.AutoExposureMethod = AEM_Manual;
+        }
+        else if (ExposureMethod.Equals(TEXT("AutoHistogram"), ESearchCase::IgnoreCase))
+        {
+            Settings.AutoExposureMethod = AEM_AutoHistogram;
+        }
+        else if (ExposureMethod.Equals(TEXT("AutoBasic"), ESearchCase::IgnoreCase))
+        {
+            Settings.AutoExposureMethod = AEM_AutoBasic;
+        }
+        else
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown exposure method: %s"), *ExposureMethod));
+        }
+    }
+
+    double ExposureBias = 0.0;
+    if (Params->TryGetNumberField(TEXT("exposure_bias"), ExposureBias))
+    {
+        Settings.AutoExposureBias = static_cast<float>(ExposureBias);
+    }
+
+    double BloomIntensity = 0.0;
+    if (Params->TryGetNumberField(TEXT("bloom_intensity"), BloomIntensity))
+    {
+        Settings.BloomIntensity = static_cast<float>(BloomIntensity);
+    }
+
+    double BloomThreshold = 0.0;
+    if (Params->TryGetNumberField(TEXT("bloom_threshold"), BloomThreshold))
+    {
+        Settings.BloomThreshold = static_cast<float>(BloomThreshold);
+    }
+
+    bool bDofEnabled = false;
+    if (Params->TryGetBoolField(TEXT("dof_enabled"), bDofEnabled))
+    {
+        Settings.bOverride_DepthOfFieldFocalDistance = true;
+        Settings.bOverride_DepthOfFieldFstop = true;
+        Settings.bOverride_DepthOfFieldDepthBlurRadius = true;
+        Settings.bOverride_DepthOfFieldDepthBlurAmount = true;
+        Settings.DepthOfFieldFocalDistance = bDofEnabled ? 1000.0f : 0.0f;
+        Settings.DepthOfFieldFstop = bDofEnabled ? 2.8f : 0.0f;
+    }
+
+    double DofFocalDistance = 0.0;
+    if (Params->TryGetNumberField(TEXT("dof_focal_distance"), DofFocalDistance))
+    {
+        Settings.bOverride_DepthOfFieldFocalDistance = true;
+        Settings.DepthOfFieldFocalDistance = static_cast<float>(DofFocalDistance);
+    }
+
+    double DofAperture = 0.0;
+    if (Params->TryGetNumberField(TEXT("dof_aperture"), DofAperture))
+    {
+        Settings.bOverride_DepthOfFieldFstop = true;
+        Settings.DepthOfFieldFstop = static_cast<float>(DofAperture);
+    }
+
+    TargetVolume->MarkDirty();
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("volume_name"), VolumeName);
     return Result;
 }
