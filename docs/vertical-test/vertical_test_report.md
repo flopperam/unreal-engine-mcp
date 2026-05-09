@@ -1,0 +1,130 @@
+# VT-AAA-001 Extraction Room Report
+
+- Grade: S
+- Success: True
+- Level: /Game/AI_VerticalTest/Maps/LV_ExtractionRoom_VT
+- Report JSON: C:\development\unreal-engine-mcp\FlopperamUnrealMCP\Saved\VerticalTest\vertical_test_report.json
+
+## Checklist
+- S-JUDGE: pass critical issues = 0
+- VT-001: pass project settings, plugins, maps and modes configured
+- VT-002: pass Required Content Browser folders created
+- VT-003: pass OBJ, PNG normal/ORM/diffuse, WAV import prepared through C++ MCP tools
+- VT-004: pass Static mesh collision, LOD group, Nanite requested
+- VT-005: pass Materials and material instances generated
+- VT-006: pass Gameplay and UI Blueprint children generated
+- VT-007: pass GameMode, GameState, Character, pickup, gate, hazard placed
+- VT-008: pass Enhanced Input actions/context generated and assigned
+- VT-009: pass Native UMG widgets plus Widget Blueprint children generated
+- VT-010: pass PIE gameplay contract validated
+- VT-011: pass Required assets resolved after save/reload
+- VT-012: pass Saved level/assets and reloaded generated level
+- VT-013: pass Generation is idempotent and clears prior VT actors before respawn
+- VT-014: pass Bulk asset list/save/folder operations executed
+
+## Counts
+- actors: 25
+- assets_under_base: 45
+- cores: 3
+- critical_log_issues: 0
+- dirty_assets: 0
+- errors: 0
+- failed_required_mcp_operations: 0
+- mcp_operations: 90
+- redirectors: 0
+- warnings: 0
+
+## Critical Issues
+- None
+
+## MCP Operations
+- create_folder:/Game/AI_VerticalTest/Maps: ok
+- create_folder:/Game/AI_VerticalTest/Blueprints: ok
+- create_folder:/Game/AI_VerticalTest/Blueprints/Gameplay: ok
+- create_folder:/Game/AI_VerticalTest/Blueprints/UI: ok
+- create_folder:/Game/AI_VerticalTest/Materials: ok
+- create_folder:/Game/AI_VerticalTest/Meshes: ok
+- create_folder:/Game/AI_VerticalTest/Textures: ok
+- create_folder:/Game/AI_VerticalTest/Input: ok
+- create_folder:/Game/AI_VerticalTest/Data: ok
+- create_folder:/Game/AI_VerticalTest/DeveloperTrash: ok
+- plugin_list: ok
+- create_input_action:IA_Move: ok
+- create_input_action:IA_Look: ok
+- create_input_action:IA_Jump: ok
+- create_input_action:IA_Interact: ok
+- create_input_action:IA_Pause: ok
+- create_input_mapping_context:IMC_DefaultPlayer: ok
+- map_input:IA_Move:W: ok
+- map_input:IA_Move:S: ok
+- map_input:IA_Move:A: ok
+- map_input:IA_Move:D: ok
+- map_input:IA_Move:Gamepad_Left2D: ok
+- map_input:IA_Look:Mouse2D: ok
+- map_input:IA_Look:Gamepad_Right2D: ok
+- map_input:IA_Jump:SpaceBar: ok
+- map_input:IA_Jump:Gamepad_FaceButton_Bottom: ok
+- map_input:IA_Interact:E: ok
+- map_input:IA_Interact:Gamepad_FaceButton_Right: ok
+- map_input:IA_Pause:Escape: ok
+- map_input:IA_Pause:Gamepad_Special_Right: ok
+- configure_local_multiplayer_input: ok
+- import_obj:SM_VT_ImportedCrate: ok
+- import_texture:T_VT_Panel_D: ok
+- import_texture:T_VT_Panel_N: ok
+- import_texture:T_VT_Panel_ORM: ok
+- import_audio:S_VT_CorePickup: ok
+- generation_script: ok
+- set_project_description: ok
+- set_default_map: ok
+- set_game_default_map: ok
+- set_editor_startup_map: ok
+- set_maps_and_modes: ok
+- set_world_game_mode: ok
+- rendering:lumen_gi: ok
+- rendering:lumen_reflections: ok
+- rendering:virtual_shadow_maps: ok
+- physics:substepping: ok
+- input:enhanced_defaults: ok
+- collision:vt_interactable: ok
+- ai:navigation: ok
+- commonui:disable_viewport_client_error_config: ok
+- commonui:disable_viewport_client_error_runtime: ok
+- set_scalability:cinematic: ok
+- world_partition:get_cells: ok
+- world_partition:set_grid: ok
+- create_data_layer:DL_Gameplay: ok
+- add_actors_to_data_layer:DL_Gameplay: ok
+- create_data_layer:DL_Environment: ok
+- add_actors_to_data_layer:DL_Environment: ok
+- create_data_layer:DL_Lighting: ok
+- add_actors_to_data_layer:DL_Lighting: ok
+- create_data_layer:DL_Debug: ok
+- create_data_layer:DL_ImportedAssets: ok
+- add_actors_to_data_layer:DL_ImportedAssets: ok
+- create_hlod_layer:HL_VT_Room: ok
+- set_one_file_per_actor: ok
+- set_level_bounds: ok
+- export_asset:SM_VT_ImportedCrate: ok
+- compile_blueprint:BP_VT_GameMode: ok
+- compile_blueprint:BP_VT_GameState: ok
+- compile_blueprint:BP_VT_PlayerController: ok
+- compile_blueprint:BP_VT_Character: ok
+- compile_blueprint:BP_VT_CorePickup: ok
+- compile_blueprint:BP_VT_ExitGate: ok
+- compile_blueprint:BP_VT_Hazard: ok
+- compile_blueprint:BP_VT_HUDController: ok
+- fixup_redirectors: ok
+- save_all: ok
+- save_dirty_packages_python: ok
+- get_dirty_assets: ok
+- find_redirectors: ok
+- start_pie: ok
+- pie_validation_script: ok
+- stop_pie: ok
+- get_play_state_after_stop: ok
+- get_play_state_after_stop: ok
+- save_all_after_pie: ok
+- save_dirty_packages_python_after_pie: ok
+- get_dirty_assets_after_pie: ok
+- get_editor_log: ok
