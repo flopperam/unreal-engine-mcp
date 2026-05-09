@@ -37,6 +37,7 @@ def bootstrap():
     from server import lighting_tools             # noqa: F401
     from server import data_table_tools           # noqa: F401
     from server import audio_tools                # noqa: F401
+    from server import scene_tools                # noqa: F401
     from server import vertical_test_tools        # noqa: F401
 
 
