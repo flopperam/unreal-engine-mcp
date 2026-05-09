@@ -4,12 +4,12 @@ from typing import Any, Dict, List, Union
 from server.specs.component_spec import (
     AISpec,
     CollisionSpec,
-    LightSpec,
+    LightConfigSpec,
     MeshComponentSpec,
     NavSpec,
 )
 
-ComponentSpec = Union[MeshComponentSpec, CollisionSpec, NavSpec, AISpec, LightSpec]
+ComponentSpec = Union[MeshComponentSpec, CollisionSpec, NavSpec, AISpec, LightConfigSpec]
 
 
 @dataclass

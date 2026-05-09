@@ -107,10 +107,12 @@ class UnrealConnection:
         "create_widget_animation",
         "compile_widget_blueprint",
         "create_ui_template",
-        "add_widget_to_viewport"
+        "add_widget_to_viewport",
+        "execute_python_script",
     }
 
     COMMAND_RECV_TIMEOUT_OVERRIDES = {
+        "execute_python_script": 900,
         "execute_commandlet": 1800,
         "build_hlod": 3600,
         "rebuild_hlod": 3600,

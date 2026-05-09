@@ -127,6 +127,231 @@ _get_blueprint_material_info_alias = get_blueprint_material_info
 
 
 @mcp.tool()
+def create_material_instance(
+    parent_material: str,
+    instance_name: str,
+    package_path: str = "/Game/Materials/"
+) -> Dict[str, Any]:
+    """Create a Material Instance Constant (MIC) from a parent material asset."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {
+            "parent_material": parent_material,
+            "instance_name": instance_name,
+            "package_path": package_path,
+        }
+        response = unreal.send_command("create_material_instance", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_material_instance error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def create_dynamic_material_instance(
+    actor_name: str,
+    material_slot: int = 0,
+    source_material: str = ""
+) -> Dict[str, Any]:
+    """Create a Material Instance Dynamic (MID) on an actor's mesh component."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {
+            "actor_name": actor_name,
+            "material_slot": material_slot,
+            "source_material": source_material,
+        }
+        response = unreal.send_command("create_dynamic_material_instance", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_dynamic_material_instance error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def batch_update_material_parameters(
+    instance_path: str,
+    parameters: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """Batch update multiple parameters on a material instance in a single shader compile.
+
+    Each parameter in the list should be a dict with:
+    - name: str
+    - type: "scalar" | "vector" | "texture" | "static_switch"
+    - value: float for scalar, [R,G,B,A] list for vector, str path for texture, bool for static_switch
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {
+            "instance_path": instance_path,
+            "parameters": parameters,
+        }
+        response = unreal.send_command("batch_update_material_parameters", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"batch_update_material_parameters error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def set_material_scalar_parameter(
+    instance_path: str,
+    parameter_name: str,
+    value: float
+) -> Dict[str, Any]:
+    """Set a single scalar parameter on a material instance."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {
+            "instance_path": instance_path,
+            "parameter_name": parameter_name,
+            "value": value,
+        }
+        response = unreal.send_command("set_material_scalar_parameter", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"set_material_scalar_parameter error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def set_material_vector_parameter(
+    instance_path: str,
+    parameter_name: str,
+    value: List[float]
+) -> Dict[str, Any]:
+    """Set a single vector/color parameter on a material instance. Value must be [R, G, B, A]."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    if not isinstance(value, list) or len(value) < 3:
+        return make_error_response("Invalid color format. Must be a list of at least 3 float values [R, G, B, A].")
+
+    try:
+        params = {
+            "instance_path": instance_path,
+            "parameter_name": parameter_name,
+            "value": value,
+        }
+        response = unreal.send_command("set_material_vector_parameter", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"set_material_vector_parameter error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def set_material_texture_parameter(
+    instance_path: str,
+    parameter_name: str,
+    texture_path: str
+) -> Dict[str, Any]:
+    """Set a single texture parameter on a material instance."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {
+            "instance_path": instance_path,
+            "parameter_name": parameter_name,
+            "texture_path": texture_path,
+        }
+        response = unreal.send_command("set_material_texture_parameter", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"set_material_texture_parameter error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def set_material_static_switch_parameter(
+    instance_path: str,
+    parameter_name: str,
+    value: bool
+) -> Dict[str, Any]:
+    """Set a single static switch parameter on a material instance."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {
+            "instance_path": instance_path,
+            "parameter_name": parameter_name,
+            "value": value,
+        }
+        response = unreal.send_command("set_material_static_switch_parameter", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"set_material_static_switch_parameter error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def create_material_parameter_collection(
+    name: str,
+    package_path: str = "/Game/Materials/"
+) -> Dict[str, Any]:
+    """Create a Material Parameter Collection asset."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {
+            "name": name,
+            "package_path": package_path,
+        }
+        response = unreal.send_command("create_material_parameter_collection", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_material_parameter_collection error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def edit_material_parameter_collection(
+    collection_path: str,
+    add_scalars: Optional[List[str]] = None,
+    add_vectors: Optional[List[str]] = None,
+    remove_params: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """Edit a Material Parameter Collection by adding or removing scalar/vector parameters."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params: Dict[str, Any] = {"collection_path": collection_path}
+        if add_scalars is not None:
+            params["add_scalars"] = add_scalars
+        if add_vectors is not None:
+            params["add_vectors"] = add_vectors
+        if remove_params is not None:
+            params["remove_params"] = remove_params
+
+        response = unreal.send_command("edit_material_parameter_collection", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"edit_material_parameter_collection error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
 def set_mesh_material_color(
     blueprint_name: str,
     component_name: str,

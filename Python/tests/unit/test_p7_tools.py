@@ -8,7 +8,7 @@ import json
 import pytest
 from unittest.mock import patch, MagicMock
 
-from server.specs.component_spec import CollisionSpec, NavSpec, AISpec, LightSpec, MeshComponentSpec
+from server.specs.component_spec import CollisionSpec, NavSpec, AISpec, LightConfigSpec, MeshComponentSpec
 
 
 class TestComponentSpecs:
@@ -56,12 +56,14 @@ class TestComponentSpecs:
         assert len(spec.patrol_points) == 3
         assert spec.perception_radius == 2000.0
 
-    def test_light_spec_defaults(self):
-        spec = LightSpec()
+    def test_light_config_spec_defaults(self):
+        spec = LightConfigSpec()
         assert spec.light_type == "point"
         assert spec.intensity == 5000.0
         assert spec.color == [1.0, 1.0, 1.0]
-        assert spec.radius == 1000.0
+        assert spec.attenuation_radius == 1000.0
+        assert spec.mobility == "Stationary"
+        assert spec.cast_shadows is True
 
     def test_mesh_component_spec(self):
         spec = MeshComponentSpec(mesh_path="/Game/Meshes/SM_Rock")

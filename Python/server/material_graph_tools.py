@@ -184,3 +184,36 @@ def export_material_json(material_path: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"export_material_json error: {e}")
         return make_error_response(str(e))
+
+
+@mcp.tool()
+def create_advanced_material(
+    name: str,
+    material_domain: str = "Surface",
+    package_path: str = "/Game/Materials/"
+) -> Dict[str, Any]:
+    """Create a Material with a specialized domain.
+
+    Supported domains:
+    - Surface (default)
+    - DeferredDecal
+    - LightFunction
+    - PostProcess
+    - VirtualTexture
+    - Landscape
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params = {
+            "name": name,
+            "material_domain": material_domain,
+            "package_path": package_path,
+        }
+        response = unreal.send_command("create_advanced_material", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_advanced_material error: {e}")
+        return make_error_response(str(e))

@@ -23,7 +23,7 @@ import pytest
 
 import unreal_mcp_server_advanced as srv
 from unreal_mcp_server_advanced import mcp, get_unreal_connection
-from server import actor_tools, blueprint_tools, blueprint_graph_tools, gameplay_framework_tools, material_graph_tools, material_tools, umg_tools, world_building_tools
+from server import actor_tools, blueprint_tools, blueprint_graph_tools, gameplay_framework_tools, material_graph_tools, material_tools, umg_tools, world_building_tools, lighting_tools
 
 
 def _collect_source_tools():
@@ -54,6 +54,7 @@ def _patch_tool_connections(fake_conn):
         material_tools,
         umg_tools,
         world_building_tools,
+        lighting_tools,
     ]:
         stack.enter_context(patch.object(module, "get_unreal_connection", return_value=fake_conn, create=True))
     return stack
@@ -116,6 +117,35 @@ class TestToolCommandMapping:
         ("find_actor_by_mcp_id", "find_actor_by_mcp_id"),
         ("set_actor_transform_by_mcp_id", "set_actor_transform_by_mcp_id"),
         ("delete_actor_by_mcp_id", "delete_actor_by_mcp_id"),
+        # Lighting / Atmosphere tools
+        ("set_light_intensity", "set_light_intensity"),
+        ("set_light_color", "set_light_color"),
+        ("set_light_temperature", "set_light_temperature"),
+        ("set_light_mobility", "set_light_mobility"),
+        ("set_light_shadow_enabled", "set_light_shadow_enabled"),
+        ("set_light_shadow_bias", "set_light_shadow_bias"),
+        ("set_light_contact_shadows", "set_light_contact_shadows"),
+        ("set_light_volumetric_scattering", "set_light_volumetric_scattering"),
+        ("set_light_attenuation_radius", "set_light_attenuation_radius"),
+        ("set_light_cone_angles", "set_light_cone_angles"),
+        ("set_light_source_radius", "set_light_source_radius"),
+        ("set_light_ies_profile", "set_light_ies_profile"),
+        ("set_light_channel", "set_light_channel"),
+        ("set_rect_light_properties", "set_rect_light_properties"),
+        ("set_sky_light_properties", "set_sky_light_properties"),
+        ("set_sky_atmosphere_properties", "set_sky_atmosphere_properties"),
+        ("set_height_fog_properties", "set_height_fog_properties"),
+        ("set_volumetric_fog", "set_volumetric_fog"),
+        ("set_directional_light_as_sun", "set_directional_light_as_sun"),
+        ("set_sun_position", "set_sun_position"),
+        ("create_hdri_backdrop", "create_hdri_backdrop"),
+        ("create_reflection_capture", "create_reflection_capture"),
+        ("set_reflection_capture_settings", "set_reflection_capture_settings"),
+        ("build_reflection_captures", "build_reflection_captures"),
+        ("create_lightmass_importance_volume", "create_lightmass_importance_volume"),
+        ("build_lighting", "build_lighting"),
+        ("set_lighting_scenario", "set_lighting_scenario"),
+        ("set_megaliights", "set_megaliights"),
     ])
     def test_tool_calls_expected_command(self, tool_name, expected_cmd, fake_conn):
         fn = getattr(srv, tool_name)
@@ -126,7 +156,14 @@ class TestToolCommandMapping:
             if name == "random_string":
                 kwargs[name] = ""
             elif name == "color":
-                kwargs[name] = [1.0, 0.0, 0.0, 1.0]
+                if tool_name == "set_mesh_material_color":
+                    kwargs[name] = [1.0, 0.0, 0.0, 1.0]
+                else:
+                    kwargs[name] = [1.0, 0.0, 0.0]
+            elif name == "mobility":
+                kwargs[name] = "Stationary"
+            elif name == "type" and "capture" in tool_name:
+                kwargs[name] = "Sphere"
             elif param.default is not inspect.Parameter.empty:
                 kwargs[name] = param.default
             elif param.annotation == list:
@@ -362,7 +399,8 @@ class TestPythonToCppCommandMapping:
             "world_settings_tool", "editor_control_tool", "play_tool", "viewport_tool",
             "asset_management_tool", "fbx_mesh_import_tool",
             "texture_import_tool", "audio_import_tool", "asset_export_tool",
-            "asset_mesh_editing_tool", "enhanced_input_tool", "umg_tool", # Skip dynamic multi-action tools
+            "asset_mesh_editing_tool", "enhanced_input_tool", "umg_tool",
+            "vertical_test_tool", # Skip dynamic multi-action/orchestrator tools
         }
         registered = self._collect_registered_tool_names()
         missing = []
@@ -377,7 +415,15 @@ class TestPythonToCppCommandMapping:
             kwargs = {}
             for pname, param in sig.parameters.items():
                 if pname == "random_string": kwargs[pname] = ""
-                elif pname == "color": kwargs[pname] = [1.0, 0.0, 0.0, 1.0]
+                elif pname == "color":
+                    if tool_name == "set_mesh_material_color":
+                        kwargs[pname] = [1.0, 0.0, 0.0, 1.0]
+                    else:
+                        kwargs[pname] = [1.0, 0.0, 0.0]
+                elif pname == "mobility":
+                    kwargs[pname] = "Stationary"
+                elif pname == "type" and "capture" in tool_name:
+                    kwargs[pname] = "Sphere"
                 elif param.default is not inspect.Parameter.empty: kwargs[pname] = param.default
                 elif param.annotation == list: kwargs[pname] = [0.0, 0.0, 0.0]
                 elif param.annotation == str: kwargs[pname] = "TestName"

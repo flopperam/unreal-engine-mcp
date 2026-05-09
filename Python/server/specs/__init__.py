@@ -4,7 +4,7 @@ from server.specs.asset_spec import AssetSpec
 from server.specs.component_spec import (
     AISpec,
     CollisionSpec,
-    LightSpec,
+    LightConfigSpec,
     MeshComponentSpec,
     NavSpec,
 )
@@ -22,7 +22,7 @@ __all__ = [
     "CollisionSpec",
     "NavSpec",
     "AISpec",
-    "LightSpec",
+    "LightConfigSpec",
     "AssetResolver",
     "AssetSpec",
     "RealizationPolicy",

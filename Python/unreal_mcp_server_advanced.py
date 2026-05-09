@@ -173,6 +173,41 @@ from server.umg_tools import (
     umg_tool,
 )
 
+from server.lighting_tools import (
+    set_light_intensity,
+    set_light_color,
+    set_light_temperature,
+    set_light_mobility,
+    set_light_shadow_enabled,
+    set_light_shadow_bias,
+    set_light_contact_shadows,
+    set_light_volumetric_scattering,
+    set_light_attenuation_radius,
+    set_light_cone_angles,
+    set_light_source_radius,
+    set_light_ies_profile,
+    set_light_channel,
+    set_rect_light_properties,
+    set_sky_light_properties,
+    set_sky_atmosphere_properties,
+    set_height_fog_properties,
+    set_volumetric_fog,
+    set_directional_light_as_sun,
+    set_sun_position,
+    create_hdri_backdrop,
+    create_reflection_capture,
+    set_reflection_capture_settings,
+    build_reflection_captures,
+    create_lightmass_importance_volume,
+    build_lighting,
+    set_lighting_scenario,
+    set_megaliights,
+)
+
+from server.vertical_test_tools import (
+    vertical_test_tool,
+)
+
 
 # Explicitly bootstrap tool registration to avoid heavy import side-effects.
 from server import bootstrap
@@ -296,6 +331,35 @@ __all__ = [
     "add_gameplay_tag",
     "create_gameplay_tag_query",
     "umg_tool",
+    "set_light_intensity",
+    "set_light_color",
+    "set_light_temperature",
+    "set_light_mobility",
+    "set_light_shadow_enabled",
+    "set_light_shadow_bias",
+    "set_light_contact_shadows",
+    "set_light_volumetric_scattering",
+    "set_light_attenuation_radius",
+    "set_light_cone_angles",
+    "set_light_source_radius",
+    "set_light_ies_profile",
+    "set_light_channel",
+    "set_rect_light_properties",
+    "set_sky_light_properties",
+    "set_sky_atmosphere_properties",
+    "set_height_fog_properties",
+    "set_volumetric_fog",
+    "set_directional_light_as_sun",
+    "set_sun_position",
+    "create_hdri_backdrop",
+    "create_reflection_capture",
+    "set_reflection_capture_settings",
+    "build_reflection_captures",
+    "create_lightmass_importance_volume",
+    "build_lighting",
+    "set_lighting_scenario",
+    "set_megaliights",
+    "vertical_test_tool",
 ]
 
 
