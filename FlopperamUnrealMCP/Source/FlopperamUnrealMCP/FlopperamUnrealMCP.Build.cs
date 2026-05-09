@@ -8,9 +8,11 @@ public class FlopperamUnrealMCP : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "AIModule" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "AIModule", "UMG", "Slate", "SlateCore", "GameplayTags" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "NetCore" });
+
+		PrivateIncludePaths.Add(Path.Combine(ModuleDirectory, "VT"));
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
