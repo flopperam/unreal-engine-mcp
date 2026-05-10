@@ -104,3 +104,95 @@ class TestAddDataTableRow:
                 table_path="/Game/Data/MyTable", row_name="", row_data={}
             )
         assert result.get("success") is False
+
+
+class TestDeleteDataTableRow:
+    def test_sends_required_params(self):
+        with patch("server.data_table_tools.get_unreal_connection", return_value=_mock_ue_conn()) as mock_ue:
+            result = data_table_tools.delete_data_table_row(
+                table_path="/Game/Data/MyTable",
+                row_name="Row1",
+            )
+
+        args = mock_ue.return_value.send_command.call_args
+        assert args[0][0] == "delete_data_table_row"
+        payload = args[0][1]
+        assert payload["table_path"] == "/Game/Data/MyTable"
+        assert payload["row_name"] == "Row1"
+        assert result["success"] is True
+
+    def test_rejects_empty_table_path(self):
+        with patch("server.data_table_tools.get_unreal_connection", return_value=_mock_ue_conn()):
+            result = data_table_tools.delete_data_table_row(table_path="", row_name="Row1")
+        assert result.get("success") is False
+
+    def test_rejects_empty_row_name(self):
+        with patch("server.data_table_tools.get_unreal_connection", return_value=_mock_ue_conn()):
+            result = data_table_tools.delete_data_table_row(
+                table_path="/Game/Data/MyTable", row_name=""
+            )
+        assert result.get("success") is False
+
+
+class TestUpdateDataTableRow:
+    def test_sends_required_params(self):
+        with patch("server.data_table_tools.get_unreal_connection", return_value=_mock_ue_conn()) as mock_ue:
+            result = data_table_tools.update_data_table_row(
+                table_path="/Game/Data/MyTable",
+                row_name="Row1",
+                row_data={"Health": 200, "Speed": 10.0},
+            )
+
+        args = mock_ue.return_value.send_command.call_args
+        assert args[0][0] == "update_data_table_row"
+        payload = args[0][1]
+        assert payload["table_path"] == "/Game/Data/MyTable"
+        assert payload["row_name"] == "Row1"
+        assert payload["row_data"] == {"Health": 200, "Speed": 10.0}
+        assert result["success"] is True
+
+    def test_rejects_empty_table_path(self):
+        with patch("server.data_table_tools.get_unreal_connection", return_value=_mock_ue_conn()):
+            result = data_table_tools.update_data_table_row(table_path="", row_name="Row1", row_data={})
+        assert result.get("success") is False
+
+    def test_rejects_empty_row_name(self):
+        with patch("server.data_table_tools.get_unreal_connection", return_value=_mock_ue_conn()):
+            result = data_table_tools.update_data_table_row(
+                table_path="/Game/Data/MyTable", row_name="", row_data={}
+            )
+        assert result.get("success") is False
+
+
+class TestExportDataTableCSV:
+    def test_sends_table_path(self):
+        with patch("server.data_table_tools.get_unreal_connection", return_value=_mock_ue_conn()) as mock_ue:
+            result = data_table_tools.export_data_table_csv(table_path="/Game/Data/MyTable")
+
+        args = mock_ue.return_value.send_command.call_args
+        assert args[0][0] == "export_data_table_csv"
+        payload = args[0][1]
+        assert payload["table_path"] == "/Game/Data/MyTable"
+        assert result["success"] is True
+
+    def test_rejects_empty_table_path(self):
+        with patch("server.data_table_tools.get_unreal_connection", return_value=_mock_ue_conn()):
+            result = data_table_tools.export_data_table_csv(table_path="")
+        assert result.get("success") is False
+
+
+class TestExportDataTableJSON:
+    def test_sends_table_path(self):
+        with patch("server.data_table_tools.get_unreal_connection", return_value=_mock_ue_conn()) as mock_ue:
+            result = data_table_tools.export_data_table_json(table_path="/Game/Data/MyTable")
+
+        args = mock_ue.return_value.send_command.call_args
+        assert args[0][0] == "export_data_table_json"
+        payload = args[0][1]
+        assert payload["table_path"] == "/Game/Data/MyTable"
+        assert result["success"] is True
+
+    def test_rejects_empty_table_path(self):
+        with patch("server.data_table_tools.get_unreal_connection", return_value=_mock_ue_conn()):
+            result = data_table_tools.export_data_table_json(table_path="")
+        assert result.get("success") is False

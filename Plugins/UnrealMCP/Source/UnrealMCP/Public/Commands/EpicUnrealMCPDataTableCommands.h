@@ -18,6 +18,10 @@ private:
     TSharedPtr<FJsonObject> HandleCreateDataTable(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleImportCSVToDataTable(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddDataTableRow(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleDeleteDataTableRow(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleUpdateDataTableRow(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleExportDataTableCSV(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleExportDataTableJSON(const TSharedPtr<FJsonObject>& Params);
 
     // Helper to find a UScriptStruct by path
     UScriptStruct* FindRowStruct(const FString& StructPath, FString& OutError);

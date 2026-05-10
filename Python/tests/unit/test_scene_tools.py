@@ -235,6 +235,21 @@ class TestSceneCompileApply:
         assert payload["allow_delete"] is True
 
 
+class TestSceneCompilePreview:
+    def test_calls_compile_preview_endpoint(self):
+        with patch("server.scene_tools.call_scene_syncd") as mock_call:
+            mock_call.return_value = {"success": True, "data": {}}
+            result = scene_tools.scene_compile_preview(scene_id="demo")
+
+        mock_call.assert_called_once_with("/layouts/demo/compile/preview", {})
+        assert result["success"] is True
+
+    def test_rejects_empty_scene_id(self):
+        with patch("server.scene_tools.call_scene_syncd", return_value={"success": True, "data": {}}):
+            result = scene_tools.scene_compile_preview(scene_id="")
+        assert result.get("success") is False
+
+
 class TestSceneRunPieTest:
     def test_calls_pie_run_with_defaults(self):
         with patch("server.scene_tools.call_scene_syncd") as mock_call:

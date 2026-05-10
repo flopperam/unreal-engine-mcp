@@ -1238,6 +1238,24 @@ def scene_realize_layout(
     )
 
 
+@mcp.tool()
+def scene_compile_preview(
+    scene_id: str = "main",
+) -> Dict[str, Any]:
+    """Generate a preview compilation for a scene.
+
+    Returns a lightweight compilation result suitable for preview
+    without persisting changes. Faster than full compile_apply.
+    """
+    try:
+        scene_id = normalize_scene_id(scene_id)
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    return _scene_syncd_error_response(
+        call_scene_syncd(f"/layouts/{scene_id}/compile/preview", {}), "scene_compile_preview"
+    )
+
 
 @mcp.tool()
 def scene_upsert_procedural_mesh(

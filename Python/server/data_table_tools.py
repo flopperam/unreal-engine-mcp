@@ -85,3 +85,104 @@ def add_data_table_row(table_path: str, row_name: str, row_data: Dict[str, Any])
     except Exception as e:
         logger.error(f"add_data_table_row error: {e}")
         return make_error_response(str(e))
+
+
+@mcp.tool()
+def delete_data_table_row(table_path: str, row_name: str) -> Dict[str, Any]:
+    """Delete a row from an existing DataTable.
+
+    table_path: Asset path to the DataTable
+    row_name: Name of the row to delete
+    """
+    try:
+        validate_string(table_path, "table_path")
+        validate_string(row_name, "row_name")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command(
+            "delete_data_table_row",
+            {"table_path": table_path, "row_name": row_name},
+        )
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"delete_data_table_row error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def update_data_table_row(table_path: str, row_name: str, row_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Update an existing row in a DataTable (replaces the row data).
+
+    table_path: Asset path to the DataTable
+    row_name: Name of the row to update
+    row_data: JSON object where keys are struct property names and values are the data
+    """
+    try:
+        validate_string(table_path, "table_path")
+        validate_string(row_name, "row_name")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command(
+            "update_data_table_row",
+            {"table_path": table_path, "row_name": row_name, "row_data": row_data},
+        )
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"update_data_table_row error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def export_data_table_csv(table_path: str) -> Dict[str, Any]:
+    """Export a DataTable to CSV string.
+
+    table_path: Asset path to the DataTable
+    """
+    try:
+        validate_string(table_path, "table_path")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command(
+            "export_data_table_csv",
+            {"table_path": table_path},
+        )
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"export_data_table_csv error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def export_data_table_json(table_path: str) -> Dict[str, Any]:
+    """Export a DataTable to JSON string.
+
+    table_path: Asset path to the DataTable
+    """
+    try:
+        validate_string(table_path, "table_path")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command(
+            "export_data_table_json",
+            {"table_path": table_path},
+        )
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"export_data_table_json error: {e}")
+        return make_error_response(str(e))

@@ -23,6 +23,10 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPDataTableCommands::HandleCommand(const FSt
         {TEXT("create_data_table"), &FEpicUnrealMCPDataTableCommands::HandleCreateDataTable},
         {TEXT("import_csv_to_data_table"), &FEpicUnrealMCPDataTableCommands::HandleImportCSVToDataTable},
         {TEXT("add_data_table_row"), &FEpicUnrealMCPDataTableCommands::HandleAddDataTableRow},
+        {TEXT("delete_data_table_row"), &FEpicUnrealMCPDataTableCommands::HandleDeleteDataTableRow},
+        {TEXT("update_data_table_row"), &FEpicUnrealMCPDataTableCommands::HandleUpdateDataTableRow},
+        {TEXT("export_data_table_csv"), &FEpicUnrealMCPDataTableCommands::HandleExportDataTableCSV},
+        {TEXT("export_data_table_json"), &FEpicUnrealMCPDataTableCommands::HandleExportDataTableJSON},
     };
 
     const Handler* H = Dispatch.Find(CommandType);
@@ -287,5 +291,173 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPDataTableCommands::HandleAddDataTableRow(c
     Result->SetBoolField(TEXT("success"), true);
     Result->SetStringField(TEXT("table_path"), TablePath);
     Result->SetStringField(TEXT("row_name"), RowName);
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPDataTableCommands::HandleDeleteDataTableRow(const TSharedPtr<FJsonObject>& Params)
+{
+    FString TablePath;
+    if (!Params->TryGetStringField(TEXT("table_path"), TablePath) || TablePath.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing or empty 'table_path' parameter"));
+    }
+
+    FString RowName;
+    if (!Params->TryGetStringField(TEXT("row_name"), RowName) || RowName.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing or empty 'row_name' parameter"));
+    }
+
+    UDataTable* DataTable = LoadObject<UDataTable>(nullptr, *TablePath);
+    if (!DataTable)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("DataTable not found: %s"), *TablePath));
+    }
+
+    const TMap<FName, uint8*>& RowMap = DataTable->GetRowMap();
+    if (!RowMap.Contains(FName(*RowName)))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Row '%s' not found in DataTable"), *RowName));
+    }
+
+    DataTable->RemoveRow(FName(*RowName));
+    DataTable->MarkPackageDirty();
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("table_path"), TablePath);
+    Result->SetStringField(TEXT("row_name"), RowName);
+    Result->SetNumberField(TEXT("row_count"), DataTable->GetRowMap().Num());
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPDataTableCommands::HandleUpdateDataTableRow(const TSharedPtr<FJsonObject>& Params)
+{
+    FString TablePath;
+    if (!Params->TryGetStringField(TEXT("table_path"), TablePath) || TablePath.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing or empty 'table_path' parameter"));
+    }
+
+    FString RowName;
+    if (!Params->TryGetStringField(TEXT("row_name"), RowName) || RowName.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing or empty 'row_name' parameter"));
+    }
+
+    const TSharedPtr<FJsonObject>* RowDataObj = nullptr;
+    if (!Params->TryGetObjectField(TEXT("row_data"), RowDataObj) || !RowDataObj->IsValid())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing or invalid 'row_data' parameter (JSON object)"));
+    }
+
+    UDataTable* DataTable = LoadObject<UDataTable>(nullptr, *TablePath);
+    if (!DataTable)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("DataTable not found: %s"), *TablePath));
+    }
+
+    UScriptStruct* RowStruct = DataTable->RowStruct;
+    if (!RowStruct)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("DataTable has no RowStruct assigned"));
+    }
+
+    // Remove existing row if present
+    const TMap<FName, uint8*>& RowMap = DataTable->GetRowMap();
+    const bool bRowExisted = RowMap.Contains(FName(*RowName));
+    if (bRowExisted)
+    {
+        DataTable->RemoveRow(FName(*RowName));
+    }
+
+    // Allocate memory for the row struct
+    uint8* RowMemory = static_cast<uint8*>(FMemory::Malloc(RowStruct->GetStructureSize()));
+    RowStruct->InitializeStruct(RowMemory);
+
+    // Set properties from JSON
+    for (const auto& Pair : (*RowDataObj)->Values)
+    {
+        FProperty* Property = RowStruct->FindPropertyByName(FName(*Pair.Key));
+        if (!Property)
+        {
+            RowStruct->DestroyStruct(RowMemory);
+            FMemory::Free(RowMemory);
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Property '%s' not found in row struct"), *Pair.Key));
+        }
+
+        FString Error;
+        if (!SetStructProperty(RowMemory, Property, Pair.Value, Error))
+        {
+            RowStruct->DestroyStruct(RowMemory);
+            FMemory::Free(RowMemory);
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(Error);
+        }
+    }
+
+    // Add row to table (this copies the memory)
+    DataTable->AddRow(FName(*RowName), RowMemory);
+
+    // Free our temporary allocation
+    RowStruct->DestroyStruct(RowMemory);
+    FMemory::Free(RowMemory);
+
+    DataTable->MarkPackageDirty();
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("table_path"), TablePath);
+    Result->SetStringField(TEXT("row_name"), RowName);
+    Result->SetBoolField(TEXT("row_existed"), bRowExisted);
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPDataTableCommands::HandleExportDataTableCSV(const TSharedPtr<FJsonObject>& Params)
+{
+    FString TablePath;
+    if (!Params->TryGetStringField(TEXT("table_path"), TablePath) || TablePath.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing or empty 'table_path' parameter"));
+    }
+
+    UDataTable* DataTable = LoadObject<UDataTable>(nullptr, *TablePath);
+    if (!DataTable)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("DataTable not found: %s"), *TablePath));
+    }
+
+    FString CSVContent;
+    UDataTable::SaveTableToCSVString(*DataTable, CSVContent);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("table_path"), TablePath);
+    Result->SetStringField(TEXT("csv_content"), CSVContent);
+    Result->SetNumberField(TEXT("row_count"), DataTable->GetRowMap().Num());
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPDataTableCommands::HandleExportDataTableJSON(const TSharedPtr<FJsonObject>& Params)
+{
+    FString TablePath;
+    if (!Params->TryGetStringField(TEXT("table_path"), TablePath) || TablePath.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing or empty 'table_path' parameter"));
+    }
+
+    UDataTable* DataTable = LoadObject<UDataTable>(nullptr, *TablePath);
+    if (!DataTable)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("DataTable not found: %s"), *TablePath));
+    }
+
+    FString JSONContent;
+    UDataTable::SaveTableToJSONString(*DataTable, JSONContent);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("table_path"), TablePath);
+    Result->SetStringField(TEXT("json_content"), JSONContent);
+    Result->SetNumberField(TEXT("row_count"), DataTable->GetRowMap().Num());
     return Result;
 }
