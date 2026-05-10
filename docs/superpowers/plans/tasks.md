@@ -648,13 +648,13 @@ NavMeshVolumeと巡回Splineはあります。
 - [x] Patrol Route Spline作成
 - [~] AI Behaviorタグ設定
 - [~] CognitiveAIController一部あり
-- [ ] Behavior Tree Asset作成
+- [x] Behavior Tree Asset作成
 - [ ] Behavior Tree Node追加
 - [ ] Behavior Tree Node接続
 - [ ] Task作成
 - [ ] Service作成
 - [ ] Decorator作成
-- [ ] Blackboard Asset作成
+- [x] Blackboard Asset作成
 - [ ] Blackboard Key追加
 - [ ] Blackboard Key削除
 - [ ] Blackboard型設定
@@ -669,8 +669,8 @@ NavMeshVolumeと巡回Splineはあります。
 - [ ] EQS Generator設定
 - [ ] EQS Test設定
 - [ ] EQS Debug
-- [ ] Nav Modifier Volume作成
-- [ ] Nav Link Proxy作成
+- [x] Nav Modifier Volume作成
+- [x] Nav Link Proxy作成
 - [ ] Smart Nav Link設定
 - [ ] Nav Area作成
 - [ ] Agent Radius / Height設定

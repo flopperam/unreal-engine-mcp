@@ -1,6 +1,10 @@
 #include "Commands/EpicUnrealMCPEditorCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "EpicUnrealMCPBridge.h"
+#include "BehaviorTree/BehaviorTree.h"
+#include "BehaviorTree/BlackboardData.h"
+#include "NavModifierVolume.h"
+#include "NavLinkProxy.h"
 #include "Editor.h"
 #include "EditorViewportClient.h"
 #include "LevelEditorViewport.h"
@@ -76,6 +80,10 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCommand(const FStrin
         {TEXT("create_patrol_route"), &FEpicUnrealMCPEditorCommands::HandleCreatePatrolRoute},
         {TEXT("create_spline_from_points"), &FEpicUnrealMCPEditorCommands::HandleCreateSplineFromPoints},
         {TEXT("set_ai_behavior"), &FEpicUnrealMCPEditorCommands::HandleSetAIBehavior},
+        {TEXT("create_behavior_tree"), &FEpicUnrealMCPEditorCommands::HandleCreateBehaviorTree},
+        {TEXT("create_blackboard"), &FEpicUnrealMCPEditorCommands::HandleCreateBlackboard},
+        {TEXT("create_nav_modifier_volume"), &FEpicUnrealMCPEditorCommands::HandleCreateNavModifierVolume},
+        {TEXT("create_nav_link_proxy"), &FEpicUnrealMCPEditorCommands::HandleCreateNavLinkProxy},
         {TEXT("create_draft_proxy"), &FEpicUnrealMCPEditorCommands::HandleCreateDraftProxy},
         {TEXT("update_draft_proxy"), &FEpicUnrealMCPEditorCommands::HandleUpdateDraftProxy},
         {TEXT("delete_draft_proxy"), &FEpicUnrealMCPEditorCommands::HandleDeleteDraftProxy},
@@ -1372,6 +1380,200 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleSetAIBehavior(const 
         ResultObj->SetStringField(TEXT("behavior_tree_path"), BehaviorTreePath);
     }
     ResultObj->SetBoolField(TEXT("success"), true);
+    return ResultObj;
+}
+
+// ============================================================================
+// Behavior Tree / Blackboard Commands
+// ============================================================================
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCreateBehaviorTree(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString AssetName;
+    if (!Params->TryGetStringField(TEXT("asset_name"), AssetName) || AssetName.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing or empty 'asset_name' parameter"));
+    }
+
+    FString PackagePath = TEXT("/Game/AI/");
+    Params->TryGetStringField(TEXT("package_path"), PackagePath);
+    if (!PackagePath.EndsWith(TEXT("/")))
+    {
+        PackagePath += TEXT("/");
+    }
+
+    FString FullPackageName = PackagePath + AssetName;
+    UPackage* Package = CreatePackage(*FullPackageName);
+    if (!Package)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create package"));
+    }
+
+    UBehaviorTree* BehaviorTree = NewObject<UBehaviorTree>(Package, FName(*AssetName), RF_Public | RF_Standalone);
+    if (!BehaviorTree)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create BehaviorTree asset"));
+    }
+
+    FAssetRegistryModule::AssetCreated(BehaviorTree);
+    Package->MarkPackageDirty();
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("asset_name"), AssetName);
+    ResultObj->SetStringField(TEXT("path"), FullPackageName);
+    ResultObj->SetStringField(TEXT("type"), TEXT("UBehaviorTree"));
+    ResultObj->SetStringField(TEXT("note"), TEXT("Use the Behavior Tree Editor to add Blackboard and Composite nodes."));
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCreateBlackboard(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString AssetName;
+    if (!Params->TryGetStringField(TEXT("asset_name"), AssetName) || AssetName.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing or empty 'asset_name' parameter"));
+    }
+
+    FString PackagePath = TEXT("/Game/AI/");
+    Params->TryGetStringField(TEXT("package_path"), PackagePath);
+    if (!PackagePath.EndsWith(TEXT("/")))
+    {
+        PackagePath += TEXT("/");
+    }
+
+    FString FullPackageName = PackagePath + AssetName;
+    UPackage* Package = CreatePackage(*FullPackageName);
+    if (!Package)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create package"));
+    }
+
+    UBlackboardData* Blackboard = NewObject<UBlackboardData>(Package, FName(*AssetName), RF_Public | RF_Standalone);
+    if (!Blackboard)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create Blackboard asset"));
+    }
+
+    FAssetRegistryModule::AssetCreated(Blackboard);
+    Package->MarkPackageDirty();
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("asset_name"), AssetName);
+    ResultObj->SetStringField(TEXT("path"), FullPackageName);
+    ResultObj->SetStringField(TEXT("type"), TEXT("UBlackboardData"));
+    ResultObj->SetStringField(TEXT("note"), TEXT("Use the Blackboard Editor to add keys and their types."));
+    return ResultObj;
+}
+
+// ============================================================================
+// Navigation Commands
+// ============================================================================
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCreateNavModifierVolume(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    UWorld* World = GetEditorWorld();
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No active world found"));
+    }
+
+    FString VolumeName = TEXT("NavModifierVolume");
+    Params->TryGetStringField(TEXT("name"), VolumeName);
+
+    FVector Location = FVector::ZeroVector;
+    const TSharedPtr<FJsonObject>* LocationObj = nullptr;
+    if (Params->TryGetObjectField(TEXT("location"), LocationObj))
+    {
+        Location = FEpicUnrealMCPCommonUtils::GetVectorFromJson(*LocationObj, TEXT("value"));
+    }
+
+    FVector Extent = FVector(500.0f, 500.0f, 250.0f);
+    const TSharedPtr<FJsonObject>* ExtentObj = nullptr;
+    if (Params->TryGetObjectField(TEXT("extent"), ExtentObj))
+    {
+        Extent = FEpicUnrealMCPCommonUtils::GetVectorFromJson(*ExtentObj, TEXT("value"));
+    }
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Name = FName(*VolumeName);
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    ANavModifierVolume* Volume = World->SpawnActor<ANavModifierVolume>(
+        ANavModifierVolume::StaticClass(), Location, FRotator::ZeroRotator, SpawnParams);
+
+    if (!Volume)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to spawn NavModifierVolume"));
+    }
+
+    Volume->SetActorScale3D(Extent / 50.0f);
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("name"), Volume->GetName());
+    ResultObj->SetStringField(TEXT("location"), Location.ToString());
+    ResultObj->SetStringField(TEXT("extent"), Extent.ToString());
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCreateNavLinkProxy(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    UWorld* World = GetEditorWorld();
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No active world found"));
+    }
+
+    FString ProxyName = TEXT("NavLinkProxy");
+    Params->TryGetStringField(TEXT("name"), ProxyName);
+
+    FVector Location = FVector::ZeroVector;
+    const TSharedPtr<FJsonObject>* LocationObj = nullptr;
+    if (Params->TryGetObjectField(TEXT("location"), LocationObj))
+    {
+        Location = FEpicUnrealMCPCommonUtils::GetVectorFromJson(*LocationObj, TEXT("value"));
+    }
+
+    FVector LeftPoint = FVector(-100.0f, 0.0f, 0.0f);
+    const TSharedPtr<FJsonObject>* LeftObj = nullptr;
+    if (Params->TryGetObjectField(TEXT("left"), LeftObj))
+    {
+        LeftPoint = FEpicUnrealMCPCommonUtils::GetVectorFromJson(*LeftObj, TEXT("value"));
+    }
+
+    FVector RightPoint = FVector(100.0f, 0.0f, 0.0f);
+    const TSharedPtr<FJsonObject>* RightObj = nullptr;
+    if (Params->TryGetObjectField(TEXT("right"), RightObj))
+    {
+        RightPoint = FEpicUnrealMCPCommonUtils::GetVectorFromJson(*RightObj, TEXT("value"));
+    }
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Name = FName(*ProxyName);
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    ANavLinkProxy* Proxy = World->SpawnActor<ANavLinkProxy>(
+        ANavLinkProxy::StaticClass(), Location, FRotator::ZeroRotator, SpawnParams);
+
+    if (!Proxy)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to spawn NavLinkProxy"));
+    }
+
+    Proxy->SetActorLocation(Location);
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("name"), Proxy->GetName());
+    ResultObj->SetStringField(TEXT("location"), Location.ToString());
+    ResultObj->SetStringField(TEXT("left"), LeftPoint.ToString());
+    ResultObj->SetStringField(TEXT("right"), RightPoint.ToString());
     return ResultObj;
 }
 

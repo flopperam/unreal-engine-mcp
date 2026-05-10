@@ -82,6 +82,12 @@ private:
     // AI commands
     TSharedPtr<FJsonObject> HandleCreatePatrolRoute(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetAIBehavior(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCreateBehaviorTree(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCreateBlackboard(const TSharedPtr<FJsonObject>& Params);
+
+    // Navigation commands
+    TSharedPtr<FJsonObject> HandleCreateNavModifierVolume(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCreateNavLinkProxy(const TSharedPtr<FJsonObject>& Params);
 
     // Procedural spline from points (L-System output)
     TSharedPtr<FJsonObject> HandleCreateSplineFromPoints(const TSharedPtr<FJsonObject>& Params);
