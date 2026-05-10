@@ -89,6 +89,13 @@ private:
     TSharedPtr<FJsonObject> HandleCreateNavModifierVolume(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleCreateNavLinkProxy(const TSharedPtr<FJsonObject>& Params);
 
+    // Physics commands
+    TSharedPtr<FJsonObject> HandleSetActorCollisionPreset(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSetActorPhysics(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCreatePhysicalMaterial(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSpawnRadialForce(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSpawnPhysicsConstraint(const TSharedPtr<FJsonObject>& Params);
+
     // Procedural spline from points (L-System output)
     TSharedPtr<FJsonObject> HandleCreateSplineFromPoints(const TSharedPtr<FJsonObject>& Params);
 

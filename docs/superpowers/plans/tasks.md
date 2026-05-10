@@ -802,18 +802,18 @@ Blueprint ComponentのPhysics設定は一部あります。
 ## Physics / Chaos
 - [x] Simulate Physics設定
 - [x] Mass / Damping一部設定
-- [ ] Collision Preset設定
+- [x] Collision Preset設定
 - [ ] Collision Channel作成
 - [ ] Object Channel作成
 - [ ] Trace Channel作成
 - [ ] Collision Response設定
-- [ ] Physical Material作成
-- [ ] Friction設定
-- [ ] Restitution設定
-- [ ] Physics Constraint作成
+- [x] Physical Material作成
+- [x] Friction設定
+- [x] Restitution設定
+- [x] Physics Constraint作成
 - [ ] Constraint Limit設定
 - [ ] Constraint Motor設定
-- [ ] Radial Force作成
+- [x] Radial Force作成
 - [ ] Physics Volume作成
 - [ ] Destructible / Geometry Collection作成
 - [ ] Geometry Collection Fracture
