@@ -777,14 +777,14 @@ NiagaraはUE5の主要VFXシステムで、System、Emitter、Module、User Para
 - [x] Attenuation Radius設定
 - [x] Spatialization設定
 - [x] Reverb設定
-- [ ] Sound Class作成
-- [ ] Sound Mix作成
+- [x] Sound Class作成
+- [x] Sound Mix作成
 - [ ] Submix作成
 - [ ] MetaSound Source作成
 - [ ] MetaSound Patch作成
 - [ ] MetaSound Graph Node追加
 - [ ] MetaSound Parameter設定
-- [ ] Ambient Sound配置
+- [x] Ambient Sound配置
 - [ ] Audio Volume作成
 - [ ] Dialogue Wave作成
 - [ ] Footstep Audio連携

@@ -28,6 +28,9 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAudioCommands::HandleCommand(const FString
         {TEXT("create_sound_cue"), &FEpicUnrealMCPAudioCommands::HandleCreateSoundCue},
         {TEXT("add_audio_component"), &FEpicUnrealMCPAudioCommands::HandleAddAudioComponent},
         {TEXT("set_sound_attenuation"), &FEpicUnrealMCPAudioCommands::HandleSetSoundAttenuation},
+        {TEXT("create_sound_class"), &FEpicUnrealMCPAudioCommands::HandleCreateSoundClass},
+        {TEXT("create_sound_mix"), &FEpicUnrealMCPAudioCommands::HandleCreateSoundMix},
+        {TEXT("spawn_ambient_sound"), &FEpicUnrealMCPAudioCommands::HandleSpawnAmbientSound},
     };
 
     const Handler* H = Dispatch.Find(CommandType);
@@ -248,4 +251,149 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAudioCommands::HandleSetSoundAttenuation(c
     Result->SetStringField(TEXT("attenuation_path"), AttenuationPath);
     Result->SetBoolField(TEXT("created"), bCreated);
     return Result;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPAudioCommands::HandleCreateSoundClass(const TSharedPtr<FJsonObject>& Params)
+{
+    FString AssetPath;
+    if (!Params->TryGetStringField(TEXT("asset_path"), AssetPath) || AssetPath.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing or empty 'asset_path' parameter"));
+    }
+
+    FString AssetName = FPaths::GetBaseFilename(AssetPath);
+    UPackage* Package = CreatePackage(*AssetPath);
+    if (!Package)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create package for sound class"));
+    }
+
+    USoundClass* SoundClass = NewObject<USoundClass>(Package, FName(*AssetName), RF_Public | RF_Standalone);
+    if (!SoundClass)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create SoundClass object"));
+    }
+
+    double Volume = 1.0;
+    if (Params->TryGetNumberField(TEXT("volume"), Volume))
+    {
+        SoundClass->Properties.Volume = static_cast<float>(Volume);
+    }
+
+    double Pitch = 1.0;
+    if (Params->TryGetNumberField(TEXT("pitch"), Pitch))
+    {
+        SoundClass->Properties.Pitch = static_cast<float>(Pitch);
+    }
+
+    Package->MarkPackageDirty();
+    FAssetRegistryModule::AssetCreated(SoundClass);
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("asset_path"), AssetPath);
+    ResultObj->SetStringField(TEXT("asset_name"), AssetName);
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPAudioCommands::HandleCreateSoundMix(const TSharedPtr<FJsonObject>& Params)
+{
+    FString AssetPath;
+    if (!Params->TryGetStringField(TEXT("asset_path"), AssetPath) || AssetPath.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing or empty 'asset_path' parameter"));
+    }
+
+    FString AssetName = FPaths::GetBaseFilename(AssetPath);
+    UPackage* Package = CreatePackage(*AssetPath);
+    if (!Package)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create package for sound mix"));
+    }
+
+    USoundMix* SoundMix = NewObject<USoundMix>(Package, FName(*AssetName), RF_Public | RF_Standalone);
+    if (!SoundMix)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create SoundMix object"));
+    }
+
+    Package->MarkPackageDirty();
+    FAssetRegistryModule::AssetCreated(SoundMix);
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("asset_path"), AssetPath);
+    ResultObj->SetStringField(TEXT("asset_name"), AssetName);
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPAudioCommands::HandleSpawnAmbientSound(const TSharedPtr<FJsonObject>& Params)
+{
+    FString SoundPath;
+    if (!Params->TryGetStringField(TEXT("sound_path"), SoundPath) || SoundPath.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing or empty 'sound_path' parameter"));
+    }
+
+    FString ActorName = TEXT("AmbientSound");
+    Params->TryGetStringField(TEXT("actor_name"), ActorName);
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get editor world"));
+    }
+
+    FVector Location = FVector::ZeroVector;
+    const TSharedPtr<FJsonObject>* LocObj = nullptr;
+    if (Params->TryGetObjectField(TEXT("location"), LocObj) && LocObj)
+    {
+        double X = 0, Y = 0, Z = 0;
+        (*LocObj)->TryGetNumberField(TEXT("x"), X);
+        (*LocObj)->TryGetNumberField(TEXT("y"), Y);
+        (*LocObj)->TryGetNumberField(TEXT("z"), Z);
+        Location = FVector(X, Y, Z);
+    }
+
+    USoundBase* Sound = LoadObject<USoundBase>(nullptr, *SoundPath);
+    if (!Sound)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Sound not found at path '%s'"), *SoundPath));
+    }
+
+    FScopedTransaction Transaction(FText::FromString(FString::Printf(TEXT("UnrealMCP: Spawn Ambient Sound %s"), *ActorName)));
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Name = *ActorName;
+    AAmbientSound* AmbientSound = World->SpawnActor<AAmbientSound>(AAmbientSound::StaticClass(), Location, FRotator::ZeroRotator, SpawnParams);
+    if (!AmbientSound)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to spawn AmbientSound actor"));
+    }
+
+    AmbientSound->SetActorLabel(*ActorName);
+    AmbientSound->Tags.AddUnique(FName(TEXT("managed_by_mcp")));
+
+    if (AmbientSound->GetAudioComponent())
+    {
+        AmbientSound->GetAudioComponent()->SetSound(Sound);
+
+        double Volume = 1.0;
+        if (Params->TryGetNumberField(TEXT("volume"), Volume))
+        {
+            AmbientSound->GetAudioComponent()->SetVolumeMultiplier(static_cast<float>(Volume));
+        }
+
+        double Pitch = 1.0;
+        if (Params->TryGetNumberField(TEXT("pitch"), Pitch))
+        {
+            AmbientSound->GetAudioComponent()->SetPitchMultiplier(static_cast<float>(Pitch));
+        }
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("actor_name"), AmbientSound->GetName());
+    ResultObj->SetStringField(TEXT("sound_path"), SoundPath);
+    return ResultObj;
 }

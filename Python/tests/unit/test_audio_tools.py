@@ -132,3 +132,88 @@ class TestSetSoundAttenuation:
         with patch("server.audio_tools.get_unreal_connection", return_value=_mock_ue_conn()):
             result = audio_tools.set_sound_attenuation(attenuation_path="")
         assert result.get("success") is False
+
+
+class TestCreateSoundClass:
+    def test_sends_minimal_payload(self):
+        with patch("server.audio_tools.get_unreal_connection", return_value=_mock_ue_conn()) as mock_ue:
+            result = audio_tools.create_sound_class(asset_path="/Game/Audio/MyClass")
+
+        args = mock_ue.return_value.send_command.call_args
+        assert args[0][0] == "create_sound_class"
+        payload = args[0][1]
+        assert payload["asset_path"] == "/Game/Audio/MyClass"
+        assert payload["volume"] == 1.0
+        assert payload["pitch"] == 1.0
+        assert result["success"] is True
+
+    def test_sends_custom_params(self):
+        with patch("server.audio_tools.get_unreal_connection", return_value=_mock_ue_conn()) as mock_ue:
+            result = audio_tools.create_sound_class(asset_path="/Game/Audio/MyClass", volume=0.8, pitch=1.1)
+
+        payload = mock_ue.return_value.send_command.call_args[0][1]
+        assert payload["volume"] == 0.8
+        assert payload["pitch"] == 1.1
+
+    def test_rejects_empty_path(self):
+        with patch("server.audio_tools.get_unreal_connection", return_value=_mock_ue_conn()):
+            result = audio_tools.create_sound_class(asset_path="")
+        assert result.get("success") is False
+
+
+class TestCreateSoundMix:
+    def test_sends_payload(self):
+        with patch("server.audio_tools.get_unreal_connection", return_value=_mock_ue_conn()) as mock_ue:
+            result = audio_tools.create_sound_mix(asset_path="/Game/Audio/MyMix")
+
+        args = mock_ue.return_value.send_command.call_args
+        assert args[0][0] == "create_sound_mix"
+        assert args[0][1]["asset_path"] == "/Game/Audio/MyMix"
+        assert result["success"] is True
+
+    def test_rejects_empty_path(self):
+        with patch("server.audio_tools.get_unreal_connection", return_value=_mock_ue_conn()):
+            result = audio_tools.create_sound_mix(asset_path="")
+        assert result.get("success") is False
+
+
+class TestSpawnAmbientSound:
+    def test_sends_minimal_payload(self):
+        with patch("server.audio_tools.get_unreal_connection", return_value=_mock_ue_conn()) as mock_ue:
+            result = audio_tools.spawn_ambient_sound(sound_path="/Game/Audio/MyCue")
+
+        args = mock_ue.return_value.send_command.call_args
+        assert args[0][0] == "spawn_ambient_sound"
+        payload = args[0][1]
+        assert payload["sound_path"] == "/Game/Audio/MyCue"
+        assert payload["actor_name"] == "AmbientSound"
+        assert payload["volume"] == 1.0
+        assert payload["pitch"] == 1.0
+        assert "location" not in payload
+        assert result["success"] is True
+
+    def test_sends_full_payload(self):
+        with patch("server.audio_tools.get_unreal_connection", return_value=_mock_ue_conn()) as mock_ue:
+            result = audio_tools.spawn_ambient_sound(
+                sound_path="/Game/Audio/MyCue",
+                actor_name="WindSound",
+                location={"x": 100.0, "y": 200.0, "z": 0.0},
+                volume=0.5,
+                pitch=1.2,
+            )
+
+        payload = mock_ue.return_value.send_command.call_args[0][1]
+        assert payload["actor_name"] == "WindSound"
+        assert payload["location"] == {"x": 100.0, "y": 200.0, "z": 0.0}
+        assert payload["volume"] == 0.5
+        assert payload["pitch"] == 1.2
+
+    def test_rejects_empty_sound_path(self):
+        with patch("server.audio_tools.get_unreal_connection", return_value=_mock_ue_conn()):
+            result = audio_tools.spawn_ambient_sound(sound_path="")
+        assert result.get("success") is False
+
+    def test_rejects_empty_actor_name(self):
+        with patch("server.audio_tools.get_unreal_connection", return_value=_mock_ue_conn()):
+            result = audio_tools.spawn_ambient_sound(sound_path="/Game/Audio/MyCue", actor_name="")
+        assert result.get("success") is False

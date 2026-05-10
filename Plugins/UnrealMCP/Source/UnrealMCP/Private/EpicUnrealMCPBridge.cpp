@@ -888,7 +888,10 @@ namespace
             // Audio Commands (15)
             {TEXT("create_sound_cue"), 15},
             {TEXT("add_audio_component"), 15},
-            {TEXT("set_sound_attenuation"), 15}
+            {TEXT("set_sound_attenuation"), 15},
+            {TEXT("create_sound_class"), 15},
+            {TEXT("create_sound_mix"), 15},
+            {TEXT("spawn_ambient_sound"), 15}
         };
         const int32* Found = Router.Find(CommandType);
         return Found ? *Found : -1;

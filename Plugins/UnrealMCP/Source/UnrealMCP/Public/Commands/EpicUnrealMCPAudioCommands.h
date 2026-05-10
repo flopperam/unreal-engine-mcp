@@ -18,4 +18,7 @@ private:
     TSharedPtr<FJsonObject> HandleCreateSoundCue(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddAudioComponent(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetSoundAttenuation(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCreateSoundClass(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCreateSoundMix(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSpawnAmbientSound(const TSharedPtr<FJsonObject>& Params);
 };

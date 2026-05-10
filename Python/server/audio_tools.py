@@ -125,3 +125,96 @@ def set_sound_attenuation(
     except Exception as e:
         logger.error(f"set_sound_attenuation error: {e}")
         return make_error_response(str(e))
+
+
+@mcp.tool()
+def create_sound_class(
+    asset_path: str,
+    volume: float = 1.0,
+    pitch: float = 1.0,
+) -> Dict[str, Any]:
+    """Create a SoundClass asset.
+
+    asset_path: Asset path (e.g., /Game/Audio/MySoundClass)
+    volume: Default volume multiplier
+    pitch: Default pitch multiplier
+    """
+    try:
+        validate_string(asset_path, "asset_path")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command(
+            "create_sound_class",
+            {"asset_path": asset_path, "volume": volume, "pitch": pitch},
+        )
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_sound_class error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def create_sound_mix(
+    asset_path: str,
+) -> Dict[str, Any]:
+    """Create a SoundMix asset.
+
+    asset_path: Asset path (e.g., /Game/Audio/MySoundMix)
+    """
+    try:
+        validate_string(asset_path, "asset_path")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("create_sound_mix", {"asset_path": asset_path})
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"create_sound_mix error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def spawn_ambient_sound(
+    sound_path: str,
+    actor_name: str = "AmbientSound",
+    location: Optional[Dict[str, float]] = None,
+    volume: float = 1.0,
+    pitch: float = 1.0,
+) -> Dict[str, Any]:
+    """Spawn an AmbientSound actor in the level.
+
+    sound_path: Path to the SoundCue or SoundWave asset
+    actor_name: Actor name
+    location: {"x": 0, "y": 0, "z": 0}
+    volume: Volume multiplier
+    pitch: Pitch multiplier
+    """
+    try:
+        validate_string(sound_path, "sound_path")
+        validate_string(actor_name, "actor_name")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    try:
+        params: Dict[str, Any] = {
+            "sound_path": sound_path,
+            "actor_name": actor_name,
+            "volume": volume,
+            "pitch": pitch,
+        }
+        if location is not None:
+            params["location"] = location
+        response = unreal.send_command("spawn_ambient_sound", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"spawn_ambient_sound error: {e}")
+        return make_error_response(str(e))
