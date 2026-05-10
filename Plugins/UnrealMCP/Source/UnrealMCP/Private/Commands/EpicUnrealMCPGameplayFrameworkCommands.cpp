@@ -672,6 +672,11 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPGameplayFrameworkCommands::HandleCommand(
         {TEXT("setup_spring_arm"), &FEpicUnrealMCPGameplayFrameworkCommands::HandleSetupSpringArm},
         // SaveGame
         {TEXT("create_savegame_class"), &FEpicUnrealMCPGameplayFrameworkCommands::HandleCreateSaveGameClass},
+        // Save / Load
+        {TEXT("save_game_to_slot"), &FEpicUnrealMCPGameplayFrameworkCommands::HandleSaveGameToSlot},
+        {TEXT("load_game_from_slot"), &FEpicUnrealMCPGameplayFrameworkCommands::HandleLoadGameFromSlot},
+        {TEXT("delete_save_slot"), &FEpicUnrealMCPGameplayFrameworkCommands::HandleDeleteSaveSlot},
+        {TEXT("has_save_game"), &FEpicUnrealMCPGameplayFrameworkCommands::HandleHasSaveGame},
         // GameInstance
         {TEXT("create_gameinstance"), &FEpicUnrealMCPGameplayFrameworkCommands::HandleCreateGameInstance},
         // Subsystems
@@ -2050,5 +2055,116 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPGameplayFrameworkCommands::HandleCreateGam
     Result->SetStringField(TEXT("usage_c"), TEXT("FGameplayTagQuery::BuildQuery(QueryType, Tags...)"));
     Result->SetStringField(TEXT("usage_bp"), TEXT("Use MakeGameplayTagQuery node in Blueprints"));
     Result->SetStringField(TEXT("note"), TEXT("Tag queries can be used in C++ with FGameplayTagQuery or in Blueprint with the GameplayTagQuery type"));
+    return Result;
+}
+
+// ============================================================================
+// Save / Load Slot Commands
+// ============================================================================
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPGameplayFrameworkCommands::HandleSaveGameToSlot(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString SlotName;
+    if (!Params->TryGetStringField(TEXT("slot_name"), SlotName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'slot_name' parameter"));
+    }
+
+    int32 UserIndex = 0;
+    Params->TryGetNumberField(TEXT("user_index"), UserIndex);
+
+    USaveGame* SaveGame = UGameplayStatics::CreateSaveGameObject(USaveGame::StaticClass());
+    if (!SaveGame)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create SaveGame object"));
+    }
+
+    bool bSaved = UGameplayStatics::SaveGameToSlot(SaveGame, SlotName, UserIndex);
+    if (!bSaved)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to save game to slot"));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("slot_name"), SlotName);
+    Result->SetNumberField(TEXT("user_index"), UserIndex);
+    Result->SetStringField(TEXT("save_path"), FString::Printf(TEXT("Saved/SaveGames/%s.sav"), *SlotName));
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPGameplayFrameworkCommands::HandleLoadGameFromSlot(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString SlotName;
+    if (!Params->TryGetStringField(TEXT("slot_name"), SlotName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'slot_name' parameter"));
+    }
+
+    int32 UserIndex = 0;
+    Params->TryGetNumberField(TEXT("user_index"), UserIndex);
+
+    USaveGame* SaveGame = UGameplayStatics::LoadGameFromSlot(SlotName, UserIndex);
+    bool bExists = SaveGame != nullptr;
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetBoolField(TEXT("found"), bExists);
+    Result->SetStringField(TEXT("slot_name"), SlotName);
+    Result->SetNumberField(TEXT("user_index"), UserIndex);
+    if (!bExists)
+    {
+        Result->SetStringField(TEXT("warning"), TEXT("No save data found in slot"));
+    }
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPGameplayFrameworkCommands::HandleDeleteSaveSlot(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString SlotName;
+    if (!Params->TryGetStringField(TEXT("slot_name"), SlotName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'slot_name' parameter"));
+    }
+
+    int32 UserIndex = 0;
+    Params->TryGetNumberField(TEXT("user_index"), UserIndex);
+
+    bool bDeleted = UGameplayStatics::DeleteGameInSlot(SlotName, UserIndex);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetBoolField(TEXT("deleted"), bDeleted);
+    Result->SetStringField(TEXT("slot_name"), SlotName);
+    Result->SetNumberField(TEXT("user_index"), UserIndex);
+    if (!bDeleted)
+    {
+        Result->SetStringField(TEXT("warning"), TEXT("Slot did not exist or could not be deleted"));
+    }
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPGameplayFrameworkCommands::HandleHasSaveGame(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString SlotName;
+    if (!Params->TryGetStringField(TEXT("slot_name"), SlotName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'slot_name' parameter"));
+    }
+
+    int32 UserIndex = 0;
+    Params->TryGetNumberField(TEXT("user_index"), UserIndex);
+
+    bool bExists = UGameplayStatics::DoesSaveGameExist(SlotName, UserIndex);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetBoolField(TEXT("exists"), bExists);
+    Result->SetStringField(TEXT("slot_name"), SlotName);
+    Result->SetNumberField(TEXT("user_index"), UserIndex);
     return Result;
 }

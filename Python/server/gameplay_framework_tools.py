@@ -790,3 +790,127 @@ def create_gameplay_tag_query(
     except Exception as e:
         logger.error(f"create_gameplay_tag_query error: {e}")
         return make_error_response(str(e))
+
+
+# ============================================================================
+# Save / Load Commands
+# ============================================================================
+
+@mcp.tool()
+def save_game_to_slot(
+    slot_name: str = "save0",
+    user_index: int = 0,
+) -> Dict[str, Any]:
+    """Save the current game state to a slot.
+
+    Args:
+        slot_name: Name of the save slot
+        user_index: Player controller user index (default 0)
+
+    Returns:
+        Response with save success status
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params: Dict[str, Any] = {
+            "slot_name": slot_name,
+            "user_index": user_index,
+        }
+        response = unreal.send_command("save_game_to_slot", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"save_game_to_slot error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def load_game_from_slot(
+    slot_name: str = "save0",
+    user_index: int = 0,
+) -> Dict[str, Any]:
+    """Load game state from a save slot.
+
+    Args:
+        slot_name: Name of the save slot
+        user_index: Player controller user index (default 0)
+
+    Returns:
+        Response with loaded data or error
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params: Dict[str, Any] = {
+            "slot_name": slot_name,
+            "user_index": user_index,
+        }
+        response = unreal.send_command("load_game_from_slot", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"load_game_from_slot error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def delete_save_slot(
+    slot_name: str = "save0",
+    user_index: int = 0,
+) -> Dict[str, Any]:
+    """Delete a save slot.
+
+    Args:
+        slot_name: Name of the save slot
+        user_index: Player controller user index (default 0)
+
+    Returns:
+        Response with deletion success status
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params: Dict[str, Any] = {
+            "slot_name": slot_name,
+            "user_index": user_index,
+        }
+        response = unreal.send_command("delete_save_slot", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"delete_save_slot error: {e}")
+        return make_error_response(str(e))
+
+
+@mcp.tool()
+def has_save_game(
+    slot_name: str = "save0",
+    user_index: int = 0,
+) -> Dict[str, Any]:
+    """Check whether a save slot exists.
+
+    Args:
+        slot_name: Name of the save slot
+        user_index: Player controller user index (default 0)
+
+    Returns:
+        Response with existence flag
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    try:
+        params: Dict[str, Any] = {
+            "slot_name": slot_name,
+            "user_index": user_index,
+        }
+        response = unreal.send_command("has_save_game", params)
+        return response or make_error_response("No response from Unreal")
+    except Exception as e:
+        logger.error(f"has_save_game error: {e}")
+        return make_error_response(str(e))

@@ -52,6 +52,12 @@ private:
     
     // --- SaveGame ---
     TSharedPtr<FJsonObject> HandleCreateSaveGameClass(const TSharedPtr<FJsonObject>& Params);
+
+    // --- Save / Load ---
+    TSharedPtr<FJsonObject> HandleSaveGameToSlot(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleLoadGameFromSlot(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleDeleteSaveSlot(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleHasSaveGame(const TSharedPtr<FJsonObject>& Params);
     
     // --- GameInstance ---
     TSharedPtr<FJsonObject> HandleCreateGameInstance(const TSharedPtr<FJsonObject>& Params);

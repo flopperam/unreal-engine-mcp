@@ -790,6 +790,10 @@ namespace
             {TEXT("setup_gameplay_tags"), 10},
             {TEXT("add_gameplay_tag"), 10},
             {TEXT("create_gameplay_tag_query"), 10},
+            {TEXT("save_game_to_slot"), 10},
+            {TEXT("load_game_from_slot"), 10},
+            {TEXT("delete_save_slot"), 10},
+            {TEXT("has_save_game"), 10},
 
             // UI / UMG / Common UI Commands (11)
             {TEXT("create_widget_blueprint"), 11},
