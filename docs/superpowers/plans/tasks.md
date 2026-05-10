@@ -1023,12 +1023,12 @@ Python/Rust側のテストはあります。
 - [ ] Functional Test Actor作成
 - [ ] Automation Test実行
 - [ ] Automation Test結果取得
-- [ ] Map Check実行
+- [x] Map Check実行
 - [ ] Asset Validation実行
-- [ ] Blueprint Compile All
-- [ ] Broken Reference検出
-- [ ] Missing Material検出
-- [ ] Missing Mesh検出
+- [x] Blueprint Compile All
+- [x] Broken Reference検出
+- [x] Missing Material検出
+- [x] Missing Mesh検出
 - [ ] Collision Validation
 - [ ] Navigation Validation
 - [ ] Performance Budget Validation

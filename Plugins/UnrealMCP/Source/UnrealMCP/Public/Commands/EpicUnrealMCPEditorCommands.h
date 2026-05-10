@@ -99,6 +99,11 @@ private:
     // Procedural spline from points (L-System output)
     TSharedPtr<FJsonObject> HandleCreateSplineFromPoints(const TSharedPtr<FJsonObject>& Params);
 
+    // Validation commands
+    TSharedPtr<FJsonObject> HandleCompileAllBlueprints(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleRunMapCheck(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleFindBrokenReferences(const TSharedPtr<FJsonObject>& Params);
+
     // Batch scene delta (P4)
     TSharedPtr<FJsonObject> HandleApplySceneDelta(const TSharedPtr<FJsonObject>& Params);
 
