@@ -187,3 +187,106 @@ class TestDraftProxyHelpers:
         obj = {"visual": {}, "tags": []}
         kind = scene_tools._extract_layout_kind(obj)
         assert kind == "layout"
+
+
+class TestSceneValidate:
+    def test_calls_validate_endpoint(self):
+        with patch("server.scene_tools.call_scene_syncd") as mock_call:
+            mock_call.return_value = {"success": True, "data": {}}
+            result = scene_tools.scene_validate(scene_id="demo")
+
+        mock_call.assert_called_once_with("/layouts/demo/validate", {})
+        assert result["success"] is True
+
+    def test_rejects_invalid_scene_id(self):
+        with patch("server.scene_tools.call_scene_syncd", return_value={"success": True, "data": {}}):
+            result = scene_tools.scene_validate(scene_id="")
+        assert result.get("success") is False
+
+
+class TestSceneCompilePlan:
+    def test_calls_compile_plan_endpoint(self):
+        with patch("server.scene_tools.call_scene_syncd") as mock_call:
+            mock_call.return_value = {"success": True, "data": {}}
+            result = scene_tools.scene_compile_plan(scene_id="demo")
+
+        mock_call.assert_called_once_with("/layouts/demo/compile/plan", {})
+        assert result["success"] is True
+
+
+class TestSceneCompileApply:
+    def test_calls_compile_apply_with_defaults(self):
+        with patch("server.scene_tools.call_scene_syncd") as mock_call:
+            mock_call.return_value = {"success": True, "data": {}}
+            result = scene_tools.scene_compile_apply(scene_id="demo")
+
+        mock_call.assert_called_once()
+        args = mock_call.call_args
+        assert args[0][0] == "/layouts/demo/compile/apply"
+        assert args[0][1]["allow_delete"] is False
+        assert result["success"] is True
+
+    def test_calls_compile_apply_allowing_delete(self):
+        with patch("server.scene_tools.call_scene_syncd") as mock_call:
+            mock_call.return_value = {"success": True, "data": {}}
+            result = scene_tools.scene_compile_apply(scene_id="demo", allow_delete=True)
+
+        payload = mock_call.call_args[0][1]
+        assert payload["allow_delete"] is True
+
+
+class TestSceneRunPieTest:
+    def test_calls_pie_run_with_defaults(self):
+        with patch("server.scene_tools.call_scene_syncd") as mock_call:
+            mock_call.return_value = {"success": True, "data": {}}
+            result = scene_tools.scene_run_pie_test(scene_id="demo")
+
+        mock_call.assert_called_once()
+        args = mock_call.call_args
+        assert args[0][0] == "/unreal/pie/run"
+        payload = args[0][1]
+        assert payload["scene_id"] == "demo"
+        assert payload["mode"] == "smoke"
+        assert payload["timeout_secs"] == 60
+        assert result["success"] is True
+
+    def test_calls_pie_run_with_custom_params(self):
+        with patch("server.scene_tools.call_scene_syncd") as mock_call:
+            mock_call.return_value = {"success": True, "data": {}}
+            result = scene_tools.scene_run_pie_test(scene_id="demo", mode="full", timeout_secs=90)
+
+        payload = mock_call.call_args[0][1]
+        assert payload["mode"] == "full"
+        assert payload["timeout_secs"] == 90
+
+    def test_caps_timeout_at_120(self):
+        with patch("server.scene_tools.call_scene_syncd") as mock_call:
+            mock_call.return_value = {"success": True, "data": {}}
+            scene_tools.scene_run_pie_test(scene_id="demo", timeout_secs=999)
+
+        payload = mock_call.call_args[0][1]
+        assert payload["timeout_secs"] == 120
+
+
+class TestSceneGenerateFixPlan:
+    def test_calls_fix_plan_with_empty_diagnostics(self):
+        with patch("server.scene_tools.call_scene_syncd") as mock_call:
+            mock_call.return_value = {"success": True, "data": {}}
+            result = scene_tools.scene_generate_fix_plan(scene_id="demo")
+
+        mock_call.assert_called_once()
+        args = mock_call.call_args
+        assert args[0][0] == "/unreal/fix-plan"
+        payload = args[0][1]
+        assert payload["scene_id"] == "demo"
+        assert payload["diagnostics"] == []
+        assert result["success"] is True
+
+    def test_calls_fix_plan_with_diagnostics(self):
+        diagnostics = [{"severity": "error", "code": "NO_MESH", "description": "Missing mesh"}]
+        with patch("server.scene_tools.call_scene_syncd") as mock_call:
+            mock_call.return_value = {"success": True, "data": {}}
+            result = scene_tools.scene_generate_fix_plan(scene_id="demo", diagnostics=diagnostics)
+
+        payload = mock_call.call_args[0][1]
+        assert payload["diagnostics"] == diagnostics
