@@ -1,0 +1,63 @@
+{# C++ handler implementation template (boilerplate only) #}
+TSharedPtr<FJsonObject> FEpicUnrealMCP{{ command.category }}Commands::Handle{{ command.pascal_name }}(const TSharedPtr<FJsonObject>& Params)
+{
+{% for p in command.params if p.required %}
+    {{ p.cpp_type }} {{ p.camel_name }};
+    if (!Params->TryGet{{ p.json_getter }}Field(TEXT("{{ p.name }}"), {{ p.camel_name }}){% if p.cpp_type == 'FString' %} || {{ p.camel_name }}.IsEmpty(){% endif %})
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing '{{ p.name }}' parameter"));
+    }
+{% endfor %}
+
+{% if command.actor_class %}
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor world available"));
+    }
+
+    FVector Location(0.0f, 0.0f, 0.0f);
+    FRotator Rotation(0.0f, 0.0f, 0.0f);
+    FString ParamError;
+    if (Params->HasField(TEXT("location")))
+    {
+        if (!FEpicUnrealMCPCommonUtils::TryGetVectorFromJson(Params, TEXT("location"), Location, ParamError))
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid 'location': %s"), *ParamError));
+        }
+    }
+    if (Params->HasField(TEXT("rotation")))
+    {
+        if (!FEpicUnrealMCPCommonUtils::TryGetRotatorFromJson(Params, TEXT("rotation"), Rotation, ParamError))
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid 'rotation': %s"), *ParamError));
+        }
+    }
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Name = *{{ command.params[0].camel_name }};
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    SpawnParams.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
+
+    {{ command.actor_class }}* Actor = World->SpawnActor<{{ command.actor_class }}>({{ command.actor_class }}::StaticClass(), Location, Rotation, SpawnParams);
+    if (!Actor)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to spawn {{ command.actor_class }}"));
+    }
+{% endif %}
+
+    // TODO: Implement command-specific logic here.
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+{% for p in command.params if p.required %}
+{% if p.cpp_type == 'FString' %}
+    Result->SetStringField(TEXT("{{ p.name }}"), {{ p.camel_name }});
+{% elif p.cpp_type == 'double' %}
+    Result->SetNumberField(TEXT("{{ p.name }}"), {{ p.camel_name }});
+{% elif p.cpp_type == 'bool' %}
+    Result->SetBoolField(TEXT("{{ p.name }}"), {{ p.camel_name }});
+{% endif %}
+{% endfor %}
+    return Result;
+}

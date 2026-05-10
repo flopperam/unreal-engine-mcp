@@ -1,0 +1,8 @@
+{# Bridge routing entries #}
+// Router map entry:
+        {TEXT("{{ command.snake_name }}"), {{ command.category_id }}},
+
+// Switch case entry:
+case {{ command.category_id }}: // {{ command.category }}Commands
+    ResultJson = {{ command.category }}Commands->HandleCommand(CommandType, Params);
+    break;

@@ -1,0 +1,12 @@
+{
+  "command_name": "spawn_camera_actor",
+  "category": "Rendering",
+  "category_id": 12,
+  "description": "Spawn a CameraActor in the editor world.",
+  "params": [
+    {"name": "name", "type": "str", "required": true},
+    {"name": "location", "type": "Optional[List[float]]", "required": false, "default": "None"},
+    {"name": "rotation", "type": "Optional[List[float]]", "required": false, "default": "None"}
+  ],
+  "actor_class": "ACameraActor"
+}

@@ -1,0 +1,31 @@
+{# Python MCP tool wrapper #}
+@mcp.tool()
+def {{ command.snake_name }}(
+{% for p in command.params %}
+    {{ p.name }}: {{ p.py_type }}{% if not p.required %} = {{ p.default }}{% endif %},
+{% endfor %}
+) -> Dict[str, Any]:
+    """{{ command.description }}"""
+{% for p in command.params if p.required %}
+    try:
+        validate_string({{ p.name }}, "{{ p.name }}")
+    except ValidationError as exc:
+        return make_validation_error_response_from_exception(exc)
+{% endfor %}
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    params: Dict[str, Any] = {
+{% for p in command.params if p.required %}
+        "{{ p.name }}": {{ p.name }},
+{% endfor %}
+    }
+{% for p in command.params if not p.required %}
+    if {{ p.name }} is not None:
+        params["{{ p.name }}"] = {{ p.name }}
+{% endfor %}
+
+    response = unreal.send_command("{{ command.snake_name }}", params)
+    return response or make_error_response("No response from Unreal")
