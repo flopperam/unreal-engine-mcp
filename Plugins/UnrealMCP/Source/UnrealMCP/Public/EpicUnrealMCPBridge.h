@@ -23,6 +23,7 @@
 #include "Commands/EpicUnrealMCPLightingAtmosphereCommands.h"
 #include "Commands/EpicUnrealMCPDataTableCommands.h"
 #include "Commands/EpicUnrealMCPAudioCommands.h"
+#include "Commands/EpicUnrealMCPSequencerCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "MCPServerRunnable.h"
 #include "EpicUnrealMCPBridge.generated.h"
@@ -92,6 +93,7 @@ private:
 	TSharedPtr<FEpicUnrealMCPLightingAtmosphereCommands> LightingAtmosphereCommands;
 	TSharedPtr<FEpicUnrealMCPDataTableCommands> DataTableCommands;
 	TSharedPtr<FEpicUnrealMCPAudioCommands> AudioCommands;
+	TSharedPtr<FEpicUnrealMCPSequencerCommands> SequencerCommands;
 };
 
 #endif // WITH_EDITOR

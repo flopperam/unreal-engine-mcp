@@ -77,6 +77,7 @@ public class UnrealMCP : ModuleRules
 				"UMGEditor",				// For UWidgetBlueprint and Editor Utility Widget creation
 				"UMG",					// For UUserWidget and WidgetTree operations
 				"MovieScene",			// For UWidgetAnimation MovieScene assets
+			"LevelSequence",		// For ULevelSequence and Sequencer tracks
 				"CommonUI",				// For Common UI widget class support
 				"CommonInput"			// For Common UI input routing dependencies
 			}

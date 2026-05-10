@@ -274,6 +274,7 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
     LightingAtmosphereCommands = MakeShared<FEpicUnrealMCPLightingAtmosphereCommands>();
     DataTableCommands = MakeShared<FEpicUnrealMCPDataTableCommands>();
     AudioCommands = MakeShared<FEpicUnrealMCPAudioCommands>();
+    SequencerCommands = MakeShared<FEpicUnrealMCPSequencerCommands>();
 
     const UUnrealMCPSettings* Settings = GetDefault<UUnrealMCPSettings>();
     FString HostStr = Settings ? Settings->Host : TEXT(MCP_SERVER_HOST);
@@ -336,6 +337,7 @@ UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
     LightingAtmosphereCommands.Reset();
     DataTableCommands.Reset();
     AudioCommands.Reset();
+    SequencerCommands.Reset();
 }
 
 void UEpicUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
@@ -884,6 +886,10 @@ namespace
             {TEXT("create_data_table"), 14},
             {TEXT("import_csv_to_data_table"), 14},
             {TEXT("add_data_table_row"), 14},
+            {TEXT("delete_data_table_row"), 14},
+            {TEXT("update_data_table_row"), 14},
+            {TEXT("export_data_table_csv"), 14},
+            {TEXT("export_data_table_json"), 14},
 
             // Audio Commands (15)
             {TEXT("create_sound_cue"), 15},
@@ -891,7 +897,17 @@ namespace
             {TEXT("set_sound_attenuation"), 15},
             {TEXT("create_sound_class"), 15},
             {TEXT("create_sound_mix"), 15},
-            {TEXT("spawn_ambient_sound"), 15}
+            {TEXT("spawn_ambient_sound"), 15},
+
+            // Sequencer Commands (16)
+            {TEXT("create_level_sequence"), 16},
+            {TEXT("add_actor_binding"), 16},
+            {TEXT("add_transform_track"), 16},
+            {TEXT("add_camera_cut_track"), 16},
+            {TEXT("add_event_track"), 16},
+            {TEXT("add_keyframe"), 16},
+            {TEXT("set_playback_range"), 16},
+            {TEXT("set_frame_rate"), 16}
         };
         const int32* Found = Router.Find(CommandType);
         return Found ? *Found : -1;
@@ -964,6 +980,9 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 break;
             case 15: // AudioCommands
                 ResultJson = AudioCommands->HandleCommand(CommandType, Params);
+                break;
+            case 16: // SequencerCommands
+                ResultJson = SequencerCommands->HandleCommand(CommandType, Params);
                 break;
             default:
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));
