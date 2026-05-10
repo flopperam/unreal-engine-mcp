@@ -41,4 +41,5 @@ private:
     TSharedPtr<FJsonObject> HandleSpawnCameraActor(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSpawnCineCameraActor(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetCameraProperties(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSpawnPostProcessVolume(const TSharedPtr<FJsonObject>& Params);
 };

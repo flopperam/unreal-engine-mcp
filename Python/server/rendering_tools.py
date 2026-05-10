@@ -462,3 +462,38 @@ def set_post_process_volume(
     except Exception as e:
         logger.error(f"set_post_process_volume error: {e}")
         return make_error_response(str(e))
+
+
+@mcp.tool()
+def spawn_post_process_volume(
+    name: str,
+    location: Optional[List[float]] = None,
+    extent: Optional[List[float]] = None,
+    infinite_extent: bool = False,
+) -> Dict[str, Any]:
+    """Spawn a PostProcessVolume in the editor world.
+
+    name: Unique actor name
+    location: [x, y, z]
+    extent: [x, y, z] box extent in cm (default 500x500x500)
+    infinite_extent: If True, volume affects the entire world (bUnbound)
+    """
+    try:
+        validate_string(name, "name")
+    except ValidationError as exc:
+        return make_validation_error_response_from_exception(exc)
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+
+    params: Dict[str, Any] = {"name": name}
+    if location is not None:
+        params["location"] = location
+    if extent is not None:
+        params["extent"] = extent
+    if infinite_extent:
+        params["infinite_extent"] = infinite_extent
+
+    response = unreal.send_command("spawn_post_process_volume", params)
+    return response or make_error_response("No response from Unreal")

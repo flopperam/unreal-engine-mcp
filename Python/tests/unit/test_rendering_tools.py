@@ -122,3 +122,38 @@ class TestSetCameraProperties:
         with patch("server.rendering_tools.get_unreal_connection", return_value=_mock_ue_conn()):
             result = rendering_tools.set_camera_properties(name="")
         assert result.get("success") is False
+
+
+class TestSpawnPostProcessVolume:
+    def test_sends_minimal_payload(self):
+        with patch("server.rendering_tools.get_unreal_connection", return_value=_mock_ue_conn()) as mock_ue:
+            result = rendering_tools.spawn_post_process_volume(name="PPV_Main")
+
+        mock_ue.return_value.send_command.assert_called_once()
+        args = mock_ue.return_value.send_command.call_args
+        assert args[0][0] == "spawn_post_process_volume"
+        assert args[0][1]["name"] == "PPV_Main"
+        assert "location" not in args[0][1]
+        assert "extent" not in args[0][1]
+        assert "infinite_extent" not in args[0][1]
+        assert result["success"] is True
+
+    def test_sends_full_payload(self):
+        with patch("server.rendering_tools.get_unreal_connection", return_value=_mock_ue_conn()) as mock_ue:
+            result = rendering_tools.spawn_post_process_volume(
+                name="PPV_Zone",
+                location=[0.0, 0.0, 100.0],
+                extent=[1000.0, 1000.0, 500.0],
+                infinite_extent=True,
+            )
+
+        payload = mock_ue.return_value.send_command.call_args[0][1]
+        assert payload["name"] == "PPV_Zone"
+        assert payload["location"] == [0.0, 0.0, 100.0]
+        assert payload["extent"] == [1000.0, 1000.0, 500.0]
+        assert payload["infinite_extent"] is True
+
+    def test_rejects_empty_name(self):
+        with patch("server.rendering_tools.get_unreal_connection", return_value=_mock_ue_conn()):
+            result = rendering_tools.spawn_post_process_volume(name="")
+        assert result.get("success") is False

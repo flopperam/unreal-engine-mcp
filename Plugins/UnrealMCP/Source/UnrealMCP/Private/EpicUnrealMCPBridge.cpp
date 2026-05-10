@@ -832,6 +832,7 @@ namespace
             {TEXT("spawn_camera_actor"), 12},
             {TEXT("spawn_cine_camera_actor"), 12},
             {TEXT("set_camera_properties"), 12},
+            {TEXT("spawn_post_process_volume"), 12},
 
             // Lighting / Atmosphere Commands (13)
             {TEXT("set_light_intensity"), 13},

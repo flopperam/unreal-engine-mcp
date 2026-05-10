@@ -91,6 +91,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleCommand(const FSt
         {TEXT("spawn_camera_actor"), &FEpicUnrealMCPRenderingCommands::HandleSpawnCameraActor},
         {TEXT("spawn_cine_camera_actor"), &FEpicUnrealMCPRenderingCommands::HandleSpawnCineCameraActor},
         {TEXT("set_camera_properties"), &FEpicUnrealMCPRenderingCommands::HandleSetCameraProperties},
+        {TEXT("spawn_post_process_volume"), &FEpicUnrealMCPRenderingCommands::HandleSpawnPostProcessVolume},
     };
 
     const Handler* H = Dispatch.Find(CommandType);
@@ -788,5 +789,72 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleSetCameraProperti
     Result->SetNumberField(TEXT("focal_length"), CineComp->CurrentFocalLength);
     Result->SetNumberField(TEXT("aperture"), CineComp->CurrentAperture);
     Result->SetNumberField(TEXT("focus_distance"), CineComp->CurrentFocusDistance);
+    return Result;
+}
+
+// ------------------------------------------------------------------
+// Post Process Volume Spawn
+// ------------------------------------------------------------------
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleSpawnPostProcessVolume(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName;
+    if (!Params->TryGetStringField(TEXT("name"), ActorName) || ActorName.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'name' parameter"));
+    }
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor world available"));
+    }
+
+    FVector Location(0.0f, 0.0f, 0.0f);
+    FRotator Rotation(0.0f, 0.0f, 0.0f);
+    FString ParamError;
+    if (Params->HasField(TEXT("location")))
+    {
+        if (!FEpicUnrealMCPCommonUtils::TryGetVectorFromJson(Params, TEXT("location"), Location, ParamError))
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid 'location': %s"), *ParamError));
+        }
+    }
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Name = *ActorName;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    SpawnParams.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
+
+    APostProcessVolume* Volume = World->SpawnActor<APostProcessVolume>(APostProcessVolume::StaticClass(), Location, Rotation, SpawnParams);
+    if (!Volume)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to spawn PostProcessVolume"));
+    }
+
+    // Optional extent
+    FVector Extent(500.0f, 500.0f, 500.0f);
+    if (Params->HasField(TEXT("extent")))
+    {
+        if (FEpicUnrealMCPCommonUtils::TryGetVectorFromJson(Params, TEXT("extent"), Extent, ParamError))
+        {
+            Volume->SetActorScale3D(Extent / 500.0f);
+        }
+    }
+
+    // Optional infinite extent (unbound)
+    bool bInfiniteExtent = false;
+    if (Params->TryGetBoolField(TEXT("infinite_extent"), bInfiniteExtent))
+    {
+        Volume->bUnbound = bInfiniteExtent;
+    }
+
+    Volume->MarkDirty();
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("actor_name"), Volume->GetName());
+    Result->SetStringField(TEXT("actor_class"), Volume->GetClass()->GetName());
+    Result->SetBoolField(TEXT("infinite_extent"), Volume->bUnbound);
     return Result;
 }

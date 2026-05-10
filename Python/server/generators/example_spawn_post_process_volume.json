@@ -1,0 +1,13 @@
+{
+  "command_name": "spawn_post_process_volume",
+  "category": "Rendering",
+  "category_id": 12,
+  "description": "Spawn a PostProcessVolume in the editor world.",
+  "params": [
+    {"name": "name", "type": "str", "required": true},
+    {"name": "location", "type": "Optional[Dict[str, float]]", "required": false, "default": "None"},
+    {"name": "extent", "type": "Optional[Dict[str, float]]", "required": false, "default": "None"},
+    {"name": "infinite_extent", "type": "bool", "required": false, "default": "False"}
+  ],
+  "actor_class": "APostProcessVolume"
+}
