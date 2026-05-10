@@ -185,12 +185,12 @@ Unreal Editor自体にはProject Settings、Plugin管理、Editor Preference、W
 - [x] Pivot変更
 - [x] Mesh Merge
 - [x] Mesh Simplify
-- [x] Mesh Bake
+- [~] Mesh Bake
 - [x] Modeling Mode機能呼び出し
 - [x] Poly Edit
-- [x] Boolean
+- [~] Boolean
 - [x] Remesh
-- [x] Voxel Remesh
+- [~] Voxel Remesh
 - [x] UV Unwrap
 - [x] UV Layout
 - [x] Vertex Color Paint
@@ -770,13 +770,13 @@ NiagaraはUE5の主要VFXシステムで、System、Emitter、Module、User Para
 ```md
 ## Audio / MetaSounds
 - [ ] Sound Wave Import
-- [x] Sound Cue作成
+- [~] Sound Cue作成
 - [ ] Sound Cue Graph編集
 - [x] Audio Component追加
 - [x] Sound Attenuation作成
-- [ ] Attenuation Radius設定
-- [ ] Spatialization設定
-- [ ] Reverb設定
+- [x] Attenuation Radius設定
+- [x] Spatialization設定
+- [x] Reverb設定
 - [ ] Sound Class作成
 - [ ] Sound Mix作成
 - [ ] Submix作成
@@ -800,8 +800,8 @@ Blueprint ComponentのPhysics設定は一部あります。
 
 ```md
 ## Physics / Chaos
-- [~] Simulate Physics設定
-- [~] Mass / Damping一部設定
+- [x] Simulate Physics設定
+- [x] Mass / Damping一部設定
 - [ ] Collision Preset設定
 - [ ] Collision Channel作成
 - [ ] Object Channel作成

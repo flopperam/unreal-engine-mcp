@@ -23,7 +23,13 @@ import pytest
 
 import unreal_mcp_server_advanced as srv
 from unreal_mcp_server_advanced import mcp, get_unreal_connection
-from server import actor_tools, blueprint_tools, blueprint_graph_tools, gameplay_framework_tools, material_graph_tools, material_tools, umg_tools, world_building_tools, lighting_tools
+from server import (
+    actor_tools, blueprint_tools, blueprint_graph_tools, gameplay_framework_tools,
+    material_graph_tools, material_tools, umg_tools, world_building_tools, lighting_tools,
+    rendering_tools, data_table_tools, audio_tools, project_editor_tools,
+    asset_management_tools, asset_import_tools, mesh_editing_tools, enhanced_input_tools,
+    scene_tools, vertical_test_tools,
+)
 
 
 def _collect_source_tools():
@@ -46,15 +52,11 @@ def _patch_tool_connections(fake_conn):
     stack = ExitStack()
     for module in [
         srv,
-        actor_tools,
-        blueprint_tools,
-        blueprint_graph_tools,
-        gameplay_framework_tools,
-        material_graph_tools,
-        material_tools,
-        umg_tools,
-        world_building_tools,
-        lighting_tools,
+        actor_tools, blueprint_tools, blueprint_graph_tools, gameplay_framework_tools,
+        material_graph_tools, material_tools, umg_tools, world_building_tools, lighting_tools,
+        rendering_tools, data_table_tools, audio_tools, project_editor_tools,
+        asset_management_tools, asset_import_tools, mesh_editing_tools, enhanced_input_tools,
+        scene_tools, vertical_test_tools,
     ]:
         stack.enter_context(patch.object(module, "get_unreal_connection", return_value=fake_conn, create=True))
     return stack
@@ -352,8 +354,7 @@ class TestPythonToCppCommandMapping:
         py_cmds = self._collect_python_commands()
         cpp_cmds = self._collect_cpp_commands()
         missing = py_cmds - cpp_cmds
-        known_missing_whitelist = {"add_material_node", "connect_material_nodes", "analyze_material_graph"}
-        actual_missing = missing - known_missing_whitelist
+        actual_missing = missing
         assert not actual_missing, (
             f"Python sends these commands but C++ dispatcher does not explicitly route them: {actual_missing}"
         )
