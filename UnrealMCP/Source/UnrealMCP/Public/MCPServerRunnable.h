@@ -31,4 +31,15 @@ private:
 	TSharedPtr<FSocket> ListenerSocket;
 	TSharedPtr<FSocket> ClientSocket;
 	bool bRunning;
-}; 
+
+	// Idempotency cache -- prevents duplicate command execution
+	struct FIdempotencyEntry
+	{
+		FString ResponseJson;
+		double Timestamp; // FPlatformTime::Seconds()
+	};
+
+	TMap<FString, FIdempotencyEntry> IdempotencyCache;
+	static constexpr double IDEMPOTENCY_CACHE_TTL = 300.0; // 5 minutes
+	void PruneIdempotencyCache();
+};
