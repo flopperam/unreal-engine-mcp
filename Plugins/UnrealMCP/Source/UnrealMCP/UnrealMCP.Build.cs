@@ -53,7 +53,8 @@ public class UnrealMCP : ModuleRules
 				"DynamicMesh",
 				"GeometryFramework",
 				"Renderer",
-				"RHI"
+				"RHI",
+				"CinematicCamera"     // For ACineCameraActor and UCineCameraComponent
 			}
 		);
 		

@@ -38,4 +38,7 @@ private:
     TSharedPtr<FJsonObject> HandleSetNaniteVisualization(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleGetShaderCompileStatus(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetPostProcessVolume(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSpawnCameraActor(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSpawnCineCameraActor(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSetCameraProperties(const TSharedPtr<FJsonObject>& Params);
 };

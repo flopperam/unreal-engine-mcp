@@ -36,5 +36,6 @@ private:
     TSharedPtr<FJsonObject> HandleSetUIInputMode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetMouseCursorVisible(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleCreateUITemplate(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCreateWidgetInstance(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleBindWidgetProperty(const TSharedPtr<FJsonObject>& Params);
 };

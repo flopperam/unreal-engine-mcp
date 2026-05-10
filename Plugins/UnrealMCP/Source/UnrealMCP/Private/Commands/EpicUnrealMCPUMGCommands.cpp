@@ -707,6 +707,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPUMGCommands::HandleCommand(const FString& 
         {TEXT("set_ui_input_mode"), &FEpicUnrealMCPUMGCommands::HandleSetUIInputMode},
         {TEXT("set_mouse_cursor_visible"), &FEpicUnrealMCPUMGCommands::HandleSetMouseCursorVisible},
         {TEXT("create_ui_template"), &FEpicUnrealMCPUMGCommands::HandleCreateUITemplate},
+        {TEXT("create_widget_instance"), &FEpicUnrealMCPUMGCommands::HandleCreateWidgetInstance},
     };
 
     const Handler* FoundHandler = Dispatch.Find(CommandType);
@@ -1984,6 +1985,55 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPUMGCommands::HandleCreateUITemplate(const 
     Response->SetStringField(TEXT("template_name"), TemplateName);
     Response->SetBoolField(TEXT("compiled_success"), CompileResult->GetBoolField(TEXT("compiled_success")));
     Response->SetStringField(TEXT("compile_status"), CompileResult->GetStringField(TEXT("compile_status")));
+    return Response;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPUMGCommands::HandleCreateWidgetInstance(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    FString Error;
+    UWidgetBlueprint* WidgetBlueprint = ResolveWidgetBlueprint(Params, BlueprintPath, Error);
+    if (!WidgetBlueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(Error);
+    }
+    CompileWidgetBlueprint(WidgetBlueprint);
+
+    UClass* WidgetClass = WidgetBlueprint->GeneratedClass;
+    if (!WidgetClass || !WidgetClass->IsChildOf(UUserWidget::StaticClass()))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Widget Blueprint does not have a valid generated UUserWidget class"));
+    }
+
+    UWorld* World = GetUMGRuntimeWorld();
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor or PIE world available for CreateWidget"));
+    }
+
+    FString InstanceName;
+    if (!Params->TryGetStringField(TEXT("instance_name"), InstanceName) || InstanceName.IsEmpty())
+    {
+        InstanceName = WidgetBlueprint->GetName();
+    }
+
+    APlayerController* PlayerController = GetUMGPlayerController(World);
+    UUserWidget* Instance = PlayerController
+        ? CreateWidget<UUserWidget>(PlayerController, WidgetClass, FName(*InstanceName))
+        : CreateWidget<UUserWidget>(World, WidgetClass, FName(*InstanceName));
+
+    if (!Instance)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("CreateWidget returned null"));
+    }
+
+    GUMGRuntimeWidgetInstances.Add(InstanceName, Instance);
+
+    TSharedPtr<FJsonObject> Response = MakeSuccessResponse();
+    Response->SetStringField(TEXT("asset_path"), BlueprintPath);
+    Response->SetStringField(TEXT("instance_name"), InstanceName);
+    Response->SetStringField(TEXT("world_name"), World->GetName());
+    Response->SetBoolField(TEXT("pie_world"), GEditor && GEditor->PlayWorld == World);
     return Response;
 }
 

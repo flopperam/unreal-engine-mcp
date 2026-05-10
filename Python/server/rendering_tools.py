@@ -1,9 +1,10 @@
 """Rendering and lighting settings tools for the Unreal MCP server."""
 
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 from server.core import mcp, get_unreal_connection
+from server.validation import validate_string, ValidationError, make_validation_error_response_from_exception
 from utils.responses import make_error_response
 
 logger = logging.getLogger("UnrealMCP_Advanced")
@@ -279,6 +280,106 @@ def get_shader_compile_status() -> Dict[str, Any]:
 
 
 @mcp.tool()
+def spawn_camera_actor(
+    name: str,
+    location: Optional[List[float]] = None,
+    rotation: Optional[List[float]] = None,
+) -> Dict[str, Any]:
+    """Spawn a CameraActor in the editor world.
+
+    name: Unique actor name
+    location: [x, y, z]
+    rotation: [pitch, yaw, roll]
+    """
+    try:
+        validate_string(name, "name")
+    except ValidationError as exc:
+        return make_validation_error_response_from_exception(exc)
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    params: Dict[str, Any] = {"name": name}
+    if location is not None:
+        params["location"] = location
+    if rotation is not None:
+        params["rotation"] = rotation
+    response = unreal.send_command("spawn_camera_actor", params)
+    return response or make_error_response("No response from Unreal")
+
+
+@mcp.tool()
+def spawn_cine_camera_actor(
+    name: str,
+    location: Optional[List[float]] = None,
+    rotation: Optional[List[float]] = None,
+    focal_length: Optional[float] = None,
+    aperture: Optional[float] = None,
+    focus_distance: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Spawn a CineCameraActor in the editor world.
+
+    name: Unique actor name
+    location: [x, y, z]
+    rotation: [pitch, yaw, roll]
+    focal_length: Lens focal length in mm
+    aperture: f-stop value
+    focus_distance: Focus distance in cm
+    """
+    try:
+        validate_string(name, "name")
+    except ValidationError as exc:
+        return make_validation_error_response_from_exception(exc)
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    params: Dict[str, Any] = {"name": name}
+    if location is not None:
+        params["location"] = location
+    if rotation is not None:
+        params["rotation"] = rotation
+    if focal_length is not None:
+        params["focal_length"] = focal_length
+    if aperture is not None:
+        params["aperture"] = aperture
+    if focus_distance is not None:
+        params["focus_distance"] = focus_distance
+    response = unreal.send_command("spawn_cine_camera_actor", params)
+    return response or make_error_response("No response from Unreal")
+
+
+@mcp.tool()
+def set_camera_properties(
+    name: str,
+    focal_length: Optional[float] = None,
+    aperture: Optional[float] = None,
+    focus_distance: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Set focal length, aperture, and focus distance on an existing CineCameraActor.
+
+    name: Name of the existing CineCameraActor
+    focal_length: Lens focal length in mm
+    aperture: f-stop value
+    focus_distance: Focus distance in cm
+    """
+    try:
+        validate_string(name, "name")
+    except ValidationError as exc:
+        return make_validation_error_response_from_exception(exc)
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    params: Dict[str, Any] = {"name": name}
+    if focal_length is not None:
+        params["focal_length"] = focal_length
+    if aperture is not None:
+        params["aperture"] = aperture
+    if focus_distance is not None:
+        params["focus_distance"] = focus_distance
+    response = unreal.send_command("set_camera_properties", params)
+    return response or make_error_response("No response from Unreal")
+
+
+@mcp.tool()
 def set_post_process_volume(
     volume_name: str,
     exposure_method: str = "",
@@ -288,6 +389,15 @@ def set_post_process_volume(
     dof_enabled: bool = False,
     dof_focal_distance: float = 0.0,
     dof_aperture: float = 0.0,
+    color_temperature: float = 0.0,
+    color_tint: float = 0.0,
+    motion_blur_amount: float = 0.0,
+    ao_intensity: float = 0.0,
+    ao_radius: float = 0.0,
+    vignette_intensity: float = 0.0,
+    film_grain_intensity: float = 0.0,
+    chromatic_aberration: float = 0.0,
+    lens_flare_intensity: float = 0.0,
 ) -> Dict[str, Any]:
     """Configure an existing PostProcessVolume.
 
@@ -298,6 +408,15 @@ def set_post_process_volume(
     dof_enabled: toggle depth of field
     dof_focal_distance: focus distance in cm
     dof_aperture: f-stop value (lower = more blur)
+    color_temperature: white balance temperature in Kelvin (6500 = neutral)
+    color_tint: white balance tint (-1 to 1)
+    motion_blur_amount: motion blur strength (0 = off)
+    ao_intensity: ambient occlusion intensity
+    ao_radius: ambient occlusion radius
+    vignette_intensity: vignette strength (0 = off)
+    film_grain_intensity: film grain strength (0 = off)
+    chromatic_aberration: chromatic aberration intensity (0 = off)
+    lens_flare_intensity: lens flare intensity (0 = off)
     """
     unreal = get_unreal_connection()
     if not unreal:
@@ -319,6 +438,24 @@ def set_post_process_volume(
             params["dof_focal_distance"] = dof_focal_distance
         if dof_aperture != 0.0:
             params["dof_aperture"] = dof_aperture
+        if color_temperature != 0.0:
+            params["color_temperature"] = color_temperature
+        if color_tint != 0.0:
+            params["color_tint"] = color_tint
+        if motion_blur_amount != 0.0:
+            params["motion_blur_amount"] = motion_blur_amount
+        if ao_intensity != 0.0:
+            params["ao_intensity"] = ao_intensity
+        if ao_radius != 0.0:
+            params["ao_radius"] = ao_radius
+        if vignette_intensity != 0.0:
+            params["vignette_intensity"] = vignette_intensity
+        if film_grain_intensity != 0.0:
+            params["film_grain_intensity"] = film_grain_intensity
+        if chromatic_aberration != 0.0:
+            params["chromatic_aberration"] = chromatic_aberration
+        if lens_flare_intensity != 0.0:
+            params["lens_flare_intensity"] = lens_flare_intensity
 
         response = unreal.send_command("set_post_process_volume", params)
         return response or make_error_response("No response from Unreal")

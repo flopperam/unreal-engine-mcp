@@ -330,3 +330,92 @@ def umg_tool(
     except Exception as exc:
         logger.error("umg_tool error: %s", exc)
         return make_error_response(str(exc))
+
+
+@mcp.tool()
+def create_widget_instance(
+    widget_blueprint: str,
+    instance_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create a runtime UserWidget instance without adding it to the viewport.
+
+    widget_blueprint: Path to the Widget Blueprint asset
+    instance_name: Optional custom name for the runtime instance
+    """
+    try:
+        validate_string(widget_blueprint, "widget_blueprint")
+    except ValidationError as exc:
+        return make_validation_error_response_from_exception(exc)
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    params: Dict[str, Any] = {"widget_blueprint": widget_blueprint}
+    _put(params, "instance_name", instance_name)
+    response = unreal.send_command("create_widget_instance", params)
+    return response or make_error_response("No response from Unreal")
+
+
+@mcp.tool()
+def bind_widget_health_bar(
+    widget_blueprint: str,
+    widget_name: str,
+    function_name: str = "GetHealthPercent",
+) -> Dict[str, Any]:
+    """Bind a ProgressBar widget's Percent property to a health getter function.
+
+    widget_blueprint: Path to the Widget Blueprint asset
+    widget_name: Name of the ProgressBar widget
+    function_name: Name of the getter function in the Widget Blueprint (default: GetHealthPercent)
+    """
+    try:
+        validate_string(widget_blueprint, "widget_blueprint")
+        validate_string(widget_name, "widget_name")
+        validate_string(function_name, "function_name")
+    except ValidationError as exc:
+        return make_validation_error_response_from_exception(exc)
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    response = unreal.send_command(
+        "bind_widget_property",
+        {
+            "widget_blueprint": widget_blueprint,
+            "widget_name": widget_name,
+            "property_name": "Percent",
+            "function_name": function_name,
+        },
+    )
+    return response or make_error_response("No response from Unreal")
+
+
+@mcp.tool()
+def bind_widget_score_text(
+    widget_blueprint: str,
+    widget_name: str,
+    function_name: str = "GetScoreText",
+) -> Dict[str, Any]:
+    """Bind a TextBlock widget's Text property to a score getter function.
+
+    widget_blueprint: Path to the Widget Blueprint asset
+    widget_name: Name of the TextBlock widget
+    function_name: Name of the getter function in the Widget Blueprint (default: GetScoreText)
+    """
+    try:
+        validate_string(widget_blueprint, "widget_blueprint")
+        validate_string(widget_name, "widget_name")
+        validate_string(function_name, "function_name")
+    except ValidationError as exc:
+        return make_validation_error_response_from_exception(exc)
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response("Failed to connect to Unreal Engine")
+    response = unreal.send_command(
+        "bind_widget_property",
+        {
+            "widget_blueprint": widget_blueprint,
+            "widget_name": widget_name,
+            "property_name": "Text",
+            "function_name": function_name,
+        },
+    )
+    return response or make_error_response("No response from Unreal")

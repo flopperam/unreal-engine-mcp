@@ -4,6 +4,9 @@
 #include "Editor.h"
 #include "ShaderCompiler.h"
 #include "Engine/PostProcessVolume.h"
+#include "Camera/CameraActor.h"
+#include "CineCameraActor.h"
+#include "CineCameraComponent.h"
 #include "Kismet/GameplayStatics.h"
 
 FEpicUnrealMCPRenderingCommands::FEpicUnrealMCPRenderingCommands()
@@ -85,6 +88,9 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleCommand(const FSt
         {TEXT("set_nanite_visualization"), &FEpicUnrealMCPRenderingCommands::HandleSetNaniteVisualization},
         {TEXT("get_shader_compile_status"), &FEpicUnrealMCPRenderingCommands::HandleGetShaderCompileStatus},
         {TEXT("set_post_process_volume"), &FEpicUnrealMCPRenderingCommands::HandleSetPostProcessVolume},
+        {TEXT("spawn_camera_actor"), &FEpicUnrealMCPRenderingCommands::HandleSpawnCameraActor},
+        {TEXT("spawn_cine_camera_actor"), &FEpicUnrealMCPRenderingCommands::HandleSpawnCineCameraActor},
+        {TEXT("set_camera_properties"), &FEpicUnrealMCPRenderingCommands::HandleSetCameraProperties},
     };
 
     const Handler* H = Dispatch.Find(CommandType);
@@ -512,10 +518,275 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleSetPostProcessVol
         Settings.DepthOfFieldFstop = static_cast<float>(DofAperture);
     }
 
+    double ColorTemperature = 0.0;
+    if (Params->TryGetNumberField(TEXT("color_temperature"), ColorTemperature))
+    {
+        Settings.bOverride_WhiteTemp = true;
+        Settings.WhiteTemp = static_cast<float>(ColorTemperature);
+    }
+
+    double ColorTint = 0.0;
+    if (Params->TryGetNumberField(TEXT("color_tint"), ColorTint))
+    {
+        Settings.bOverride_WhiteTint = true;
+        Settings.WhiteTint = static_cast<float>(ColorTint);
+    }
+
+    double MotionBlurAmount = 0.0;
+    if (Params->TryGetNumberField(TEXT("motion_blur_amount"), MotionBlurAmount))
+    {
+        Settings.bOverride_MotionBlurAmount = true;
+        Settings.MotionBlurAmount = static_cast<float>(MotionBlurAmount);
+    }
+
+    double AoIntensity = 0.0;
+    if (Params->TryGetNumberField(TEXT("ao_intensity"), AoIntensity))
+    {
+        Settings.bOverride_AmbientOcclusionIntensity = true;
+        Settings.AmbientOcclusionIntensity = static_cast<float>(AoIntensity);
+    }
+
+    double AoRadius = 0.0;
+    if (Params->TryGetNumberField(TEXT("ao_radius"), AoRadius))
+    {
+        Settings.bOverride_AmbientOcclusionRadius = true;
+        Settings.AmbientOcclusionRadius = static_cast<float>(AoRadius);
+    }
+
+    double VignetteIntensity = 0.0;
+    if (Params->TryGetNumberField(TEXT("vignette_intensity"), VignetteIntensity))
+    {
+        Settings.bOverride_VignetteIntensity = true;
+        Settings.VignetteIntensity = static_cast<float>(VignetteIntensity);
+    }
+
+    double FilmGrainIntensity = 0.0;
+    if (Params->TryGetNumberField(TEXT("film_grain_intensity"), FilmGrainIntensity))
+    {
+        Settings.bOverride_FilmGrainIntensity = true;
+        Settings.FilmGrainIntensity = static_cast<float>(FilmGrainIntensity);
+    }
+
+    double ChromaticAberration = 0.0;
+    if (Params->TryGetNumberField(TEXT("chromatic_aberration"), ChromaticAberration))
+    {
+        Settings.bOverride_SceneFringeIntensity = true;
+        Settings.SceneFringeIntensity = static_cast<float>(ChromaticAberration);
+    }
+
+    double LensFlareIntensity = 0.0;
+    if (Params->TryGetNumberField(TEXT("lens_flare_intensity"), LensFlareIntensity))
+    {
+        Settings.bOverride_LensFlareIntensity = true;
+        Settings.LensFlareIntensity = static_cast<float>(LensFlareIntensity);
+    }
+
     TargetVolume->MarkDirty();
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
     Result->SetStringField(TEXT("volume_name"), VolumeName);
+    return Result;
+}
+
+// ------------------------------------------------------------------
+// Camera Actor
+// ------------------------------------------------------------------
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleSpawnCameraActor(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName;
+    if (!Params->TryGetStringField(TEXT("name"), ActorName) || ActorName.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'name' parameter"));
+    }
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor world available"));
+    }
+
+    FVector Location(0.0f, 0.0f, 0.0f);
+    FRotator Rotation(0.0f, 0.0f, 0.0f);
+    FString ParamError;
+    if (Params->HasField(TEXT("location")))
+    {
+        if (!FEpicUnrealMCPCommonUtils::TryGetVectorFromJson(Params, TEXT("location"), Location, ParamError))
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid 'location': %s"), *ParamError));
+        }
+    }
+    if (Params->HasField(TEXT("rotation")))
+    {
+        if (!FEpicUnrealMCPCommonUtils::TryGetRotatorFromJson(Params, TEXT("rotation"), Rotation, ParamError))
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid 'rotation': %s"), *ParamError));
+        }
+    }
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Name = *ActorName;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    SpawnParams.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
+
+    ACameraActor* Camera = World->SpawnActor<ACameraActor>(ACameraActor::StaticClass(), Location, Rotation, SpawnParams);
+    if (!Camera)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to spawn CameraActor"));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("actor_name"), Camera->GetName());
+    Result->SetStringField(TEXT("actor_class"), Camera->GetClass()->GetName());
+    Result->SetStringField(TEXT("actor_type"), TEXT("CameraActor"));
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleSpawnCineCameraActor(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName;
+    if (!Params->TryGetStringField(TEXT("name"), ActorName) || ActorName.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'name' parameter"));
+    }
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor world available"));
+    }
+
+    FVector Location(0.0f, 0.0f, 0.0f);
+    FRotator Rotation(0.0f, 0.0f, 0.0f);
+    FString ParamError;
+    if (Params->HasField(TEXT("location")))
+    {
+        if (!FEpicUnrealMCPCommonUtils::TryGetVectorFromJson(Params, TEXT("location"), Location, ParamError))
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid 'location': %s"), *ParamError));
+        }
+    }
+    if (Params->HasField(TEXT("rotation")))
+    {
+        if (!FEpicUnrealMCPCommonUtils::TryGetRotatorFromJson(Params, TEXT("rotation"), Rotation, ParamError))
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Invalid 'rotation': %s"), *ParamError));
+        }
+    }
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Name = *ActorName;
+    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    SpawnParams.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
+
+    ACineCameraActor* Camera = World->SpawnActor<ACineCameraActor>(ACineCameraActor::StaticClass(), Location, Rotation, SpawnParams);
+    if (!Camera)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to spawn CineCameraActor"));
+    }
+
+    UCineCameraComponent* CineComp = Camera->GetCineCameraComponent();
+    if (CineComp)
+    {
+        double FocalLength = 0.0;
+        if (Params->TryGetNumberField(TEXT("focal_length"), FocalLength) && FocalLength > 0.0)
+        {
+            CineComp->SetCurrentFocalLength(static_cast<float>(FocalLength));
+        }
+        double Aperture = 0.0;
+        if (Params->TryGetNumberField(TEXT("aperture"), Aperture) && Aperture > 0.0)
+        {
+            CineComp->SetCurrentAperture(static_cast<float>(Aperture));
+        }
+        double FocusDistance = 0.0;
+        if (Params->TryGetNumberField(TEXT("focus_distance"), FocusDistance) && FocusDistance >= 0.0)
+        {
+            CineComp->SetFocusDistance(static_cast<float>(FocusDistance));
+        }
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("actor_name"), Camera->GetName());
+    Result->SetStringField(TEXT("actor_class"), Camera->GetClass()->GetName());
+    Result->SetStringField(TEXT("actor_type"), TEXT("CineCameraActor"));
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleSetCameraProperties(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName;
+    if (!Params->TryGetStringField(TEXT("name"), ActorName) || ActorName.IsEmpty())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'name' parameter"));
+    }
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No editor world available"));
+    }
+
+    AActor* TargetActor = nullptr;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (It->GetName() == ActorName)
+        {
+            TargetActor = *It;
+            break;
+        }
+    }
+
+    if (!TargetActor)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Actor not found: %s"), *ActorName));
+    }
+
+    UCineCameraComponent* CineComp = nullptr;
+    if (ACineCameraActor* CineCamera = Cast<ACineCameraActor>(TargetActor))
+    {
+        CineComp = CineCamera->GetCineCameraComponent();
+    }
+    else if (ACameraActor* Camera = Cast<ACameraActor>(TargetActor))
+    {
+        // Regular CameraActor doesn't have CineCameraComponent
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("CameraActor does not support CineCameraComponent properties. Use CineCameraActor instead."));
+    }
+    else
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Actor is not a CameraActor or CineCameraActor"));
+    }
+
+    if (!CineComp)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("CineCameraComponent not found on actor"));
+    }
+
+    double FocalLength = 0.0;
+    if (Params->TryGetNumberField(TEXT("focal_length"), FocalLength) && FocalLength > 0.0)
+    {
+        CineComp->SetCurrentFocalLength(static_cast<float>(FocalLength));
+    }
+    double Aperture = 0.0;
+    if (Params->TryGetNumberField(TEXT("aperture"), Aperture) && Aperture > 0.0)
+    {
+        CineComp->SetCurrentAperture(static_cast<float>(Aperture));
+    }
+    double FocusDistance = 0.0;
+    if (Params->TryGetNumberField(TEXT("focus_distance"), FocusDistance) && FocusDistance >= 0.0)
+    {
+        CineComp->SetFocusDistance(static_cast<float>(FocusDistance));
+    }
+
+    TargetActor->MarkPackageDirty();
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("actor_name"), ActorName);
+    Result->SetNumberField(TEXT("focal_length"), CineComp->CurrentFocalLength);
+    Result->SetNumberField(TEXT("aperture"), CineComp->CurrentAperture);
+    Result->SetNumberField(TEXT("focus_distance"), CineComp->CurrentFocusDistance);
     return Result;
 }

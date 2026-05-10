@@ -812,6 +812,7 @@ namespace
             {TEXT("set_ui_input_mode"), 11},
             {TEXT("set_mouse_cursor_visible"), 11},
             {TEXT("create_ui_template"), 11},
+            {TEXT("create_widget_instance"), 11},
 
             // Rendering Commands (12)
             {TEXT("set_global_illumination"), 12},
@@ -827,6 +828,10 @@ namespace
             {TEXT("set_upscaler"), 12},
             {TEXT("set_nanite_visualization"), 12},
             {TEXT("get_shader_compile_status"), 12},
+            {TEXT("set_post_process_volume"), 12},
+            {TEXT("spawn_camera_actor"), 12},
+            {TEXT("spawn_cine_camera_actor"), 12},
+            {TEXT("set_camera_properties"), 12},
 
             // Lighting / Atmosphere Commands (13)
             {TEXT("set_light_intensity"), 13},
