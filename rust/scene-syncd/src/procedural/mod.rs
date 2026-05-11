@@ -1,3 +1,4 @@
+pub mod generator;
 pub mod lsystem;
 pub mod marching_cubes;
 pub mod mesh_buffer;

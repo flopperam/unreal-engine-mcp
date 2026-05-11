@@ -1,4 +1,5 @@
 use crc32fast::Hasher;
+use serde::Serialize;
 
 pub const MCPM_MAGIC: u32 = 0x4D43504D; // 'MCPM'
 pub const MCPM_VERSION: u32 = 1;
@@ -28,6 +29,29 @@ pub struct ProceduralMeshHeader {
     pub reserved: u32,
     pub request_id: u64,
     pub mcp_id: [u8; 64],
+}
+
+impl Serialize for ProceduralMeshHeader {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("ProceduralMeshHeader", 11)?;
+        s.serialize_field("magic", &self.magic)?;
+        s.serialize_field("version", &self.version)?;
+        s.serialize_field("header_size", &self.header_size)?;
+        s.serialize_field("flags", &self.flags)?;
+        s.serialize_field("vertex_count", &self.vertex_count)?;
+        s.serialize_field("index_count", &self.index_count)?;
+        s.serialize_field("payload_crc32", &self.payload_crc32)?;
+        s.serialize_field("reserved", &self.reserved)?;
+        s.serialize_field("request_id", &self.request_id)?;
+        let mcp_str = std::ffi::CStr::from_bytes_until_nul(&self.mcp_id)
+            .unwrap_or(std::ffi::CStr::from_bytes_with_nul(b"\0").unwrap())
+            .to_str()
+            .unwrap_or("")
+            .to_string();
+        s.serialize_field("mcp_id", &mcp_str)?;
+        s.end()
+    }
 }
 
 impl ProceduralMeshHeader {

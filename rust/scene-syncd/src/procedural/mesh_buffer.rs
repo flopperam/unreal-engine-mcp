@@ -1,7 +1,8 @@
 use crate::procedural::protocol::*;
+use serde::Serialize;
 use std::borrow::Cow;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ProceduralMeshPayload<'a> {
     pub header: ProceduralMeshHeader,
     pub positions: Cow<'a, [[f32; 3]]>,

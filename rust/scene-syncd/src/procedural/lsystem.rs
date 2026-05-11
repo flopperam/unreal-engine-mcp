@@ -1,14 +1,15 @@
 use glam::{Quat, Vec3};
+use serde::{Deserialize, Serialize};
 
-/// A single segment produced by the L-System turtle.
-#[derive(Debug, Clone)]
-pub struct SplineSegment {
-    pub start: [f32; 3],
-    pub end: [f32; 3],
-}
+use crate::procedural::generator::{
+    GenerateContext, Generator, ProceduralError, ProceduralEstimate, ProceduralOutput,
+    ProceduralResultVariant, ProceduralStats, ProceduralWarning, SplineSegment,
+};
+
+// ── Data Types ──────────────────────────────────────────────────────────
 
 /// Result of an L-System evaluation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct LSystemResult {
     pub segments: Vec<SplineSegment>,
     /// The final derived string (for debugging)
@@ -16,7 +17,7 @@ pub struct LSystemResult {
 }
 
 /// Parameters for an L-System.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LSystemParams {
     /// Axiom (initial string)
     pub axiom: String,
@@ -51,18 +52,102 @@ impl Default for LSystemParams {
     }
 }
 
-/// Turtle state for 3D L-System interpretation.
-#[derive(Debug, Clone)]
-struct TurtleState {
-    pos: Vec3,
-    heading: Vec3,
-    left: Vec3,
-    up: Vec3,
+// ── Generator Implementation ────────────────────────────────────────────
+
+/// L-System generator conforming to the unified `Generator` trait.
+#[derive(Debug, Clone, Default)]
+pub struct LSystemGenerator;
+
+impl Generator for LSystemGenerator {
+    type Params = LSystemParams;
+    type Output = LSystemResult;
+
+    fn name(&self) -> &'static str {
+        "lsystem"
+    }
+
+    fn validate(&self, params: &Self::Params) -> Result<(), ProceduralError> {
+        if params.axiom.is_empty() {
+            return Err(ProceduralError::Validation(
+                "Axiom cannot be empty".to_string(),
+            ));
+        }
+        if params.step_length <= 0.0 {
+            return Err(ProceduralError::Validation(
+                "step_length must be positive".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn estimate(&self, params: &Self::Params) -> Result<ProceduralEstimate, ProceduralError> {
+        let iterations = params.iterations.min(10) as usize;
+        let estimated_segments = params
+            .axiom
+            .len()
+            .checked_mul(5usize.pow(iterations as u32))
+            .unwrap_or(usize::MAX);
+        let capped_segments = estimated_segments.min(1_000_000);
+        Ok(ProceduralEstimate {
+            estimated_actor_count: 1, // one spline actor
+            estimated_execution_ms: 10,
+            ..Default::default()
+        })
+    }
+
+    fn generate(
+        &self,
+        params: &Self::Params,
+        ctx: &GenerateContext,
+    ) -> Result<ProceduralOutput<Self::Output>, ProceduralError> {
+        let start = std::time::Instant::now();
+        let effective_iterations = params.iterations.min(ctx.limits.max_iterations);
+
+        let derived = derive(params, effective_iterations);
+        let segments = interpret(&derived, params);
+
+        if segments.is_empty() {
+            return Err(ProceduralError::EmptyResult);
+        }
+
+        let mut warnings = Vec::new();
+        if effective_iterations < params.iterations {
+            warnings.push(ProceduralWarning::IterationCapped {
+                requested: params.iterations,
+                applied: effective_iterations,
+            });
+        }
+
+        let segment_count = segments.len();
+        let derived_length = derived.len();
+        let result = LSystemResult {
+            segments,
+            derived_string: derived,
+        };
+
+        let elapsed = start.elapsed().as_millis() as u64;
+
+        Ok(ProceduralOutput {
+            data: result,
+            stats: ProceduralStats {
+                execution_ms: elapsed,
+                seed_used: ctx.seed,
+                derived_length: Some(derived_length),
+                segment_count: Some(segment_count),
+                ..Default::default()
+            },
+            warnings,
+        })
+    }
 }
 
+// ── Core Evaluation (backward-compatible free function) ─────────────────
+
 /// Evaluate an L-System: derive the string, then interpret it with a 3D turtle.
+/// This function is kept for backward compatibility; new code should use
+/// `LSystemGenerator::default().generate(...)`.
 pub fn evaluate_lsystem(params: &LSystemParams) -> LSystemResult {
-    let derived = derive(params);
+    let derived = derive(params, params.iterations.min(10));
     let segments = interpret(&derived, params);
     LSystemResult {
         segments,
@@ -70,10 +155,11 @@ pub fn evaluate_lsystem(params: &LSystemParams) -> LSystemResult {
     }
 }
 
-/// Derive the L-System string by applying production rules for N iterations.
-fn derive(params: &LSystemParams) -> String {
+// ── Internal Implementation ─────────────────────────────────────────────
+
+fn derive(params: &LSystemParams, effective_iterations: u32) -> String {
     let mut current = params.axiom.clone();
-    let iterations = params.iterations.min(10) as usize; // cap to prevent explosion
+    let iterations = effective_iterations as usize;
 
     for _ in 0..iterations {
         let mut next = String::with_capacity(current.len() * 4);
@@ -89,6 +175,15 @@ fn derive(params: &LSystemParams) -> String {
     current
 }
 
+/// Turtle state for 3D L-System interpretation.
+#[derive(Debug, Clone)]
+struct TurtleState {
+    pos: Vec3,
+    heading: Vec3,
+    left: Vec3,
+    up: Vec3,
+}
+
 /// Interpret the derived string using a 3D turtle.
 /// Supported symbols:
 ///   F, G — move forward and draw a segment
@@ -97,7 +192,7 @@ fn derive(params: &LSystemParams) -> String {
 ///   -    — turn right (yaw)
 ///   &    — pitch down
 ///   ^    — pitch up
-///   \\   — roll left
+///   \   — roll left
 ///   /    — roll right
 ///   [    — push state
 ///   ]    — pop state
@@ -133,37 +228,31 @@ fn interpret(string: &str, params: &LSystemParams) -> Vec<SplineSegment> {
                 state.pos = state.pos + state.heading * params.step_length;
             }
             '+' => {
-                // Turn left (yaw around up axis)
                 let rot = Quat::from_axis_angle(state.up, angle);
                 state.heading = rot * state.heading;
                 state.left = rot * state.left;
             }
             '-' => {
-                // Turn right (yaw around up axis, negative)
                 let rot = Quat::from_axis_angle(state.up, -angle);
                 state.heading = rot * state.heading;
                 state.left = rot * state.left;
             }
             '&' => {
-                // Pitch down (rotate around left axis)
                 let rot = Quat::from_axis_angle(state.left, angle);
                 state.heading = rot * state.heading;
                 state.up = rot * state.up;
             }
             '^' => {
-                // Pitch up (rotate around left axis, negative)
                 let rot = Quat::from_axis_angle(state.left, -angle);
                 state.heading = rot * state.heading;
                 state.up = rot * state.up;
             }
             '\\' => {
-                // Roll left (rotate around heading axis)
                 let rot = Quat::from_axis_angle(state.heading, angle);
                 state.left = rot * state.left;
                 state.up = rot * state.up;
             }
             '/' => {
-                // Roll right (rotate around heading axis, negative)
                 let rot = Quat::from_axis_angle(state.heading, -angle);
                 state.left = rot * state.left;
                 state.up = rot * state.up;
@@ -183,9 +272,68 @@ fn interpret(string: &str, params: &LSystemParams) -> Vec<SplineSegment> {
     segments
 }
 
+// ── Tests ───────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_generator_trait() {
+        let gen = LSystemGenerator::default();
+        assert_eq!(gen.name(), "lsystem");
+
+        let ctx = GenerateContext::new(None, None);
+        let params = LSystemParams::default();
+        let output = gen.generate(&params, &ctx).unwrap();
+        assert!(!output.data.segments.is_empty());
+        assert!(output.stats.segment_count.unwrap() > 0);
+    }
+
+    #[test]
+    fn test_generator_validate_empty_axiom() {
+        let gen = LSystemGenerator;
+        let params = LSystemParams {
+            axiom: "".to_string(),
+            ..Default::default()
+        };
+        assert!(gen.validate(&params).is_err());
+    }
+
+    #[test]
+    fn test_generator_validate_negative_step() {
+        let gen = LSystemGenerator;
+        let params = LSystemParams {
+            step_length: -1.0,
+            ..Default::default()
+        };
+        assert!(gen.validate(&params).is_err());
+    }
+
+    #[test]
+    fn test_generator_estimate() {
+        let gen = LSystemGenerator;
+        let params = LSystemParams::default();
+        let estimate = gen.estimate(&params).unwrap();
+        assert_eq!(estimate.estimated_actor_count, 1);
+    }
+
+    #[test]
+    fn test_generator_empty_result() {
+        let gen = LSystemGenerator;
+        let params = LSystemParams {
+            axiom: "f".to_string(),
+            rules: vec![],
+            iterations: 0,
+            step_length: 1.0,
+            ..Default::default()
+        };
+        let ctx = GenerateContext::new(None, None);
+        assert!(matches!(
+            gen.generate(&params, &ctx),
+            Err(ProceduralError::EmptyResult)
+        ));
+    }
 
     #[test]
     fn test_koch_curve() {
@@ -201,7 +349,6 @@ mod tests {
         };
         let result = evaluate_lsystem(&params);
         assert!(result.segments.len() > 0, "should produce segments");
-        // Koch curve with 2 iterations of F → F+F-F-F+F produces 5^2 = 25 F symbols
         assert_eq!(result.segments.len(), 25);
     }
 
@@ -235,7 +382,6 @@ mod tests {
             up: [0.0, 1.0, 0.0],
         };
         let result = evaluate_lsystem(&params);
-        // F → F[+F]F[-F]F has 5 F symbols
         assert_eq!(result.segments.len(), 5);
     }
 
@@ -253,9 +399,7 @@ mod tests {
         };
         let result = evaluate_lsystem(&params);
         assert_eq!(result.segments.len(), 3);
-        // After [, the turtle branches. After ], it returns to the pre-[ position.
         let last = &result.segments[2];
-        // The last F starts where the first F ended, not where the branched F ended
         assert!(
             (last.start[0] - 1.0).abs() < 1e-4,
             "should return to main branch"
@@ -267,13 +411,12 @@ mod tests {
         let params = LSystemParams {
             axiom: "F".to_string(),
             rules: vec![('F', "FF".to_string())],
-            iterations: 20, // over the cap
+            iterations: 20,
             step_length: 1.0,
             angle_degrees: 90.0,
             ..Default::default()
         };
         let result = evaluate_lsystem(&params);
-        // With cap at 10, F→FF^10 = 2^10 = 1024 F symbols
         assert_eq!(result.segments.len(), 1024);
     }
 
@@ -291,7 +434,6 @@ mod tests {
         };
         let result = evaluate_lsystem(&params);
         assert_eq!(result.segments.len(), 1);
-        // The segment starts at x=1 (after 'f' move), ends at x=2
         assert!((result.segments[0].start[0] - 1.0).abs() < 1e-4);
         assert!((result.segments[0].end[0] - 2.0).abs() < 1e-4);
     }
@@ -310,11 +452,6 @@ mod tests {
         };
         let result = evaluate_lsystem(&params);
         assert_eq!(result.segments.len(), 3);
-        // After F: pos = (1,0,0), heading=(1,0,0)
-        // After &: pitch down 90° → heading = (1,0,0) rotated 90° down = (0,0,-1)
-        // After F: pos = (1,0,-1)
-        // After ^: pitch up 90° → heading back to (1,0,0)
-        // After F: pos = (2,0,-1)
         let last = &result.segments[2];
         assert!((last.end[0] - 2.0).abs() < 1e-3);
         assert!((last.end[2] - (-1.0)).abs() < 1e-3);
