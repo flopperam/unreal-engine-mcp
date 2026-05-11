@@ -28,7 +28,7 @@ from server import (
     material_graph_tools, material_tools, umg_tools, world_building_tools, lighting_tools,
     rendering_tools, data_table_tools, audio_tools, project_editor_tools,
     asset_management_tools, asset_import_tools, mesh_editing_tools, enhanced_input_tools,
-    scene_tools, vertical_test_tools,
+    scene_tools, vertical_test_tools, vroid_tools,
 )
 
 
@@ -56,7 +56,7 @@ def _patch_tool_connections(fake_conn):
         material_graph_tools, material_tools, umg_tools, world_building_tools, lighting_tools,
         rendering_tools, data_table_tools, audio_tools, project_editor_tools,
         asset_management_tools, asset_import_tools, mesh_editing_tools, enhanced_input_tools,
-        scene_tools, vertical_test_tools,
+        scene_tools, vertical_test_tools, vroid_tools,
     ]:
         stack.enter_context(patch.object(module, "get_unreal_connection", return_value=fake_conn, create=True))
     return stack
@@ -148,6 +148,11 @@ class TestToolCommandMapping:
         ("build_lighting", "build_lighting"),
         ("set_lighting_scenario", "set_lighting_scenario"),
         ("set_megaliights", "set_megaliights"),
+        # Vroid / VRM tools
+        ("vroid_check_plugin", "vroid_check_plugin"),
+        ("vroid_import_vrm", "vroid_import_vrm"),
+        ("vroid_spawn_avatar", "vroid_spawn_avatar"),
+        ("vroid_validate_avatar_asset", "vroid_validate_avatar_asset"),
     ])
     def test_tool_calls_expected_command(self, tool_name, expected_cmd, fake_conn):
         fn = getattr(srv, tool_name)
@@ -166,6 +171,14 @@ class TestToolCommandMapping:
                 kwargs[name] = "Stationary"
             elif name == "type" and "capture" in tool_name:
                 kwargs[name] = "Sphere"
+            elif name == "source_path" and tool_name.startswith("vroid_"):
+                kwargs[name] = "C:/Test.vrm"
+            elif name == "destination_path" and tool_name.startswith("vroid_"):
+                kwargs[name] = "/Game/Avatars"
+            elif name == "skeletal_mesh_path" and tool_name.startswith("vroid_"):
+                kwargs[name] = "/Game/Avatars/Test.Test"
+            elif name == "asset_path" and tool_name.startswith("vroid_"):
+                kwargs[name] = "/Game/Avatars/Test.Test"
             elif param.default is not inspect.Parameter.empty:
                 kwargs[name] = param.default
             elif param.annotation == list:
@@ -393,6 +406,7 @@ class TestPythonToCppCommandMapping:
             "scene_create_sdf_mesh",
             "scene_create_superformula_mesh",
             "scene_create_lsystem_spline",
+            "scene_create_wfc_grid",
             "apply_blueprint_json",
             "export_blueprint_json",
             "apply_material_json",
@@ -425,6 +439,14 @@ class TestPythonToCppCommandMapping:
                     kwargs[pname] = "Stationary"
                 elif pname == "type" and "capture" in tool_name:
                     kwargs[pname] = "Sphere"
+                elif pname == "source_path" and tool_name.startswith("vroid_"):
+                    kwargs[pname] = "C:/Test.vrm"
+                elif pname == "destination_path" and tool_name.startswith("vroid_"):
+                    kwargs[pname] = "/Game/Avatars"
+                elif pname == "skeletal_mesh_path" and tool_name.startswith("vroid_"):
+                    kwargs[pname] = "/Game/Avatars/Test.Test"
+                elif pname == "asset_path" and tool_name.startswith("vroid_"):
+                    kwargs[pname] = "/Game/Avatars/Test.Test"
                 elif param.default is not inspect.Parameter.empty: kwargs[pname] = param.default
                 elif param.annotation == list: kwargs[pname] = [0.0, 0.0, 0.0]
                 elif param.annotation == str: kwargs[pname] = "TestName"

@@ -94,3 +94,62 @@ class TestPhase1ProceduralGeneration:
 
         found = unreal_command("find_actor_by_mcp_id", {"mcp_id": "E2E_Phase1_LSystemSpline"})
         assert found.get("result", {}).get("success") is True
+
+    def test_lsystem_preset_reaches_unreal(self, scene_syncd_available):
+        if not scene_syncd_available:
+            pytest.skip("scene-syncd not available")
+
+        result = api_post("/procedural/lsystem-spline", {
+            "mcp_id": "E2E_Phase1_LSystemPreset",
+            "spline_name": "E2E_Phase1_LSystemPreset",
+            "preset": "Tree3D",
+            "iterations": 2,
+            "step_length": 70.0,
+            "origin": [900.0, 0.0, 700.0],
+            "heading": [0.0, 0.0, 1.0],
+            "up": [0.0, 1.0, 0.0],
+            "tangent_mode": "curve",
+            "focus_viewport": False,
+        })
+
+        data = assert_success(result, "create L-System spline from preset")
+        assert data["segment_count"] > 0
+        unreal = data["unreal_response"]
+        assert unreal["success"] is True
+        assert unreal["component_count"] >= 1
+        assert unreal["point_count"] >= data["segment_count"]
+
+        found = unreal_command("find_actor_by_mcp_id", {"mcp_id": "E2E_Phase1_LSystemPreset"})
+        assert found.get("result", {}).get("success") is True
+
+    def test_wfc_grid_generation(self, scene_syncd_available):
+        if not scene_syncd_available:
+            pytest.skip("scene-syncd not available")
+
+        result = api_post("/procedural/wfc-grid", {
+            "width": 4,
+            "height": 4,
+            "tileset": {
+                "tiles": [
+                    {"id": "grass", "weight": 1.0},
+                    {"id": "water", "weight": 0.5},
+                ],
+                "constraints": [
+                    {"left": "grass", "right": "grass", "direction": "east"},
+                    {"left": "water", "right": "water", "direction": "east"},
+                    {"left": "grass", "right": "grass", "direction": "south"},
+                    {"left": "water", "right": "water", "direction": "south"},
+                ],
+            },
+            "seed": 42,
+            "periodic": False,
+        })
+
+        data = assert_success(result, "generate WFC grid")
+        assert data["width"] == 4
+        assert data["height"] == 4
+        assert len(data["tiles"]) == 16
+        for tile in data["tiles"]:
+            assert tile["tile_id"] in ("grass", "water")
+            assert 0 <= tile["x"] < 4
+            assert 0 <= tile["y"] < 4
