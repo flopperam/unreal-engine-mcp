@@ -2213,6 +2213,8 @@ pub struct LSystemSplineRequest {
     #[serde(default)]
     pub up: Option<[f32; 3]>,
     #[serde(default)]
+    pub preset: Option<String>,
+    #[serde(default)]
     pub closed_loop: bool,
     #[serde(default = "default_ls_tangent_mode")]
     pub tangent_mode: String,
@@ -2252,24 +2254,43 @@ pub async fn lsystem_spline_route(
     State(state): State<AppState>,
     Json(req): Json<LSystemSplineRequest>,
 ) -> Result<Json<Value>, AppError> {
-    use crate::procedural::lsystem::{evaluate_lsystem, LSystemParams};
+    use crate::procedural::lsystem::{evaluate_lsystem, DimensionMode, LSystemParams};
 
-    let rules: Vec<(char, String)> = req
-        .rules
-        .iter()
-        .filter_map(|[sym, repl]| sym.chars().next().map(|c| (c, repl.clone())))
-        .collect();
+    let mut params = if let Some(preset_name) = &req.preset {
+        crate::procedural::lsystem_presets::resolve_preset(preset_name)
+            .ok_or_else(|| AppError::Validation(format!("Unknown preset: {}", preset_name)))?
+    } else {
+        let rules: Vec<(char, String)> = req
+            .rules
+            .iter()
+            .filter_map(|[sym, repl]| sym.chars().next().map(|c| (c, repl.clone())))
+            .collect();
 
-    let params = LSystemParams {
-        axiom: req.axiom.clone(),
-        rules,
-        iterations: req.iterations.min(10),
-        step_length: req.step_length,
-        angle_degrees: req.angle_degrees,
-        origin: req.origin.unwrap_or([0.0, 0.0, 0.0]),
-        heading: req.heading.unwrap_or([1.0, 0.0, 0.0]),
-        up: req.up.unwrap_or([0.0, 0.0, 1.0]),
+        LSystemParams {
+            axiom: req.axiom.clone(),
+            rules,
+            iterations: req.iterations,
+            step_length: req.step_length,
+            angle_degrees: req.angle_degrees,
+            origin: req.origin.unwrap_or([0.0, 0.0, 0.0]),
+            heading: req.heading.unwrap_or([1.0, 0.0, 0.0]),
+            up: req.up.unwrap_or([0.0, 0.0, 1.0]),
+            dimension_mode: DimensionMode::ThreeD,
+        }
     };
+
+    // Allow common tuning fields to override preset values.
+    params.iterations = req.iterations.min(10);
+    params.step_length = req.step_length;
+    if let Some(origin) = req.origin {
+        params.origin = origin;
+    }
+    if let Some(heading) = req.heading {
+        params.heading = heading;
+    }
+    if let Some(up) = req.up {
+        params.up = up;
+    }
 
     let result = evaluate_lsystem(&params);
     if result.segments.is_empty() {
@@ -2317,6 +2338,52 @@ pub async fn lsystem_spline_route(
         "closed_loop": req.closed_loop,
         "tangent_mode": req.tangent_mode,
         "unreal_response": unreal_response,
+    }))))
+}
+
+// ── Phase 1: WFC Grid ─────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct WfcGridRequest {
+    pub width: u32,
+    pub height: u32,
+    pub tileset: crate::procedural::wfc::WfcTileset,
+    #[serde(default)]
+    pub seed: Option<u64>,
+    #[serde(default)]
+    pub periodic: bool,
+}
+
+pub async fn wfc_grid_route(
+    State(_state): State<AppState>,
+    Json(req): Json<WfcGridRequest>,
+) -> Result<Json<Value>, AppError> {
+    use crate::procedural::generator::{GenerateContext, GenerationLimits};
+    use crate::procedural::wfc::{WfcGenerator, WfcParams};
+    use crate::procedural::generator::Generator;
+
+    let mut limits = GenerationLimits::default();
+    limits.max_iterations = (req.width * req.height * 100).max(1000) as u32;
+    let ctx = GenerateContext::new(req.seed, Some(limits));
+
+    let params = WfcParams {
+        width: req.width,
+        height: req.height,
+        tileset: req.tileset,
+        seed: req.seed,
+        periodic: req.periodic,
+    };
+
+    let gen = WfcGenerator;
+    let output = gen
+        .generate(&params, &ctx)
+        .map_err(|e| AppError::Validation(format!("WFC generation failed: {e}")))?;
+
+    Ok(Json(success_response(json!({
+        "width": output.data.width,
+        "height": output.data.height,
+        "tiles": output.data.tiles,
+        "stats": output.stats,
     }))))
 }
 

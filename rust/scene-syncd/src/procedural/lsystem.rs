@@ -3,10 +3,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::procedural::generator::{
     GenerateContext, Generator, ProceduralError, ProceduralEstimate, ProceduralOutput,
-    ProceduralResultVariant, ProceduralStats, ProceduralWarning, SplineSegment,
+    ProceduralStats, ProceduralWarning, SplineSegment,
 };
 
 // ── Data Types ──────────────────────────────────────────────────────────
+
+/// Dimension mode for turtle interpretation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum DimensionMode {
+    /// Constrain drawing to the XY plane (Z is fixed to origin.z).
+    TwoD,
+    /// Full 3D movement.
+    #[default]
+    ThreeD,
+}
 
 /// Result of an L-System evaluation.
 #[derive(Debug, Clone, Serialize)]
@@ -35,6 +45,9 @@ pub struct LSystemParams {
     pub heading: [f32; 3],
     /// Initial up direction (normalized internally)
     pub up: [f32; 3],
+    /// Dimension mode (2D or 3D)
+    #[serde(default)]
+    pub dimension_mode: DimensionMode,
 }
 
 impl Default for LSystemParams {
@@ -48,6 +61,7 @@ impl Default for LSystemParams {
             origin: [0.0, 0.0, 0.0],
             heading: [1.0, 0.0, 0.0],
             up: [0.0, 0.0, 1.0],
+            dimension_mode: DimensionMode::ThreeD,
         }
     }
 }
@@ -85,9 +99,8 @@ impl Generator for LSystemGenerator {
         let estimated_segments = params
             .axiom
             .len()
-            .checked_mul(5usize.pow(iterations as u32))
-            .unwrap_or(usize::MAX);
-        let capped_segments = estimated_segments.min(1_000_000);
+            .saturating_mul(5usize.pow(iterations as u32));
+        let _capped_segments = estimated_segments.min(1_000_000);
         Ok(ProceduralEstimate {
             estimated_actor_count: 1, // one spline actor
             estimated_execution_ms: 10,
@@ -120,6 +133,7 @@ impl Generator for LSystemGenerator {
 
         let segment_count = segments.len();
         let derived_length = derived.len();
+        let bounds = compute_bounds(&segments);
         let result = LSystemResult {
             segments,
             derived_string: derived,
@@ -134,6 +148,7 @@ impl Generator for LSystemGenerator {
                 seed_used: ctx.seed,
                 derived_length: Some(derived_length),
                 segment_count: Some(segment_count),
+                bounds,
                 ..Default::default()
             },
             warnings,
@@ -190,16 +205,19 @@ struct TurtleState {
 ///   f    — move forward without drawing
 ///   +    — turn left (yaw)
 ///   -    — turn right (yaw)
-///   &    — pitch down
-///   ^    — pitch up
-///   \   — roll left
-///   /    — roll right
-///   [    — push state
+///        &    — pitch down
+///        ^    — pitch up
+///        \   — roll left
+///        /    — roll right
+///        [    — push state
 ///   ]    — pop state
 fn interpret(string: &str, params: &LSystemParams) -> Vec<SplineSegment> {
     let heading = Vec3::from(params.heading).normalize();
     let up = Vec3::from(params.up).normalize();
     let left = up.cross(heading).normalize();
+
+    let origin_z = params.origin[2];
+    let is_2d = matches!(params.dimension_mode, DimensionMode::TwoD);
 
     let mut state = TurtleState {
         pos: Vec3::from(params.origin),
@@ -213,19 +231,28 @@ fn interpret(string: &str, params: &LSystemParams) -> Vec<SplineSegment> {
 
     let angle = params.angle_degrees.to_radians();
 
-    let mut chars = string.chars().peekable();
-    while let Some(ch) = chars.next() {
+    for ch in string.chars() {
         match ch {
             'F' | 'G' => {
                 let new_pos = state.pos + state.heading * params.step_length;
+                let clamped_pos = if is_2d {
+                    Vec3::new(new_pos.x, new_pos.y, origin_z)
+                } else {
+                    new_pos
+                };
                 segments.push(SplineSegment {
                     start: state.pos.to_array(),
-                    end: new_pos.to_array(),
+                    end: clamped_pos.to_array(),
                 });
-                state.pos = new_pos;
+                state.pos = clamped_pos;
             }
             'f' => {
-                state.pos = state.pos + state.heading * params.step_length;
+                let new_pos = state.pos + state.heading * params.step_length;
+                state.pos = if is_2d {
+                    Vec3::new(new_pos.x, new_pos.y, origin_z)
+                } else {
+                    new_pos
+                };
             }
             '+' => {
                 let rot = Quat::from_axis_angle(state.up, angle);
@@ -272,6 +299,21 @@ fn interpret(string: &str, params: &LSystemParams) -> Vec<SplineSegment> {
     segments
 }
 
+fn compute_bounds(segments: &[SplineSegment]) -> Option<crate::procedural::sdf::SdfBounds> {
+    if segments.is_empty() {
+        return None;
+    }
+    let mut min = Vec3::splat(f32::INFINITY);
+    let mut max = Vec3::splat(f32::NEG_INFINITY);
+    for seg in segments {
+        let start = Vec3::from(seg.start);
+        let end = Vec3::from(seg.end);
+        min = min.min(start).min(end);
+        max = max.max(start).max(end);
+    }
+    Some(crate::procedural::sdf::SdfBounds::new(min, max))
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -280,7 +322,7 @@ mod tests {
 
     #[test]
     fn test_generator_trait() {
-        let gen = LSystemGenerator::default();
+        let gen = LSystemGenerator;
         assert_eq!(gen.name(), "lsystem");
 
         let ctx = GenerateContext::new(None, None);
@@ -346,9 +388,10 @@ mod tests {
             origin: [0.0, 0.0, 0.0],
             heading: [1.0, 0.0, 0.0],
             up: [0.0, 0.0, 1.0],
+            dimension_mode: DimensionMode::ThreeD,
         };
         let result = evaluate_lsystem(&params);
-        assert!(result.segments.len() > 0, "should produce segments");
+        assert!(!result.segments.is_empty(), "should produce segments");
         assert_eq!(result.segments.len(), 25);
     }
 
@@ -363,6 +406,7 @@ mod tests {
             origin: [0.0, 0.0, 0.0],
             heading: [1.0, 0.0, 0.0],
             up: [0.0, 0.0, 1.0],
+            dimension_mode: DimensionMode::ThreeD,
         };
         let result = evaluate_lsystem(&params);
         assert_eq!(result.segments.len(), 1);
@@ -380,6 +424,7 @@ mod tests {
             origin: [0.0, 0.0, 0.0],
             heading: [0.0, 0.0, 1.0],
             up: [0.0, 1.0, 0.0],
+            dimension_mode: DimensionMode::ThreeD,
         };
         let result = evaluate_lsystem(&params);
         assert_eq!(result.segments.len(), 5);
@@ -396,6 +441,7 @@ mod tests {
             origin: [0.0, 0.0, 0.0],
             heading: [1.0, 0.0, 0.0],
             up: [0.0, 0.0, 1.0],
+            dimension_mode: DimensionMode::ThreeD,
         };
         let result = evaluate_lsystem(&params);
         assert_eq!(result.segments.len(), 3);
@@ -431,6 +477,7 @@ mod tests {
             origin: [0.0, 0.0, 0.0],
             heading: [1.0, 0.0, 0.0],
             up: [0.0, 0.0, 1.0],
+            dimension_mode: DimensionMode::ThreeD,
         };
         let result = evaluate_lsystem(&params);
         assert_eq!(result.segments.len(), 1);
@@ -449,6 +496,7 @@ mod tests {
             origin: [0.0, 0.0, 0.0],
             heading: [1.0, 0.0, 0.0],
             up: [0.0, 0.0, 1.0],
+            dimension_mode: DimensionMode::ThreeD,
         };
         let result = evaluate_lsystem(&params);
         assert_eq!(result.segments.len(), 3);

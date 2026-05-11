@@ -221,6 +221,10 @@ async fn main() -> anyhow::Result<()> {
             "/procedural/lsystem-spline",
             post(scene_syncd::api::routes::lsystem_spline_route),
         )
+        .route(
+            "/procedural/wfc-grid",
+            post(scene_syncd::api::routes::wfc_grid_route),
+        )
         .layer(axum::extract::DefaultBodyLimit::max(512 * 1024 * 1024))
         .layer(TraceLayer::new_for_http())
         .layer(
