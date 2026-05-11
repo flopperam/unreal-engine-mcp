@@ -109,6 +109,7 @@ class UnrealConnection:
         "create_ui_template",
         "add_widget_to_viewport",
         "execute_python_script",
+        "vroid_import_vrm",
     }
 
     COMMAND_RECV_TIMEOUT_OVERRIDES = {
