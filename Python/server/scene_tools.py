@@ -1454,6 +1454,7 @@ def scene_create_superformula_mesh(
 @mcp.tool()
 def scene_create_lsystem_spline(
     mcp_id: str,
+    preset: Optional[str] = None,
     axiom: str = "F",
     rules: Optional[List[List[str]]] = None,
     iterations: int = 3,
@@ -1473,28 +1474,45 @@ def scene_create_lsystem_spline(
     create_spline_from_points command. Supports 3D operations: +/- for yaw,
     &/^ for pitch, \\\\/ for roll, [/] for push/pop branching.
     Common grammars: Koch curve (F→F+F-F-F+F, angle=90), tree (F→F[+F]F[-F]F).
+
+    You can either define a custom grammar (axiom + rules) or use a named
+    preset for common shapes:
+      - "Koch2D"        — Koch curve (2D, angle=90)
+      - "Tree3D"        — Branching tree (3D, angle=25.7)
+      - "Dragon2D"      — Dragon curve (2D, angle=90)
+      - "Sierpinski2D"  — Sierpinski triangle (2D, angle=120)
+      - "Hilbert3D"     — 3D Hilbert curve (3D, angle=90)
+
+    When a preset is used, axiom, rules, and angle_degrees are taken from
+    the preset. You can still override iterations, step_length, origin,
+    heading, and up.
     """
     try:
         validate_string(mcp_id, "mcp_id")
+        if preset is not None:
+            validate_string(preset, "preset")
     except ValidationError as e:
         return make_validation_error_response_from_exception(e)
 
     rules = rules or [["F", "F+F-F-F+F"]]
 
     # Step 1: Evaluate L-System via scene-syncd to get segments
-    lsystem_payload = {
+    lsystem_payload: Dict[str, Any] = {
         "mcp_id": mcp_id,
-        "axiom": axiom,
-        "rules": rules,
         "iterations": iterations,
         "step_length": step_length,
-        "angle_degrees": angle_degrees,
         "closed_loop": closed_loop,
         "tangent_mode": tangent_mode,
         "spline_name": spline_name or mcp_id,
         "create_in_unreal": True,
         "focus_viewport": focus_viewport,
     }
+    if preset:
+        lsystem_payload["preset"] = preset
+    else:
+        lsystem_payload["axiom"] = axiom
+        lsystem_payload["rules"] = rules
+        lsystem_payload["angle_degrees"] = angle_degrees
 
     if origin:
         lsystem_payload["origin"] = [origin.get("x", 0.0), origin.get("y", 0.0), origin.get("z", 0.0)]
@@ -1505,6 +1523,51 @@ def scene_create_lsystem_spline(
 
     result = call_scene_syncd("/procedural/lsystem-spline", lsystem_payload)
     return _scene_syncd_error_response(result, "scene_create_lsystem_spline")
+
+
+@mcp.tool()
+def scene_create_wfc_grid(
+    width: int,
+    height: int,
+    tiles: List[Dict[str, Any]],
+    constraints: List[Dict[str, str]],
+    seed: Optional[int] = None,
+    periodic: bool = False,
+) -> Dict[str, Any]:
+    """Generate a tile grid using Wave Function Collapse.
+
+    The WFC solver takes a tileset and adjacency constraints, then produces
+    a valid grid where every neighboring pair obeys the constraints.
+    Output is a list of TileCell {x, y, tile_id, rotation_degrees}.
+
+    Args:
+        width: Grid width in cells.
+        height: Grid height in cells.
+        tiles: List of {"id": str, "weight": float} dicts.
+        constraints: List of {"left": str, "right": str, "direction": str} dicts.
+                     direction is one of "north", "south", "east", "west".
+        seed: Optional deterministic seed.
+        periodic: Whether grid edges wrap around.
+    """
+    if width <= 0 or height <= 0:
+        return make_error_response("width and height must be positive")
+    if not tiles:
+        return make_error_response("tiles list cannot be empty")
+
+    payload: Dict[str, Any] = {
+        "width": width,
+        "height": height,
+        "tileset": {
+            "tiles": tiles,
+            "constraints": constraints,
+        },
+        "periodic": periodic,
+    }
+    if seed is not None:
+        payload["seed"] = seed
+
+    result = call_scene_syncd("/procedural/wfc-grid", payload)
+    return _scene_syncd_error_response(result, "scene_create_wfc_grid")
 
 
 @mcp.tool()

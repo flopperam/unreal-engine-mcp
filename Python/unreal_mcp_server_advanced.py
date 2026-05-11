@@ -109,6 +109,7 @@ from server.scene_tools import (
     scene_create_sdf_mesh,
     scene_create_superformula_mesh,
     scene_create_lsystem_spline,
+    scene_create_wfc_grid,
 )
 
 from server.project_editor_tools import (
@@ -208,6 +209,13 @@ from server.vertical_test_tools import (
     vertical_test_tool,
 )
 
+from server.vroid_tools import (
+    vroid_check_plugin,
+    vroid_import_vrm,
+    vroid_spawn_avatar,
+    vroid_validate_avatar_asset,
+)
+
 
 # Explicitly bootstrap tool registration to avoid heavy import side-effects.
 from server import bootstrap
@@ -290,6 +298,7 @@ __all__ = [
     "scene_create_sdf_mesh",
     "scene_create_superformula_mesh",
     "scene_create_lsystem_spline",
+    "scene_create_wfc_grid",
     "project_settings_tool",
     "plugin_tool",
     "engine_settings_tool",
@@ -360,6 +369,10 @@ __all__ = [
     "set_lighting_scenario",
     "set_megaliights",
     "vertical_test_tool",
+    "vroid_check_plugin",
+    "vroid_import_vrm",
+    "vroid_spawn_avatar",
+    "vroid_validate_avatar_asset",
 ]
 
 
