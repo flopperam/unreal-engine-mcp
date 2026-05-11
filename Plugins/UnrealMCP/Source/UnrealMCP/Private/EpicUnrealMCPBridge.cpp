@@ -275,6 +275,7 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
     DataTableCommands = MakeShared<FEpicUnrealMCPDataTableCommands>();
     AudioCommands = MakeShared<FEpicUnrealMCPAudioCommands>();
     SequencerCommands = MakeShared<FEpicUnrealMCPSequencerCommands>();
+    VroidCommands = MakeShared<FEpicUnrealMCPVroidCommands>();
 
     const UUnrealMCPSettings* Settings = GetDefault<UUnrealMCPSettings>();
     FString HostStr = Settings ? Settings->Host : TEXT(MCP_SERVER_HOST);
@@ -907,7 +908,13 @@ namespace
             {TEXT("add_event_track"), 16},
             {TEXT("add_keyframe"), 16},
             {TEXT("set_playback_range"), 16},
-            {TEXT("set_frame_rate"), 16}
+            {TEXT("set_frame_rate"), 16},
+
+            // VRM / Avatar Commands (17)
+            {TEXT("vroid_check_plugin"), 17},
+            {TEXT("vroid_import_vrm"), 17},
+            {TEXT("vroid_spawn_avatar"), 17},
+            {TEXT("vroid_validate_avatar_asset"), 17}
         };
         const int32* Found = Router.Find(CommandType);
         return Found ? *Found : -1;
@@ -983,6 +990,9 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 break;
             case 16: // SequencerCommands
                 ResultJson = SequencerCommands->HandleCommand(CommandType, Params);
+                break;
+            case 17: // VroidCommands
+                ResultJson = VroidCommands->HandleCommand(CommandType, Params);
                 break;
             default:
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));

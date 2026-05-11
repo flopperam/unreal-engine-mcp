@@ -24,6 +24,7 @@
 #include "Commands/EpicUnrealMCPDataTableCommands.h"
 #include "Commands/EpicUnrealMCPAudioCommands.h"
 #include "Commands/EpicUnrealMCPSequencerCommands.h"
+#include "Commands/EpicUnrealMCPVroidCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "MCPServerRunnable.h"
 #include "EpicUnrealMCPBridge.generated.h"
@@ -94,6 +95,7 @@ private:
 	TSharedPtr<FEpicUnrealMCPDataTableCommands> DataTableCommands;
 	TSharedPtr<FEpicUnrealMCPAudioCommands> AudioCommands;
 	TSharedPtr<FEpicUnrealMCPSequencerCommands> SequencerCommands;
+	TSharedPtr<FEpicUnrealMCPVroidCommands> VroidCommands;
 };
 
 #endif // WITH_EDITOR
