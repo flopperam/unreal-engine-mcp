@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "VTInteractable.h"
-#include "VT/VTCorePickup.generated.h"
+#include "VTCorePickup.generated.h"
 
 class USphereComponent;
 class UStaticMeshComponent;

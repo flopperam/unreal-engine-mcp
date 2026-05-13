@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "EditorSubsystem.h"
@@ -25,6 +25,7 @@
 #include "Commands/EpicUnrealMCPAudioCommands.h"
 #include "Commands/EpicUnrealMCPSequencerCommands.h"
 #include "Commands/EpicUnrealMCPVroidCommands.h"
+#include "Commands/EpicUnrealMCPCesiumCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "MCPServerRunnable.h"
 #include "EpicUnrealMCPBridge.generated.h"
@@ -96,6 +97,8 @@ private:
 	TSharedPtr<FEpicUnrealMCPAudioCommands> AudioCommands;
 	TSharedPtr<FEpicUnrealMCPSequencerCommands> SequencerCommands;
 	TSharedPtr<FEpicUnrealMCPVroidCommands> VroidCommands;
+	TSharedPtr<FEpicUnrealMCPCesiumCommands> CesiumCommands;
 };
 
 #endif // WITH_EDITOR
+

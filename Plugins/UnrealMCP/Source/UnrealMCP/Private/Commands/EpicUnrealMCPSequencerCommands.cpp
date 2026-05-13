@@ -11,7 +11,11 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Misc/Paths.h"
 #include "Kismet/GameplayStatics.h"
+#include "EngineUtils.h"
 #include "Channels/MovieSceneChannel.h"
+#include "Channels/MovieSceneChannelProxy.h"
+#include "Channels/MovieSceneDoubleChannel.h"
+#include "Channels/MovieSceneFloatChannel.h"
 
 FEpicUnrealMCPSequencerCommands::FEpicUnrealMCPSequencerCommands()
 {
@@ -228,7 +232,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPSequencerCommands::HandleAddCameraCutTrack
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("LevelSequence has no MovieScene"));
     }
 
-    UMovieSceneCameraCutTrack* CameraCutTrack = MovieScene->AddCameraCutTrack(UMovieSceneCameraCutTrack::StaticClass());
+    UMovieSceneCameraCutTrack* CameraCutTrack = Cast<UMovieSceneCameraCutTrack>(MovieScene->AddCameraCutTrack(UMovieSceneCameraCutTrack::StaticClass()));
     if (!CameraCutTrack)
     {
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to add camera cut track"));
@@ -412,29 +416,21 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPSequencerCommands::HandleAddKeyframe(const
     FFrameNumber KeyTime(Frame);
 
 #if ENGINE_MAJOR_VERSION >= 5
-    // UE5 uses double channels
-    TArrayView<FMovieSceneDoubleChannel*> TransChannels = TransformSection->GetTranslationChannel();
-    if (TransChannels.Num() >= 3)
+    // UE5 uses double channels accessed via ChannelProxy.
+    // Channel order on UMovieScene3DTransformSection: [Tx,Ty,Tz, Rx,Ry,Rz, Sx,Sy,Sz, ManualWeight].
+    TArrayView<FMovieSceneDoubleChannel*> AllDoubleChannels =
+        TransformSection->GetChannelProxy().GetChannels<FMovieSceneDoubleChannel>();
+    if (AllDoubleChannels.Num() >= 9)
     {
-        TransChannels[0]->AddKey(KeyTime, static_cast<double>(LocX));
-        TransChannels[1]->AddKey(KeyTime, static_cast<double>(LocY));
-        TransChannels[2]->AddKey(KeyTime, static_cast<double>(LocZ));
-    }
-
-    TArrayView<FMovieSceneDoubleChannel*> RotChannels = TransformSection->GetRotationChannel();
-    if (RotChannels.Num() >= 3)
-    {
-        RotChannels[0]->AddKey(KeyTime, static_cast<double>(RotX));
-        RotChannels[1]->AddKey(KeyTime, static_cast<double>(RotY));
-        RotChannels[2]->AddKey(KeyTime, static_cast<double>(RotZ));
-    }
-
-    TArrayView<FMovieSceneDoubleChannel*> ScaleChannels = TransformSection->GetScaleChannel();
-    if (ScaleChannels.Num() >= 3)
-    {
-        ScaleChannels[0]->AddKey(KeyTime, static_cast<double>(ScaleX));
-        ScaleChannels[1]->AddKey(KeyTime, static_cast<double>(ScaleY));
-        ScaleChannels[2]->AddKey(KeyTime, static_cast<double>(ScaleZ));
+        AllDoubleChannels[0]->AddCubicKey(KeyTime, static_cast<double>(LocX));
+        AllDoubleChannels[1]->AddCubicKey(KeyTime, static_cast<double>(LocY));
+        AllDoubleChannels[2]->AddCubicKey(KeyTime, static_cast<double>(LocZ));
+        AllDoubleChannels[3]->AddCubicKey(KeyTime, static_cast<double>(RotX));
+        AllDoubleChannels[4]->AddCubicKey(KeyTime, static_cast<double>(RotY));
+        AllDoubleChannels[5]->AddCubicKey(KeyTime, static_cast<double>(RotZ));
+        AllDoubleChannels[6]->AddCubicKey(KeyTime, static_cast<double>(ScaleX));
+        AllDoubleChannels[7]->AddCubicKey(KeyTime, static_cast<double>(ScaleY));
+        AllDoubleChannels[8]->AddCubicKey(KeyTime, static_cast<double>(ScaleZ));
     }
 #else
     // UE4 uses float channels

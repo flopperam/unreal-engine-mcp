@@ -4,7 +4,7 @@
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardData.h"
 #include "NavModifierVolume.h"
-#include "NavLinkProxy.h"
+#include "AINavigation/NavLinkProxy.h"
 #include "Editor.h"
 #include "EditorViewportClient.h"
 #include "LevelEditorViewport.h"
@@ -43,6 +43,11 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "PhysicsEngine/RadialForceComponent.h"
+#include "PhysicsEngine/RadialForceActor.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "AssetRegistry/IAssetRegistry.h"
+#include "Kismet2/KismetEditorUtilities.h"
+#include "Kismet2/CompilerResultsLog.h"
 #include "PhysicsEngine/PhysicsConstraintActor.h"
 #include "GameFramework/PhysicsVolume.h"
 
@@ -105,6 +110,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCommand(const FStrin
         {TEXT("get_instance_set_state"), &FEpicUnrealMCPEditorCommands::HandleGetInstanceSetState},
         {TEXT("list_instance_sets"), &FEpicUnrealMCPEditorCommands::HandleListInstanceSets},
         {TEXT("request_cognitive_processing"), &FEpicUnrealMCPEditorCommands::HandleRequestCognitiveProcessing},
+        {TEXT("spawn_tile_grid"), &FEpicUnrealMCPEditorCommands::HandleSpawnTileGrid},
     };
 
     const Handler* H = Dispatch.Find(CommandType);
@@ -1096,7 +1102,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCloneActor(const TSh
         TryGetVec(*ObjPtr, NewScale);
     }
 
-    // Clone via deferred spawn with template — much faster than full SpawnActor
+    // Clone via deferred spawn with template 驕ｯ・ｶ郢晢ｽｻmuch faster than full SpawnActor
     // because property values are copied from the template instead of CDO init.
     FActorSpawnParameters SpawnParams;
     SpawnParams.Name = *NewActorName;
@@ -3079,18 +3085,18 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleSpawnRadialForce(con
     double Radius = 500.0;
     if (Params->TryGetNumberField(TEXT("radius"), Radius))
     {
-        if (ForceActor->ForceComponent)
+        if (ForceActor->GetForceComponent())
         {
-            ForceActor->ForceComponent->Radius = static_cast<float>(Radius);
+            ForceActor->GetForceComponent()->Radius = static_cast<float>(Radius);
         }
     }
 
     double Strength = 1000.0;
     if (Params->TryGetNumberField(TEXT("strength"), Strength))
     {
-        if (ForceActor->ForceComponent)
+        if (ForceActor->GetForceComponent())
         {
-            ForceActor->ForceComponent->ForceStrength = static_cast<float>(Strength);
+            ForceActor->GetForceComponent()->ForceStrength = static_cast<float>(Strength);
         }
     }
 
@@ -3379,3 +3385,297 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleRequestCognitiveProc
     return ResultObj;
 }
 
+
+
+// ===================================================================
+// HandleSpawnTileGrid (WFC realization)
+// ===================================================================
+// Spawns one HISM actor per unique tile_id from a WFC grid result.
+// Inputs:
+//   set_id_prefix (string, default "wfc"): prefix for actor names + mcp_id tag
+//   tiles (array, required): [{x:int, y:int, tile_id:string, rotation_degrees:float}]
+//   tile_asset_map (object, required): { tile_id : "/Game/.../SM_Asset" }
+//   default_mesh_path (string, optional): fallback mesh when a tile is missing in tile_asset_map
+//   material_map (object, optional): { tile_id : "/Game/.../M_Asset" }
+//   default_material_path (string, optional)
+//   cell_size (object, optional): { x: 100.0, y: 100.0 } default 100 cm
+//   origin (object, optional): { x, y, z } default zero
+//   replace_existing (bool, optional, default true): if true delete actors with the same set_id_prefix before spawning
+//   focus_viewport (bool, optional, default false)
+// Returns:
+//   success, total_instance_count, per_tile: [ { tile_id, mesh_path, instance_count, actor_name, actor_path } ],
+//   skipped_tile_ids: [ tile_ids missing from map and no default ]
+TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleSpawnTileGrid(const TSharedPtr<FJsonObject>& Params)
+{
+    if (!Params.IsValid())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing parameters"));
+    }
+
+    FString SetPrefix = TEXT("wfc");
+    Params->TryGetStringField(TEXT("set_id_prefix"), SetPrefix);
+    if (SetPrefix.IsEmpty())
+    {
+        SetPrefix = TEXT("wfc");
+    }
+
+    const TArray<TSharedPtr<FJsonValue>>* TilesArray = nullptr;
+    if (!Params->TryGetArrayField(TEXT("tiles"), TilesArray) || !TilesArray)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("'tiles' array is required"));
+    }
+
+    const TSharedPtr<FJsonObject>* TileAssetMapPtr = nullptr;
+    if (!Params->TryGetObjectField(TEXT("tile_asset_map"), TileAssetMapPtr) || !TileAssetMapPtr)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("'tile_asset_map' object is required (e.g. {\"grass\":\"/Game/Tiles/SM_Grass\"})"));
+    }
+
+    FString DefaultMeshPath;
+    Params->TryGetStringField(TEXT("default_mesh_path"), DefaultMeshPath);
+
+    const TSharedPtr<FJsonObject>* MaterialMapPtr = nullptr;
+    Params->TryGetObjectField(TEXT("material_map"), MaterialMapPtr);
+
+    FString DefaultMaterialPath;
+    Params->TryGetStringField(TEXT("default_material_path"), DefaultMaterialPath);
+
+    double CellSizeX = 100.0;
+    double CellSizeY = 100.0;
+    const TSharedPtr<FJsonObject>* CellSizePtr = nullptr;
+    if (Params->TryGetObjectField(TEXT("cell_size"), CellSizePtr) && CellSizePtr)
+    {
+        (*CellSizePtr)->TryGetNumberField(TEXT("x"), CellSizeX);
+        (*CellSizePtr)->TryGetNumberField(TEXT("y"), CellSizeY);
+    }
+
+    FVector OriginVec = FVector::ZeroVector;
+    const TSharedPtr<FJsonObject>* OriginPtr = nullptr;
+    if (Params->TryGetObjectField(TEXT("origin"), OriginPtr) && OriginPtr)
+    {
+        double Ox = 0.0, Oy = 0.0, Oz = 0.0;
+        (*OriginPtr)->TryGetNumberField(TEXT("x"), Ox);
+        (*OriginPtr)->TryGetNumberField(TEXT("y"), Oy);
+        (*OriginPtr)->TryGetNumberField(TEXT("z"), Oz);
+        OriginVec = FVector(Ox, Oy, Oz);
+    }
+
+    bool bReplaceExisting = true;
+    Params->TryGetBoolField(TEXT("replace_existing"), bReplaceExisting);
+
+    bool bFocusViewport = false;
+    Params->TryGetBoolField(TEXT("focus_viewport"), bFocusViewport);
+
+    UWorld* World = GetEditorWorld();
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get editor world"));
+    }
+
+    // 1) Group tiles by tile_id and resolve transforms.
+    struct FGroupedTile
+    {
+        FString TileId;
+        TArray<FTransform> Transforms;
+    };
+    TMap<FString, FGroupedTile> Grouped;
+
+    for (const TSharedPtr<FJsonValue>& Value : *TilesArray)
+    {
+        if (!Value.IsValid() || Value->Type != EJson::Object) continue;
+        TSharedPtr<FJsonObject> Tile = Value->AsObject();
+        if (!Tile.IsValid()) continue;
+
+        double Xd = 0.0, Yd = 0.0, RotDeg = 0.0;
+        Tile->TryGetNumberField(TEXT("x"), Xd);
+        Tile->TryGetNumberField(TEXT("y"), Yd);
+        Tile->TryGetNumberField(TEXT("rotation_degrees"), RotDeg);
+
+        FString TileId;
+        if (!Tile->TryGetStringField(TEXT("tile_id"), TileId) || TileId.IsEmpty())
+        {
+            continue;
+        }
+
+        FVector Loc = OriginVec + FVector(Xd * CellSizeX, Yd * CellSizeY, 0.0);
+        FRotator Rot(0.0, RotDeg, 0.0);
+        FTransform T(Rot, Loc, FVector::OneVector);
+
+        FGroupedTile& G = Grouped.FindOrAdd(TileId);
+        G.TileId = TileId;
+        G.Transforms.Add(T);
+    }
+
+    // 2) Optionally replace existing actors that share the same prefix.
+    if (bReplaceExisting)
+    {
+        const FString PrefixTag = FString::Printf(TEXT("mcp_id:tile_grid_%s_"), *SetPrefix);
+        TArray<AActor*> ToDestroy;
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            AActor* A = *It;
+            if (!A) continue;
+            for (const FName& Tag : A->Tags)
+            {
+                if (Tag.ToString().StartsWith(PrefixTag))
+                {
+                    ToDestroy.Add(A);
+                    break;
+                }
+            }
+        }
+        for (AActor* A : ToDestroy)
+        {
+            A->Destroy();
+        }
+    }
+
+    FScopedTransaction Transaction(FText::FromString(FString::Printf(TEXT("UnrealMCP: Spawn Tile Grid %s"), *SetPrefix)));
+
+    TArray<TSharedPtr<FJsonValue>> PerTileResults;
+    TArray<TSharedPtr<FJsonValue>> Skipped;
+    int32 TotalInstances = 0;
+
+    for (const TPair<FString, FGroupedTile>& Pair : Grouped)
+    {
+        const FString& TileId = Pair.Key;
+        const FGroupedTile& Group = Pair.Value;
+
+        // Resolve mesh path
+        FString MeshPath;
+        if (TileAssetMapPtr && (*TileAssetMapPtr)->HasField(TileId))
+        {
+            (*TileAssetMapPtr)->TryGetStringField(TileId, MeshPath);
+        }
+        if (MeshPath.IsEmpty())
+        {
+            MeshPath = DefaultMeshPath;
+        }
+
+        if (MeshPath.IsEmpty())
+        {
+            TSharedPtr<FJsonObject> SkipObj = MakeShared<FJsonObject>();
+            SkipObj->SetStringField(TEXT("tile_id"), TileId);
+            SkipObj->SetStringField(TEXT("reason"), TEXT("no mesh path in tile_asset_map and no default_mesh_path"));
+            SkipObj->SetNumberField(TEXT("instance_count"), Group.Transforms.Num());
+            Skipped.Add(MakeShared<FJsonValueObject>(SkipObj));
+            continue;
+        }
+
+        UStaticMesh* Mesh = Cast<UStaticMesh>(UEditorAssetLibrary::LoadAsset(MeshPath));
+        if (!Mesh)
+        {
+            TSharedPtr<FJsonObject> SkipObj = MakeShared<FJsonObject>();
+            SkipObj->SetStringField(TEXT("tile_id"), TileId);
+            SkipObj->SetStringField(TEXT("reason"), FString::Printf(TEXT("Failed to load mesh: %s"), *MeshPath));
+            SkipObj->SetNumberField(TEXT("instance_count"), Group.Transforms.Num());
+            Skipped.Add(MakeShared<FJsonValueObject>(SkipObj));
+            continue;
+        }
+
+        // Resolve material
+        FString MatPath;
+        if (MaterialMapPtr && (*MaterialMapPtr)->HasField(TileId))
+        {
+            (*MaterialMapPtr)->TryGetStringField(TileId, MatPath);
+        }
+        if (MatPath.IsEmpty())
+        {
+            MatPath = DefaultMaterialPath;
+        }
+
+        const FString ActorLabel = FString::Printf(TEXT("TileGrid_%s_%s"), *SetPrefix, *TileId);
+        const FString McpIdTag = FString::Printf(TEXT("mcp_id:tile_grid_%s_%s"), *SetPrefix, *TileId);
+
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.Name = *ActorLabel;
+        SpawnParams.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
+
+        AActor* TileActor = World->SpawnActor<AActor>(AActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+        if (!TileActor)
+        {
+            TSharedPtr<FJsonObject> SkipObj = MakeShared<FJsonObject>();
+            SkipObj->SetStringField(TEXT("tile_id"), TileId);
+            SkipObj->SetStringField(TEXT("reason"), TEXT("Failed to spawn actor"));
+            SkipObj->SetNumberField(TEXT("instance_count"), Group.Transforms.Num());
+            Skipped.Add(MakeShared<FJsonValueObject>(SkipObj));
+            continue;
+        }
+
+        TileActor->SetActorLabel(*ActorLabel);
+        TileActor->Tags.AddUnique(FName(TEXT("managed_by_mcp")));
+        TileActor->Tags.AddUnique(FName(TEXT("wfc_generated")));
+        TileActor->Tags.AddUnique(FName(*McpIdTag));
+        TileActor->Tags.AddUnique(FName(*FString::Printf(TEXT("wfc_tile_id:%s"), *TileId)));
+
+        UHierarchicalInstancedStaticMeshComponent* HISM = NewObject<UHierarchicalInstancedStaticMeshComponent>(
+            TileActor, UHierarchicalInstancedStaticMeshComponent::StaticClass(), TEXT("TileGridHISM"));
+        HISM->RegisterComponent();
+        TileActor->SetRootComponent(HISM);
+        HISM->SetStaticMesh(Mesh);
+        HISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+        if (!MatPath.IsEmpty())
+        {
+            UMaterialInterface* Material = Cast<UMaterialInterface>(UEditorAssetLibrary::LoadAsset(MatPath));
+            if (Material)
+            {
+                HISM->SetMaterial(0, Material);
+            }
+        }
+
+        for (const FTransform& T : Group.Transforms)
+        {
+            HISM->AddInstance(T);
+        }
+        HISM->MarkRenderStateDirty();
+
+        TileActor->Modify();
+        TileActor->MarkPackageDirty();
+
+        GetActorIndex().AddActor(TileActor);
+
+        TotalInstances += Group.Transforms.Num();
+
+        TSharedPtr<FJsonObject> Entry = MakeShared<FJsonObject>();
+        Entry->SetStringField(TEXT("tile_id"), TileId);
+        Entry->SetStringField(TEXT("mesh_path"), MeshPath);
+        Entry->SetStringField(TEXT("actor_name"), TileActor->GetName());
+        Entry->SetStringField(TEXT("actor_path"), TileActor->GetPathName());
+        Entry->SetNumberField(TEXT("instance_count"), Group.Transforms.Num());
+        if (!MatPath.IsEmpty())
+        {
+            Entry->SetStringField(TEXT("material_path"), MatPath);
+        }
+        PerTileResults.Add(MakeShared<FJsonValueObject>(Entry));
+    }
+
+    if (bFocusViewport && PerTileResults.Num() > 0 && GEditor)
+    {
+        TArray<AActor*> Focus;
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            for (const FName& Tag : It->Tags)
+            {
+                if (Tag.ToString().StartsWith(FString::Printf(TEXT("mcp_id:tile_grid_%s_"), *SetPrefix)))
+                {
+                    Focus.Add(*It);
+                    break;
+                }
+            }
+        }
+        if (Focus.Num() > 0)
+        {
+            GEditor->MoveViewportCamerasToActor(Focus, true);
+        }
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("set_id_prefix"), SetPrefix);
+    ResultObj->SetNumberField(TEXT("total_instance_count"), TotalInstances);
+    ResultObj->SetNumberField(TEXT("tile_kind_count"), PerTileResults.Num());
+    ResultObj->SetArrayField(TEXT("per_tile"), PerTileResults);
+    ResultObj->SetArrayField(TEXT("skipped"), Skipped);
+    return ResultObj;
+}

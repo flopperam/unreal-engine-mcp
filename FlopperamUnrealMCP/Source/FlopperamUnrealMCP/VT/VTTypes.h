@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "VT/VTTypes.generated.h"
+#include "VTTypes.generated.h"
 
 UENUM(BlueprintType)
 enum class EVTGameState : uint8

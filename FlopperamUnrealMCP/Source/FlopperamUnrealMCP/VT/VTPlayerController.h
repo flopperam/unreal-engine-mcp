@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
-#include "VT/VTPlayerController.generated.h"
+#include "VTPlayerController.generated.h"
 
 class UVTClearScreenWidget;
 class UVTHUDWidget;

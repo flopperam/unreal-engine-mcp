@@ -45,6 +45,9 @@ async fn main() -> anyhow::Result<()> {
         config: config.clone(),
         scene_locks: Arc::new(Mutex::new(HashMap::new())),
         unreal_client: UnrealClient::new(&config),
+        procedural_jobs: scene_syncd::procedural::jobs::JobRegistry::new(
+            scene_syncd::procedural::jobs::DEFAULT_MAX_CONCURRENCY,
+        ),
     };
 
     let app = Router::new()
@@ -224,6 +227,23 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/procedural/wfc-grid",
             post(scene_syncd::api::routes::wfc_grid_route),
+        )
+        // Procedural background jobs (large WFC / L-System runs)
+        .route(
+            "/procedural/jobs/submit",
+            post(scene_syncd::api::routes::procedural_job_submit_route),
+        )
+        .route(
+            "/procedural/jobs/{job_id}",
+            get(scene_syncd::api::routes::procedural_job_status_route),
+        )
+        .route(
+            "/procedural/jobs/{job_id}/cancel",
+            post(scene_syncd::api::routes::procedural_job_cancel_route),
+        )
+        .route(
+            "/procedural/jobs",
+            get(scene_syncd::api::routes::procedural_job_list_route),
         )
         .layer(axum::extract::DefaultBodyLimit::max(512 * 1024 * 1024))
         .layer(TraceLayer::new_for_http())

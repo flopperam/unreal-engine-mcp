@@ -119,4 +119,8 @@ private:
     TSharedPtr<FJsonObject> HandleGetInstanceSetState(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleListInstanceSets(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleRequestCognitiveProcessing(const TSharedPtr<FJsonObject>& Params);
+
+    // WFC tile grid bulk spawn (HISM-per-tile_id)
+    TSharedPtr<FJsonObject> HandleSpawnTileGrid(const TSharedPtr<FJsonObject>& Params);
     }; 
+

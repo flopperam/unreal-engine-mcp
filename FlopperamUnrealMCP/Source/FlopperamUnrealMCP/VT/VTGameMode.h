@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
-#include "VT/VTGameMode.generated.h"
+#include "VTGameMode.generated.h"
 
 class UVTClearScreenWidget;
 class UVTHUDWidget;

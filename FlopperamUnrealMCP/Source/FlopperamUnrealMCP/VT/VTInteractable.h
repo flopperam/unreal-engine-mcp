@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
-#include "VT/VTInteractable.generated.h"
+#include "VTInteractable.generated.h"
 
 UINTERFACE(BlueprintType)
 class FLOPPERAMUNREALMCP_API UVTInteractable : public UInterface

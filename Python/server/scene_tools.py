@@ -1347,7 +1347,7 @@ def scene_create_sdf_mesh(
 ) -> Dict[str, Any]:
     """Generate a procedural mesh from a Signed Distance Function (SDF) using Marching Cubes.
 
-    Supports: sphere, box, torus, gyroid, scherk. SDF meshes do not have UVs —
+    Supports: sphere, box, torus, gyroid, scherk. SDF meshes do not have UVs 驕ｯ・ｶ郢晢ｽｻ
     use World-Aligned materials on the Unreal side for texturing.
     """
     try:
@@ -1473,15 +1473,15 @@ def scene_create_lsystem_spline(
     The L-System turtle produces segments that are sent to Unreal as a
     create_spline_from_points command. Supports 3D operations: +/- for yaw,
     &/^ for pitch, \\\\/ for roll, [/] for push/pop branching.
-    Common grammars: Koch curve (F→F+F-F-F+F, angle=90), tree (F→F[+F]F[-F]F).
+    Common grammars: Koch curve (F驕ｶ髮・ｽｷ・ｽ+F-F-F+F, angle=90), tree (F驕ｶ髮・ｽｷ・ｽ[+F]F[-F]F).
 
     You can either define a custom grammar (axiom + rules) or use a named
     preset for common shapes:
-      - "Koch2D"        — Koch curve (2D, angle=90)
-      - "Tree3D"        — Branching tree (3D, angle=25.7)
-      - "Dragon2D"      — Dragon curve (2D, angle=90)
-      - "Sierpinski2D"  — Sierpinski triangle (2D, angle=120)
-      - "Hilbert3D"     — 3D Hilbert curve (3D, angle=90)
+      - "Koch2D"        驕ｯ・ｶ郢晢ｽｻKoch curve (2D, angle=90)
+      - "Tree3D"        驕ｯ・ｶ郢晢ｽｻBranching tree (3D, angle=25.7)
+      - "Dragon2D"      驕ｯ・ｶ郢晢ｽｻDragon curve (2D, angle=90)
+      - "Sierpinski2D"  驕ｯ・ｶ郢晢ｽｻSierpinski triangle (2D, angle=120)
+      - "Hilbert3D"     驕ｯ・ｶ郢晢ｽｻ3D Hilbert curve (3D, angle=90)
 
     When a preset is used, axiom, rules, and angle_degrees are taken from
     the preset. You can still override iterations, step_length, origin,
@@ -1568,6 +1568,493 @@ def scene_create_wfc_grid(
 
     result = call_scene_syncd("/procedural/wfc-grid", payload)
     return _scene_syncd_error_response(result, "scene_create_wfc_grid")
+
+
+
+# 髫ｨ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ蜀暦ｽｬ繝ｻ# WFC 驕ｶ鄙ｫ繝ｻUnreal realization helpers
+# -----------------------------------------------------------------------
+@mcp.tool()
+def scene_create_wfc_grid_unreal(
+    width: int,
+    height: int,
+    tiles: List[Dict[str, Any]],
+    constraints: List[Dict[str, str]],
+    tile_asset_map: Dict[str, str],
+    seed: Optional[int] = None,
+    periodic: bool = False,
+    set_id_prefix: str = "wfc",
+    cell_size: Optional[Dict[str, float]] = None,
+    origin: Optional[Dict[str, float]] = None,
+    default_mesh_path: Optional[str] = None,
+    material_map: Optional[Dict[str, str]] = None,
+    default_material_path: Optional[str] = None,
+    replace_existing: bool = True,
+    focus_viewport: bool = False,
+) -> Dict[str, Any]:
+    """Generate a WFC grid in Rust and realize it natively in Unreal as HISM-per-tile.
+
+    Combines `scene_create_wfc_grid` (Rust) with the Unreal native `spawn_tile_grid`
+    command. One HierarchicalInstancedStaticMeshComponent actor is spawned per
+    unique tile_id with all instances batched in a single component for efficient
+    rendering of large grids.
+
+    Args:
+        width / height: Grid dimensions in cells.
+        tiles: WFC tileset definitions ({"id":str,"weight":float}).
+        constraints: Adjacency rules ({"left":str,"right":str,"direction":str}).
+        tile_asset_map: tile_id 驕ｶ鄙ｫ繝ｻ"/Game/.../SM_Asset" mapping.
+        seed: Optional deterministic seed.
+        periodic: Wrap grid edges.
+        set_id_prefix: Prefix for spawned actor names + mcp_id tags.
+        cell_size: {"x":100.0,"y":100.0} in Unreal units (cm). Default 100x100.
+        origin: World origin offset for cell (0,0).
+        default_mesh_path: Fallback mesh for tile_ids missing from the map.
+        material_map / default_material_path: Optional materials.
+        replace_existing: Destroy any existing tile-grid actors with the same prefix.
+        focus_viewport: Move editor camera to spawned actors.
+    """
+    if not tile_asset_map:
+        return make_error_response(
+            "tile_asset_map cannot be empty. Provide tile_id 驕ｶ鄙ｫ繝ｻ'/Game/.../SM_Asset' mappings."
+        )
+
+    grid_result = scene_create_wfc_grid(
+        width=width,
+        height=height,
+        tiles=tiles,
+        constraints=constraints,
+        seed=seed,
+        periodic=periodic,
+    )
+    if grid_result.get("success") is False:
+        return grid_result
+
+    grid_data = _scene_syncd_data(grid_result)
+    grid_tiles = grid_data.get("tiles") or []
+
+    spawn_params: Dict[str, Any] = {
+        "set_id_prefix": set_id_prefix,
+        "tiles": grid_tiles,
+        "tile_asset_map": tile_asset_map,
+        "replace_existing": replace_existing,
+        "focus_viewport": focus_viewport,
+    }
+    if cell_size:
+        spawn_params["cell_size"] = cell_size
+    if origin:
+        spawn_params["origin"] = origin
+    if default_mesh_path:
+        spawn_params["default_mesh_path"] = default_mesh_path
+    if material_map:
+        spawn_params["material_map"] = material_map
+    if default_material_path:
+        spawn_params["default_material_path"] = default_material_path
+
+    try:
+        from server.core import get_unreal_connection
+        conn = get_unreal_connection()
+        unreal_result = conn.send_command("spawn_tile_grid", spawn_params)
+    except Exception as e:
+        return make_error_response(f"Failed to spawn tile grid in Unreal: {e}")
+
+    if not unreal_result.get("success", False):
+        err = unreal_result.get("error", "unknown error")
+        hint = unreal_result.get("hint")
+        msg = f"Unreal spawn_tile_grid failed: {err}"
+        if hint:
+            msg += f" Hint: {hint}"
+        return make_error_response(msg)
+
+    return {
+        "success": True,
+        "grid": {
+            "width": grid_data.get("width", width),
+            "height": grid_data.get("height", height),
+            "tile_count": len(grid_tiles),
+        },
+        "unreal_result": unreal_result,
+        "stats": grid_data.get("stats"),
+    }
+
+
+@mcp.tool()
+def scene_wfc_to_semantic_layout(
+    scene_id: str = "main",
+    width: int = 4,
+    height: int = 4,
+    tiles: Optional[List[Dict[str, Any]]] = None,
+    constraints: Optional[List[Dict[str, str]]] = None,
+    tile_asset_map: Optional[Dict[str, str]] = None,
+    seed: Optional[int] = None,
+    periodic: bool = False,
+    cell_size: Optional[Dict[str, float]] = None,
+    origin: Optional[Dict[str, float]] = None,
+    group_id_prefix: str = "wfc",
+    desired_name_prefix: str = "WfcTile",
+    extra_tags: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Generate WFC + upsert each tile as a Semantic Layout entity in scene-syncd.
+
+    The WFC output is materialized into the scene database as one StaticMeshActor
+    per tile, tagged with `wfc_generated`, `wfc_tile_id:<id>`, and
+    `layout_kind:wfc_<id>` so it can be reviewed by `scene_show_wfc_proxy`,
+    edited individually, snapshotted, or compiled with the rest of the layout.
+
+    The actors are NOT pushed to Unreal directly. Use `scene_compile_apply` or
+    `scene_show_wfc_proxy` to realize them.
+    """
+    try:
+        scene_id = normalize_scene_id(scene_id)
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    if not tiles:
+        return make_error_response("tiles list cannot be empty")
+    if constraints is None:
+        constraints = []
+    if not tile_asset_map:
+        return make_error_response("tile_asset_map cannot be empty")
+
+    grid_result = scene_create_wfc_grid(
+        width=width,
+        height=height,
+        tiles=tiles,
+        constraints=constraints,
+        seed=seed,
+        periodic=periodic,
+    )
+    if grid_result.get("success") is False:
+        return grid_result
+
+    grid_data = _scene_syncd_data(grid_result)
+    grid_tiles = grid_data.get("tiles") or []
+    if not grid_tiles:
+        return make_error_response("WFC produced an empty grid")
+
+    cs_x = (cell_size or {}).get("x", 100.0)
+    cs_y = (cell_size or {}).get("y", 100.0)
+    origin_x = (origin or {}).get("x", 0.0)
+    origin_y = (origin or {}).get("y", 0.0)
+    origin_z = (origin or {}).get("z", 0.0)
+
+    base_tags = ["managed_by_mcp", "wfc_generated"]
+    if extra_tags:
+        base_tags.extend(extra_tags)
+
+    objects: List[Dict[str, Any]] = []
+    skipped_tiles: List[Dict[str, Any]] = []
+    seen_kinds: Dict[str, int] = {}
+    seed_token = seed if seed is not None else 0
+
+    for tile in grid_tiles:
+        tile_id = tile.get("tile_id")
+        if not tile_id:
+            continue
+        asset_path = tile_asset_map.get(tile_id)
+        if not asset_path:
+            skipped_tiles.append({"tile_id": tile_id, "reason": "no asset path in tile_asset_map"})
+            continue
+
+        x = int(tile.get("x", 0))
+        y = int(tile.get("y", 0))
+        rotation_deg = float(tile.get("rotation_degrees", 0.0))
+
+        seen_kinds[tile_id] = seen_kinds.get(tile_id, 0) + 1
+        idx = seen_kinds[tile_id]
+
+        mcp_id = f"{group_id_prefix}_{tile_id}_{x}_{y}_{seed_token}"
+        try:
+            mcp_id = sanitize_mcp_id(mcp_id)
+        except ValidationError:
+            # Fall back to a safer generic id
+            mcp_id = f"{group_id_prefix}_t{idx}_{seed_token}"
+
+        objects.append({
+            "mcp_id": mcp_id,
+            "desired_name": f"{desired_name_prefix}_{tile_id}_{x}_{y}",
+            "actor_type": "StaticMeshActor",
+            "asset_ref": {"path": asset_path},
+            "transform": {
+                "location": {
+                    "x": origin_x + x * cs_x,
+                    "y": origin_y + y * cs_y,
+                    "z": origin_z,
+                },
+                "rotation": {"pitch": 0.0, "yaw": rotation_deg, "roll": 0.0},
+                "scale": {"x": 1.0, "y": 1.0, "z": 1.0},
+            },
+            "visual": {
+                "draft": {"proxy_group": f"wfc_{tile_id}"},
+            },
+            "tags": base_tags + [
+                f"wfc_tile_id:{tile_id}",
+                f"layout_kind:wfc_{tile_id}",
+            ],
+        })
+
+    if not objects:
+        return make_error_response(
+            "All WFC tiles skipped: no entries in tile_asset_map matched the tile_ids "
+            f"{sorted({t.get('tile_id') for t in grid_tiles})}."
+        )
+
+    upsert_result = scene_upsert_actors(
+        scene_id=scene_id,
+        group_id=f"{group_id_prefix}_grid",
+        objects=objects,
+    )
+    if upsert_result.get("success") is False:
+        return upsert_result
+
+    return {
+        "success": True,
+        "scene_id": scene_id,
+        "grid": {
+            "width": grid_data.get("width", width),
+            "height": grid_data.get("height", height),
+            "tile_count": len(grid_tiles),
+        },
+        "upserted_count": len(objects),
+        "skipped_tiles": skipped_tiles,
+        "tile_kinds": list(seen_kinds.keys()),
+        "stats": grid_data.get("stats"),
+        "upsert_result": upsert_result,
+    }
+
+
+@mcp.tool()
+def scene_show_wfc_proxy(
+    scene_id: str = "main",
+    tile_mesh_map: Optional[Dict[str, str]] = None,
+    proxy_name_prefix: str = "wfc_proxy",
+    fallback_mesh_path: str = "/Engine/BasicShapes/Cube.Cube",
+    use_dither: bool = True,
+    tag_filter: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Visualize WFC-generated semantic-layout entities as HISM draft proxies.
+
+    Reads the scene's denormalized layout, filters objects tagged with
+    `wfc_generated`, groups them by their `wfc_tile_id:<id>` tag, and creates
+    one HISM proxy per tile_id using the supplied mesh map. This gives a fast,
+    editable preview of the WFC result inside the editor without committing
+    individual StaticMeshActors.
+    """
+    try:
+        scene_id = normalize_scene_id(scene_id)
+        validate_string(proxy_name_prefix, "proxy_name_prefix")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    tile_mesh_map = tile_mesh_map or {}
+    required_tags = set(tag_filter or [])
+
+    preview_result = _scene_syncd_error_response(
+        call_scene_syncd(f"/layouts/{scene_id}/preview", {}),
+        "scene_show_wfc_proxy/preview",
+    )
+    if preview_result.get("success") is False:
+        return preview_result
+
+    preview_data = _scene_syncd_data(preview_result)
+    objects = preview_data.get("objects") or []
+    if not isinstance(objects, list):
+        return make_error_response("scene-syncd preview did not include an objects list")
+
+    def _wfc_tile_id(obj: Dict[str, Any]) -> Optional[str]:
+        tags = obj.get("tags") or []
+        if not isinstance(tags, list):
+            return None
+        is_wfc = False
+        tile_id: Optional[str] = None
+        present: set = set()
+        for tag in tags:
+            if not isinstance(tag, str):
+                continue
+            present.add(tag)
+            if tag == "wfc_generated":
+                is_wfc = True
+            elif tag.startswith("wfc_tile_id:"):
+                tile_id = tag.split(":", 1)[1]
+        if not is_wfc:
+            return None
+        if required_tags and not required_tags.issubset(present):
+            return None
+        return tile_id
+
+    batches: Dict[str, List[Dict[str, Any]]] = {}
+    for obj in objects:
+        if not isinstance(obj, dict):
+            continue
+        tile_id = _wfc_tile_id(obj)
+        if not tile_id:
+            continue
+        batches.setdefault(tile_id, []).append(_object_to_draft_instance(obj))
+
+    if not batches:
+        return make_error_response(
+            "No WFC-generated objects found. Run scene_wfc_to_semantic_layout first."
+        )
+
+    try:
+        from server.core import get_unreal_connection
+        conn = get_unreal_connection()
+        proxy_results = []
+        for tile_id, instances in sorted(batches.items()):
+            mesh_path = tile_mesh_map.get(tile_id, fallback_mesh_path)
+            proxy_name = f"{proxy_name_prefix}_{tile_id}"
+            unreal_result = _send_draft_proxy_replace(
+                conn,
+                proxy_name,
+                mesh_path,
+                None,
+                instances,
+                use_dither,
+            )
+            if not unreal_result.get("success", False):
+                return make_error_response(
+                    f"Unreal draft proxy '{proxy_name}' failed: "
+                    f"{unreal_result.get('error', 'unknown error')}"
+                )
+            proxy_results.append(
+                {
+                    "tile_id": tile_id,
+                    "proxy_name": proxy_name,
+                    "mesh_path": mesh_path,
+                    "instance_count": len(instances),
+                    "unreal_result": unreal_result,
+                }
+            )
+    except Exception as e:
+        return make_error_response(f"Failed to show WFC proxy in Unreal: {e}")
+
+    return {
+        "success": True,
+        "scene_id": scene_id,
+        "tile_kind_count": len(proxy_results),
+        "total_instances": sum(p["instance_count"] for p in proxy_results),
+        "proxies": proxy_results,
+    }
+
+
+
+# -----------------------------------------------------------------------
+# Procedural background-job tools (avoid bridge timeouts on big WFC/L-System runs)
+# -----------------------------------------------------------------------
+import time as _time
+
+@mcp.tool()
+def scene_procedural_job_submit(
+    generator: str,
+    params: Dict[str, Any],
+    seed: Optional[int] = None,
+    limits: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Submit a long-running procedural job to scene-syncd. Returns immediately.
+
+    Use this for large WFC grids or deep L-System derivations that risk
+    exceeding the synchronous bridge timeout. Returns `{job_id, status}`;
+    poll with `scene_procedural_job_status` or wait via
+    `scene_procedural_job_result`.
+
+    Args:
+        generator: 'wfc' or 'lsystem'.
+        params: Generator-specific parameter object (matches the synchronous route shape).
+        seed: Optional deterministic seed forwarded to the generator.
+        limits: Optional override of safety limits, e.g. {"max_iterations": 200000, "max_execution_ms": 300000}.
+    """
+    try:
+        validate_string(generator, "generator")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    if not isinstance(params, dict):
+        return make_error_response("params must be an object")
+
+    payload: Dict[str, Any] = {
+        "generator": generator,
+        "params": params,
+    }
+    if seed is not None:
+        payload["seed"] = int(seed)
+    if limits is not None:
+        payload["limits"] = limits
+
+    return _scene_syncd_error_response(
+        call_scene_syncd("/procedural/jobs/submit", payload),
+        "scene_procedural_job_submit",
+    )
+
+
+@mcp.tool()
+def scene_procedural_job_status(job_id: str) -> Dict[str, Any]:
+    """Fetch a procedural job record (status, progress, message, partial result)."""
+    try:
+        validate_string(job_id, "job_id")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    return _scene_syncd_error_response(
+        call_scene_syncd_get(f"/procedural/jobs/{job_id}"),
+        "scene_procedural_job_status",
+    )
+
+
+@mcp.tool()
+def scene_procedural_job_result(
+    job_id: str,
+    wait_seconds: float = 0.0,
+    poll_interval_seconds: float = 0.5,
+) -> Dict[str, Any]:
+    """Fetch a procedural job's final result, optionally waiting for completion.
+
+    When `wait_seconds` is 0 the call simply mirrors the latest status snapshot.
+    When > 0 it polls until the job reaches a terminal state (completed/failed/
+    cancelled) or the wait budget elapses.
+    """
+    try:
+        validate_string(job_id, "job_id")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    deadline = _time.time() + max(0.0, float(wait_seconds))
+    interval = max(0.05, float(poll_interval_seconds))
+
+    last_record: Dict[str, Any] = {}
+    while True:
+        result = scene_procedural_job_status(job_id)
+        if result.get("success") is False:
+            return result
+        record = _scene_syncd_data(result)
+        last_record = record if isinstance(record, dict) else {}
+        status = last_record.get("status")
+        if status in ("completed", "failed", "cancelled"):
+            return {"success": True, "data": last_record}
+        if _time.time() >= deadline:
+            return {"success": True, "data": last_record}
+        _time.sleep(interval)
+
+
+@mcp.tool()
+def scene_procedural_job_cancel(job_id: str) -> Dict[str, Any]:
+    """Request cancellation of a queued or running procedural job."""
+    try:
+        validate_string(job_id, "job_id")
+    except ValidationError as e:
+        return make_validation_error_response_from_exception(e)
+
+    return _scene_syncd_error_response(
+        call_scene_syncd(f"/procedural/jobs/{job_id}/cancel", {}),
+        "scene_procedural_job_cancel",
+    )
+
+
+@mcp.tool()
+def scene_procedural_job_list() -> Dict[str, Any]:
+    """List recent procedural jobs (queued, running, completed within TTL)."""
+    return _scene_syncd_error_response(
+        call_scene_syncd_get("/procedural/jobs"),
+        "scene_procedural_job_list",
+    )
 
 
 @mcp.tool()

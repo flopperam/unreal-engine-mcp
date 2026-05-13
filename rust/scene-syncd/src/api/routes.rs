@@ -32,6 +32,7 @@ pub struct AppState {
     pub config: Config,
     pub scene_locks: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
     pub unreal_client: UnrealClient,
+    pub procedural_jobs: crate::procedural::jobs::JobRegistry,
 }
 
 fn success_response(data: Value) -> Value {
@@ -1810,7 +1811,7 @@ pub async fn create_procedural_mesh_route(
     }
 }
 
-// ── Phase 1: SDF → Marching Cubes mesh ──────────────────────────────
+// 笏笏 Phase 1: SDF 竊・Marching Cubes mesh 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 #[derive(Debug, Deserialize)]
 pub struct SdfMeshRequest {
@@ -2059,7 +2060,7 @@ pub async fn sdf_mesh_route(
     }
 }
 
-// ── Phase 1: Superformula mesh ──────────────────────────────────────
+// 笏笏 Phase 1: Superformula mesh 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 #[derive(Debug, Deserialize)]
 pub struct SuperformulaMeshRequest {
@@ -2192,7 +2193,7 @@ pub async fn superformula_mesh_route(
     }
 }
 
-// ── Phase 1: L-System spline ────────────────────────────────────────
+// 笏笏 Phase 1: L-System spline 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 #[derive(Debug, Deserialize)]
 pub struct LSystemSplineRequest {
@@ -2341,7 +2342,7 @@ pub async fn lsystem_spline_route(
     }))))
 }
 
-// ── Phase 1: WFC Grid ─────────────────────────────────────────────────
+// 笏笏 Phase 1: WFC Grid 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 #[derive(Debug, Deserialize)]
 pub struct WfcGridRequest {
@@ -2387,6 +2388,104 @@ pub async fn wfc_grid_route(
     }))))
 }
 
+// 笏笏 Procedural Job Registry 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
+
+#[derive(Debug, Deserialize)]
+pub struct ProceduralJobSubmitRequest {
+    pub generator: String,
+    pub params: serde_json::Value,
+    #[serde(default)]
+    pub seed: Option<u64>,
+    #[serde(default)]
+    pub limits: Option<ProceduralJobLimitsInput>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProceduralJobLimitsInput {
+    #[serde(default)]
+    pub max_iterations: Option<u32>,
+    #[serde(default)]
+    pub max_execution_ms: Option<u64>,
+    #[serde(default)]
+    pub max_segment_count: Option<usize>,
+    #[serde(default)]
+    pub max_actor_count: Option<usize>,
+    #[serde(default)]
+    pub max_string_length: Option<usize>,
+}
+
+pub async fn procedural_job_submit_route(
+    State(state): State<AppState>,
+    Json(req): Json<ProceduralJobSubmitRequest>,
+) -> Result<Json<Value>, AppError> {
+    use crate::procedural::generator::GenerationLimits;
+    use crate::procedural::jobs::JobGenerator;
+
+    let generator = JobGenerator::from_str(&req.generator).ok_or_else(|| {
+        AppError::Validation(format!(
+            "Unknown procedural generator '{}': supported = wfc, lsystem",
+            req.generator
+        ))
+    })?;
+
+    let mut limits = GenerationLimits::default();
+    if let Some(input) = req.limits {
+        if let Some(v) = input.max_iterations { limits.max_iterations = v; }
+        if let Some(v) = input.max_execution_ms { limits.max_execution_ms = v; }
+        if let Some(v) = input.max_segment_count { limits.max_segment_count = v; }
+        if let Some(v) = input.max_actor_count { limits.max_actor_count = v; }
+        if let Some(v) = input.max_string_length { limits.max_string_length = v; }
+    }
+
+    state.procedural_jobs.evict_old().await;
+
+    let job_id = state
+        .procedural_jobs
+        .submit(generator, req.params, req.seed, limits)
+        .await
+        .map_err(AppError::Validation)?;
+
+    Ok(Json(success_response(json!({
+        "job_id": job_id,
+        "status": "queued"
+    }))))
+}
+
+pub async fn procedural_job_status_route(
+    State(state): State<AppState>,
+    axum::extract::Path(job_id): axum::extract::Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let record = state
+        .procedural_jobs
+        .status(&job_id)
+        .await
+        .ok_or_else(|| AppError::NotFound(format!("job '{job_id}' not found")))?;
+    Ok(Json(success_response(serde_json::to_value(record).map_err(
+        |e| AppError::Internal(format!("serialize job error: {e}")),
+    )?)))
+}
+
+pub async fn procedural_job_cancel_route(
+    State(state): State<AppState>,
+    axum::extract::Path(job_id): axum::extract::Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let record = state
+        .procedural_jobs
+        .cancel(&job_id)
+        .await
+        .map_err(AppError::Validation)?;
+    Ok(Json(success_response(serde_json::to_value(record).map_err(
+        |e| AppError::Internal(format!("serialize job error: {e}")),
+    )?)))
+}
+
+pub async fn procedural_job_list_route(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, AppError> {
+    state.procedural_jobs.evict_old().await;
+    let records = state.procedural_jobs.list().await;
+    Ok(Json(success_response(json!({ "jobs": records }))))
+}
 #[cfg(test)]
 mod tests {
     use super::object_or_empty;

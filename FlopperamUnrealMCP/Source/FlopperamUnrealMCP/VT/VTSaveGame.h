@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
 #include "VTTypes.h"
-#include "VT/VTSaveGame.generated.h"
+#include "VTSaveGame.generated.h"
 
 UCLASS(BlueprintType)
 class FLOPPERAMUNREALMCP_API UVTSaveGame : public USaveGame

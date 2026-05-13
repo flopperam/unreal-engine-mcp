@@ -8,6 +8,7 @@
 #include "CineCameraActor.h"
 #include "CineCameraComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "EngineUtils.h"
 
 FEpicUnrealMCPRenderingCommands::FEpicUnrealMCPRenderingCommands()
 {
@@ -464,11 +465,11 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleSetPostProcessVol
         }
         else if (ExposureMethod.Equals(TEXT("AutoHistogram"), ESearchCase::IgnoreCase))
         {
-            Settings.AutoExposureMethod = AEM_AutoHistogram;
+            Settings.AutoExposureMethod = AEM_Histogram;
         }
         else if (ExposureMethod.Equals(TEXT("AutoBasic"), ESearchCase::IgnoreCase))
         {
-            Settings.AutoExposureMethod = AEM_AutoBasic;
+            Settings.AutoExposureMethod = AEM_Basic;
         }
         else
         {
@@ -582,7 +583,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleSetPostProcessVol
         Settings.LensFlareIntensity = static_cast<float>(LensFlareIntensity);
     }
 
-    TargetVolume->MarkDirty();
+    TargetVolume->MarkPackageDirty();
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -704,7 +705,8 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleSpawnCineCameraAc
         double FocusDistance = 0.0;
         if (Params->TryGetNumberField(TEXT("focus_distance"), FocusDistance) && FocusDistance >= 0.0)
         {
-            CineComp->SetFocusDistance(static_cast<float>(FocusDistance));
+            CineComp->FocusSettings.ManualFocusDistance = static_cast<float>(FocusDistance);
+            CineComp->SetFocusSettings(CineComp->FocusSettings);
         }
     }
 
@@ -778,7 +780,8 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleSetCameraProperti
     double FocusDistance = 0.0;
     if (Params->TryGetNumberField(TEXT("focus_distance"), FocusDistance) && FocusDistance >= 0.0)
     {
-        CineComp->SetFocusDistance(static_cast<float>(FocusDistance));
+        CineComp->FocusSettings.ManualFocusDistance = static_cast<float>(FocusDistance);
+            CineComp->SetFocusSettings(CineComp->FocusSettings);
     }
 
     TargetActor->MarkPackageDirty();
@@ -849,7 +852,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPRenderingCommands::HandleSpawnPostProcessV
         Volume->bUnbound = bInfiniteExtent;
     }
 
-    Volume->MarkDirty();
+    Volume->MarkPackageDirty();
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);

@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "VT/VTHazard.generated.h"
+#include "VTHazard.generated.h"
 
 class UBoxComponent;
 class UStaticMeshComponent;

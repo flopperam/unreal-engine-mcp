@@ -1,4 +1,4 @@
-#include "EpicUnrealMCPBridge.h"
+﻿#include "EpicUnrealMCPBridge.h"
 #include "MCPServerRunnable.h"
 #include "Sockets.h"
 #include "SocketSubsystem.h"
@@ -276,6 +276,7 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
     AudioCommands = MakeShared<FEpicUnrealMCPAudioCommands>();
     SequencerCommands = MakeShared<FEpicUnrealMCPSequencerCommands>();
     VroidCommands = MakeShared<FEpicUnrealMCPVroidCommands>();
+    CesiumCommands = MakeShared<FEpicUnrealMCPCesiumCommands>();
 
     const UUnrealMCPSettings* Settings = GetDefault<UUnrealMCPSettings>();
     FString HostStr = Settings ? Settings->Host : TEXT(MCP_SERVER_HOST);
@@ -344,7 +345,7 @@ UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
 void UEpicUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
 {
     UE_LOG(LogTemp, Log, TEXT("EpicUnrealMCPBridge: Initializing"));
-    // Defer actor index rebuild to first command — editor world may not be ready yet
+    // Defer actor index rebuild to first command 窶・editor world may not be ready yet
     StartServer();
 }
 
@@ -914,7 +915,16 @@ namespace
             {TEXT("vroid_check_plugin"), 17},
             {TEXT("vroid_import_vrm"), 17},
             {TEXT("vroid_spawn_avatar"), 17},
-            {TEXT("vroid_validate_avatar_asset"), 17}
+            {TEXT("vroid_validate_avatar_asset"), 17},
+
+            // Cesium Commands (18) - Cesium for Unreal PoC integration
+            {TEXT("cesium_check_plugin"), 18},
+            {TEXT("cesium_setup_georeference"), 18},
+            {TEXT("cesium_add_tileset"), 18},
+            {TEXT("cesium_place_actor_at_geolocation"), 18},
+
+            // WFC tile grid spawn (Editor route 1)
+            {TEXT("spawn_tile_grid"), 1}
         };
         const int32* Found = Router.Find(CommandType);
         return Found ? *Found : -1;
@@ -993,6 +1003,9 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 break;
             case 17: // VroidCommands
                 ResultJson = VroidCommands->HandleCommand(CommandType, Params);
+                break;
+            case 18: // CesiumCommands
+                ResultJson = CesiumCommands->HandleCommand(CommandType, Params);
                 break;
             default:
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));
@@ -1086,3 +1099,6 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
 
     return Future.Get();
 }
+
+
+

@@ -7,6 +7,9 @@
 #include "Sound/SoundCue.h"
 #include "Sound/SoundWave.h"
 #include "Sound/SoundAttenuation.h"
+#include "Sound/SoundClass.h"
+#include "Sound/SoundMix.h"
+#include "Sound/AmbientSound.h"
 #include "Components/AudioComponent.h"
 #include "UObject/Package.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -203,7 +206,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAudioCommands::HandleSetSoundAttenuation(c
         bCreated = true;
     }
 
-    FAttenuationSettings& Settings = Attenuation->Attenuation;
+    FSoundAttenuationSettings& Settings = Attenuation->Attenuation;
 
     double Radius = 0.0;
     if (Params->TryGetNumberField(TEXT("radius"), Radius))
@@ -227,19 +230,19 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAudioCommands::HandleSetSoundAttenuation(c
     double ConeInnerAngle = 0.0;
     if (Params->TryGetNumberField(TEXT("cone_inner_angle"), ConeInnerAngle))
     {
-        Settings.ConeRadius = static_cast<float>(ConeInnerAngle);
+        Settings.ConeOffset = static_cast<float>(ConeInnerAngle);
     }
 
     double ConeOuterAngle = 0.0;
     if (Params->TryGetNumberField(TEXT("cone_outer_angle"), ConeOuterAngle))
     {
-        Settings.ConeRadius = static_cast<float>(ConeOuterAngle);
+        Settings.ConeSphereRadius = static_cast<float>(ConeOuterAngle);
     }
 
     double ReverbSend = 0.0;
     if (Params->TryGetNumberField(TEXT("reverb_send"), ReverbSend))
     {
-        Settings.bAttenuateWithReverbSend = true;
+        Settings.bEnableReverbSend = true;
         Settings.ReverbDistanceMin = 0.0f;
         Settings.ReverbDistanceMax = static_cast<float>(ReverbSend);
     }
@@ -287,7 +290,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAudioCommands::HandleCreateSoundClass(cons
     }
 
     Package->MarkPackageDirty();
-    FAssetRegistryModule::AssetCreated(SoundClass);
+    FAssetRegistryModule::AssetCreated(static_cast<UObject*>(SoundClass));
 
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
     ResultObj->SetBoolField(TEXT("success"), true);
@@ -318,7 +321,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPAudioCommands::HandleCreateSoundMix(const 
     }
 
     Package->MarkPackageDirty();
-    FAssetRegistryModule::AssetCreated(SoundMix);
+    FAssetRegistryModule::AssetCreated(static_cast<UObject*>(SoundMix));
 
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
     ResultObj->SetBoolField(TEXT("success"), true);

@@ -39,9 +39,67 @@ pub trait Generator {
     fn validate(&self, _params: &Self::Params) -> Result<(), ProceduralError> {
         Ok(())
     }
+
+    /// Optional secondary progress signal independent of the shared
+    /// ctx.progress tracker. Default returns None (use the tracker).
+    /// This exists for the user-facing API contract requested in the
+    /// async-jobs follow-up; in practice generators report progress via
+    /// ctx.progress.set(...) because the trait is &self.
+    fn progress(&self) -> Option<f32> {
+        None
+    }
 }
 
 // ── Generation Context ──────────────────────────────────────────────
+
+/// Shared progress tracker that long-running generators can update
+/// concurrently. The job framework (procedural::jobs) reads from this so
+/// that polling clients see real-time progress instead of just "running".
+#[derive(Debug, Default)]
+pub struct ProgressTracker {
+    /// Progress current value (e.g. cells collapsed, iterations done).
+    current: std::sync::atomic::AtomicU64,
+    /// Total expected value (e.g. total cells, max iterations). Zero = unknown.
+    total: std::sync::atomic::AtomicU64,
+    /// Optional explicit fraction in [0,1] times 1_000_000 (for sub-step granularity).
+    /// Set to u64::MAX when unset.
+    fraction_micro: std::sync::atomic::AtomicU64,
+}
+
+impl ProgressTracker {
+    pub fn new() -> Self {
+        Self {
+            current: std::sync::atomic::AtomicU64::new(0),
+            total: std::sync::atomic::AtomicU64::new(0),
+            fraction_micro: std::sync::atomic::AtomicU64::new(u64::MAX),
+        }
+    }
+
+    pub fn set(&self, current: u64, total: u64) {
+        self.current.store(current, std::sync::atomic::Ordering::Relaxed);
+        self.total.store(total, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn set_fraction(&self, fraction: f32) {
+        let clamped = fraction.clamp(0.0, 1.0);
+        let micro = (clamped * 1_000_000.0) as u64;
+        self.fraction_micro.store(micro, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Returns a fraction in [0,1] if any progress is known, otherwise None.
+    pub fn read(&self) -> Option<f32> {
+        let micro = self.fraction_micro.load(std::sync::atomic::Ordering::Relaxed);
+        if micro != u64::MAX {
+            return Some((micro as f32 / 1_000_000.0).clamp(0.0, 1.0));
+        }
+        let total = self.total.load(std::sync::atomic::Ordering::Relaxed);
+        if total == 0 {
+            return None;
+        }
+        let current = self.current.load(std::sync::atomic::Ordering::Relaxed);
+        Some((current as f32 / total as f32).clamp(0.0, 1.0))
+    }
+}
 
 /// Context passed to every generator invocation.
 #[derive(Debug, Clone)]
@@ -57,6 +115,11 @@ pub struct GenerateContext {
 
     /// Start time for timeout checks.
     pub started_at: Instant,
+
+    /// Live progress tracker. Generators should call progress.set(...) or
+    /// progress.set_fraction(...) from inside hot loops so that the job
+    /// registry's polling watchdog can surface real progress to clients.
+    pub progress: std::sync::Arc<ProgressTracker>,
 }
 
 impl GenerateContext {
@@ -72,6 +135,7 @@ impl GenerateContext {
             limits: limits.unwrap_or_default(),
             request_id: effective_seed, // reuse seed as request_id baseline
             started_at: Instant::now(),
+            progress: std::sync::Arc::new(ProgressTracker::new()),
         }
     }
 

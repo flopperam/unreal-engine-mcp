@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "InputActionValue.h"
-#include "VT/VTCharacter.generated.h"
+#include "VTCharacter.generated.h"
 
 class UCameraComponent;
 class UInputAction;

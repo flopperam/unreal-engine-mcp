@@ -110,6 +110,9 @@ from server.scene_tools import (
     scene_create_superformula_mesh,
     scene_create_lsystem_spline,
     scene_create_wfc_grid,
+    scene_create_wfc_grid_unreal,
+    scene_wfc_to_semantic_layout,
+    scene_show_wfc_proxy,
 )
 
 from server.project_editor_tools import (
@@ -216,6 +219,13 @@ from server.vroid_tools import (
     vroid_validate_avatar_asset,
 )
 
+from server.cesium_tools import (
+    cesium_check_plugin,
+    cesium_setup_georeference,
+    cesium_add_tileset,
+    cesium_place_actor_at_geolocation,
+)
+
 
 # Explicitly bootstrap tool registration to avoid heavy import side-effects.
 from server import bootstrap
@@ -299,6 +309,9 @@ __all__ = [
     "scene_create_superformula_mesh",
     "scene_create_lsystem_spline",
     "scene_create_wfc_grid",
+    "scene_create_wfc_grid_unreal",
+    "scene_wfc_to_semantic_layout",
+    "scene_show_wfc_proxy",
     "project_settings_tool",
     "plugin_tool",
     "engine_settings_tool",
@@ -373,6 +386,10 @@ __all__ = [
     "vroid_import_vrm",
     "vroid_spawn_avatar",
     "vroid_validate_avatar_asset",
+    "cesium_check_plugin",
+    "cesium_setup_georeference",
+    "cesium_add_tileset",
+    "cesium_place_actor_at_geolocation",
 ]
 
 

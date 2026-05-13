@@ -279,7 +279,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPDataTableCommands::HandleAddDataTableRow(c
     }
 
     // Add row to table (this copies the memory)
-    DataTable->AddRow(FName(*RowName), RowMemory);
+    DataTable->AddRow(FName(*RowName), RowMemory, RowStruct);
 
     // Free our temporary allocation
     RowStruct->DestroyStruct(RowMemory);
@@ -396,7 +396,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPDataTableCommands::HandleUpdateDataTableRo
     }
 
     // Add row to table (this copies the memory)
-    DataTable->AddRow(FName(*RowName), RowMemory);
+    DataTable->AddRow(FName(*RowName), RowMemory, RowStruct);
 
     // Free our temporary allocation
     RowStruct->DestroyStruct(RowMemory);
@@ -426,8 +426,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPDataTableCommands::HandleExportDataTableCS
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("DataTable not found: %s"), *TablePath));
     }
 
-    FString CSVContent;
-    UDataTable::SaveTableToCSVString(*DataTable, CSVContent);
+    FString CSVContent = DataTable->GetTableAsCSV();
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -451,8 +450,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPDataTableCommands::HandleExportDataTableJS
         return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("DataTable not found: %s"), *TablePath));
     }
 
-    FString JSONContent;
-    UDataTable::SaveTableToJSONString(*DataTable, JSONContent);
+    FString JSONContent = DataTable->GetTableAsJSON();
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);

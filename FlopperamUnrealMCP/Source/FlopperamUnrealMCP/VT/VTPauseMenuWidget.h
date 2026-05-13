@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "VT/VTPauseMenuWidget.generated.h"
+#include "VTPauseMenuWidget.generated.h"
 
 UCLASS(Blueprintable)
 class FLOPPERAMUNREALMCP_API UVTPauseMenuWidget : public UUserWidget

@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "VT/VTClearScreenWidget.generated.h"
+#include "VTClearScreenWidget.generated.h"
 
 class UTextBlock;
 

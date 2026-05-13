@@ -135,7 +135,7 @@ impl Generator for WfcGenerator {
         let seed = params.seed.unwrap_or(ctx.seed);
         let max_attempts = ctx.limits.max_iterations as usize;
 
-        let grid = solve_wfc(params, seed, max_attempts)?;
+        let grid = solve_wfc(params, seed, max_attempts, &ctx.progress)?;
 
         let elapsed = start.elapsed().as_millis() as u64;
         let cell_count = (params.width * params.height) as usize;
@@ -282,6 +282,7 @@ fn solve_wfc(
     params: &WfcParams,
     seed: u64,
     max_attempts: usize,
+    progress: &std::sync::Arc<crate::procedural::generator::ProgressTracker>,
 ) -> Result<TileGrid, ProceduralError> {
     let adjacency = build_adjacency(&params.tileset);
     let all_tiles: Vec<String> = params.tileset.tiles.iter().map(|t| t.id.clone()).collect();
@@ -289,6 +290,9 @@ fn solve_wfc(
 
     let mut grid = Grid::new(params.width, params.height, all_tiles.clone());
     let mut attempts = 0usize;
+    let total_cells = (params.width as u64) * (params.height as u64);
+    progress.set(0, total_cells);
+    let mut max_collapsed: u64 = 0;
 
     if !backtrack(
         &mut grid,
@@ -297,6 +301,9 @@ fn solve_wfc(
         &mut attempts,
         max_attempts,
         params.periodic,
+        progress,
+        total_cells,
+        &mut max_collapsed,
     ) {
         return Err(ProceduralError::Contradiction {
             details: format!("WFC failed after {} attempts (max {})", attempts, max_attempts),
@@ -332,6 +339,9 @@ fn backtrack(
     attempts: &mut usize,
     max_attempts: usize,
     periodic: bool,
+    progress: &std::sync::Arc<crate::procedural::generator::ProgressTracker>,
+    total_cells: u64,
+    max_collapsed: &mut u64,
 ) -> bool {
     // Find uncollapsed cell with minimum entropy.
     let mut best: Option<(u32, u32, usize)> = None;
@@ -375,8 +385,17 @@ fn backtrack(
         }
 
         if propagate(&mut new_grid, x, y, adjacency, periodic) {
+            // Count collapsed cells in this branch and update high-water mark / progress.
+            let collapsed_count: u64 = new_grid.cells.iter().filter(|c| c.collapsed.is_some()).count() as u64;
+            if collapsed_count > *max_collapsed {
+                *max_collapsed = collapsed_count;
+                if total_cells > 0 {
+                    progress.set(*max_collapsed, total_cells);
+                }
+            }
             if backtrack(
                 &mut new_grid, adjacency, rng, attempts, max_attempts, periodic,
+                progress, total_cells, max_collapsed,
             ) {
                 *grid = new_grid;
                 return true;

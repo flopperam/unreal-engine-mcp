@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "VT/VTHUDWidget.generated.h"
+#include "VTHUDWidget.generated.h"
 
 class UProgressBar;
 class UTextBlock;

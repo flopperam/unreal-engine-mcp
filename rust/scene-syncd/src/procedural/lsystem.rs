@@ -116,8 +116,12 @@ impl Generator for LSystemGenerator {
         let start = std::time::Instant::now();
         let effective_iterations = params.iterations.min(ctx.limits.max_iterations);
 
-        let derived = derive(params, effective_iterations);
+        // Initial bookkeeping for progress: derive=0..0.7, interpret=0.7..1.0
+        ctx.progress.set_fraction(0.0);
+        let derived = derive_with_progress(params, effective_iterations, &ctx.progress);
+        ctx.progress.set_fraction(0.7);
         let segments = interpret(&derived, params);
+        ctx.progress.set_fraction(1.0);
 
         if segments.is_empty() {
             return Err(ProceduralError::EmptyResult);
@@ -189,6 +193,36 @@ fn derive(params: &LSystemParams, effective_iterations: u32) -> String {
     }
     current
 }
+
+/// derive variant that updates the shared ProgressTracker after each
+/// iteration so polling clients see real-time L-System derivation progress.
+fn derive_with_progress(
+    params: &LSystemParams,
+    effective_iterations: u32,
+    progress: &std::sync::Arc<crate::procedural::generator::ProgressTracker>,
+) -> String {
+    let mut current = params.axiom.clone();
+    let iterations = effective_iterations as usize;
+
+    for i in 0..iterations {
+        let mut next = String::with_capacity(current.len() * 4);
+        for ch in current.chars() {
+            if let Some(rule) = params.rules.iter().find(|(sym, _)| *sym == ch) {
+                next.push_str(&rule.1);
+            } else {
+                next.push(ch);
+            }
+        }
+        current = next;
+        // Map iterations into [0.0, 0.7]: derivation is the heavier phase, leave 0.3 for interpret.
+        if iterations > 0 {
+            let frac = ((i + 1) as f32 / iterations as f32) * 0.7;
+            progress.set_fraction(frac);
+        }
+    }
+    current
+}
+
 
 /// Turtle state for 3D L-System interpretation.
 #[derive(Debug, Clone)]

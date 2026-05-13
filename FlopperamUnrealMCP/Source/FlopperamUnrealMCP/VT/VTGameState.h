@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
 #include "VTTypes.h"
-#include "VT/VTGameState.generated.h"
+#include "VTGameState.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FVTCoreCountChangedSignature, int32, CollectedCores, int32, TotalCores);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FVTGateUnlockedSignature, bool, bUnlocked);

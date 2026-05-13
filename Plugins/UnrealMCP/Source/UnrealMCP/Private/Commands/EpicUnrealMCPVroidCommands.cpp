@@ -19,9 +19,9 @@
 #include "Engine/World.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/Texture2D.h"
-#include "Engine/Material.h"
-#include "Engine/PhysicsAsset.h"
-#include "Engine/Skeleton.h"
+#include "Materials/Material.h"
+#include "PhysicsEngine/PhysicsAsset.h"
+#include "Animation/Skeleton.h"
 #include "GameFramework/Actor.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Editor.h"
@@ -260,7 +260,7 @@ UAssetImportTask* FEpicUnrealMCPVroidCommands::CreateVrmImportTask(
 	Task->Factory = nullptr;
 	Task->bAutomated = true;
 	Task->bReplaceExisting = true;
-	Task->Save = true;
+	Task->bSave = true;
 
 	return Task;
 }
@@ -288,13 +288,13 @@ TArray<UObject*> FEpicUnrealMCPVroidCommands::ProcessVrmImportTask(UAssetImportT
 		}
 	}
 
-	if (Result.IsEmpty() && !Task->ResultPath.IsEmpty())
+	if (Result.IsEmpty() && Task->ImportedObjectPaths.Num() > 0)
 	{
 		// Fallback: try to load from result path
 		FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
 		IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
 
-		FAssetData AssetData = AssetRegistry.GetAssetByObjectPath(FSoftObjectPath(Task->ResultPath));
+		FAssetData AssetData = AssetRegistry.GetAssetByObjectPath(FSoftObjectPath(Task->ImportedObjectPaths[0]));
 		if (AssetData.IsValid())
 		{
 			UObject* LoadedObject = AssetData.GetAsset();

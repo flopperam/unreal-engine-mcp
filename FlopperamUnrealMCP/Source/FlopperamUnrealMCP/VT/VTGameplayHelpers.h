@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
-#include "VT/VTGameplayHelpers.generated.h"
+#include "VTGameplayHelpers.generated.h"
 
 class AVTGameState;
 

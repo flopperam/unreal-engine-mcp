@@ -8,3 +8,4 @@ pub mod protocol;
 pub mod sdf;
 pub mod superformula;
 pub mod wfc;
+pub mod jobs;

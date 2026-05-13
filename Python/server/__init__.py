@@ -43,6 +43,7 @@ def bootstrap():
     from server import validation_tools            # noqa: F401
     from server import scene_tools                # noqa: F401
     from server import vroid_tools                # noqa: F401
+    from server import cesium_tools               # noqa: F401
     from server import packaging_tools             # noqa: F401
     from server import vertical_test_tools        # noqa: F401
 

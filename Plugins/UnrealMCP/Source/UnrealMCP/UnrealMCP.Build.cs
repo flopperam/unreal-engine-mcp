@@ -77,6 +77,7 @@ public class UnrealMCP : ModuleRules
 				"UMGEditor",				// For UWidgetBlueprint and Editor Utility Widget creation
 				"UMG",					// For UUserWidget and WidgetTree operations
 				"MovieScene",			// For UWidgetAnimation MovieScene assets
+				"MovieSceneTracks",     // For UMovieScene3DTransformSection / Track / CameraCutTrack / EventTrack
 			"LevelSequence",		// For ULevelSequence and Sequencer tracks
 				"CommonUI",				// For Common UI widget class support
 				"CommonInput"			// For Common UI input routing dependencies
@@ -121,5 +122,38 @@ public class UnrealMCP : ModuleRules
 				// ... add any modules that your module loads dynamically here ...
 			}
 		);
+		// ----- Optional Cesium for Unreal integration -----
+		// We do NOT hard-depend on CesiumForUnreal so this plugin builds in environments
+		// where Cesium is not installed. When the .uplugin is found, we enable WITH_CESIUM=1
+		// and add CesiumRuntime as a private dep so EpicUnrealMCPCesiumCommands.cpp can
+		// spawn ACesiumGeoreference / ACesium3DTileset etc.
+		bool bCesiumFound = false;
+		string[] CesiumProbePaths = new string[] {
+			System.IO.Path.Combine(EngineDirectory, "Plugins", "Marketplace", "CesiumForUnreal", "CesiumForUnreal.uplugin"),
+			System.IO.Path.Combine(EngineDirectory, "Plugins", "CesiumForUnreal", "CesiumForUnreal.uplugin"),
+		};
+		if (Target.ProjectFile != null)
+		{
+			string ProjectDir = System.IO.Path.GetDirectoryName(Target.ProjectFile.FullName);
+			System.Array.Resize(ref CesiumProbePaths, CesiumProbePaths.Length + 1);
+			CesiumProbePaths[CesiumProbePaths.Length - 1] = System.IO.Path.Combine(ProjectDir, "Plugins", "CesiumForUnreal", "CesiumForUnreal.uplugin");
+		}
+		foreach (string Probe in CesiumProbePaths)
+		{
+			if (System.IO.File.Exists(Probe))
+			{
+				bCesiumFound = true;
+				break;
+			}
+		}
+		if (bCesiumFound)
+		{
+			PublicDefinitions.Add("WITH_CESIUM=1");
+			PrivateDependencyModuleNames.Add("CesiumRuntime");
+		}
+		else
+		{
+			PublicDefinitions.Add("WITH_CESIUM=0");
+		}
 	}
 }

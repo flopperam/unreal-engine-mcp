@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "VT/VTExitGate.generated.h"
+#include "VTExitGate.generated.h"
 
 class UBoxComponent;
 class UStaticMeshComponent;
