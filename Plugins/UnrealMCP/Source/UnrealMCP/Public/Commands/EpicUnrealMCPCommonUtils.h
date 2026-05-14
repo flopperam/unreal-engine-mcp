@@ -17,6 +17,7 @@ class UK2Node_VariableSet;
 class UK2Node_InputAction;
 class UK2Node_Self;
 class UFunction;
+class UEpicUnrealMCPBridge;
 
 /**
  * In-memory index for O(1) actor lookup by name and mcp_id.
@@ -74,6 +75,14 @@ public:
     static UK2Node_Event* FindExistingEventNode(UEdGraph* Graph, const FString& EventName);
 
     // Property utilities
-    static bool SetObjectProperty(UObject* Object, const FString& PropertyName, 
+    static bool SetObjectProperty(UObject* Object, const FString& PropertyName,
                                  const TSharedPtr<FJsonValue>& Value, FString& OutErrorMessage);
+
+    // Tag / actor lookup helpers (moved from EpicUnrealMCPEditorCommands.cpp)
+    static void ApplyMcpIdAndTags(AActor* Actor, const FString& McpId, const TArray<FString>& ExtraTags);
+    static TArray<FString> ReadStringArrayField(const TSharedPtr<FJsonObject>& Object, const FString& FieldName);
+    static AActor* FindActorByMcpIdTag(UWorld* World, const FString& McpId);
+
+    // Bridge index accessor (used by command handlers for O(1) actor lookup)
+    static FActorIndex& GetActorIndex();
 }; 

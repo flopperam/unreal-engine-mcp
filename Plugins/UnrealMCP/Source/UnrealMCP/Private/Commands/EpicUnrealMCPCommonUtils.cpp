@@ -1,4 +1,7 @@
 #include "Commands/EpicUnrealMCPCommonUtils.h"
+#include "EngineUtils.h"
+#include "EpicUnrealMCPBridge.h"
+#include "Editor.h"
 #include "GameFramework/Actor.h"
 #include "Engine/Blueprint.h"
 #include "EdGraph/EdGraph.h"
@@ -1147,7 +1150,69 @@ bool FEpicUnrealMCPCommonUtils::SetObjectProperty(UObject* Object, const FString
         }
     }
     
-    OutErrorMessage = FString::Printf(TEXT("Unsupported property type: %s for property %s"), 
+    OutErrorMessage = FString::Printf(TEXT("Unsupported property type: %s for property %s"),
                                     *Property->GetClass()->GetName(), *PropertyName);
     return false;
-} 
+}
+
+// ---------------------------------------------------------------------------
+// Bridge index accessor
+// ---------------------------------------------------------------------------
+
+FActorIndex& FEpicUnrealMCPCommonUtils::GetActorIndex()
+{
+    UEpicUnrealMCPBridge* Bridge = GEditor->GetEditorSubsystem<UEpicUnrealMCPBridge>();
+    check(Bridge);
+    return Bridge->ActorIndex;
+}
+
+// ---------------------------------------------------------------------------
+// Tag / actor lookup helpers (moved from EpicUnrealMCPEditorCommands.cpp)
+// ---------------------------------------------------------------------------
+
+void FEpicUnrealMCPCommonUtils::ApplyMcpIdAndTags(AActor* Actor, const FString& McpId, const TArray<FString>& ExtraTags)
+{
+    if (!Actor) return;
+    Actor->Tags.AddUnique(FName(TEXT("managed_by_mcp")));
+    if (!McpId.IsEmpty())
+    {
+        Actor->Tags.AddUnique(FName(*FString::Printf(TEXT("mcp_id:%s"), *McpId)));
+    }
+    for (const FString& Tag : ExtraTags)
+    {
+        if (!Tag.IsEmpty())
+        {
+            Actor->Tags.AddUnique(FName(*Tag));
+        }
+    }
+}
+
+TArray<FString> FEpicUnrealMCPCommonUtils::ReadStringArrayField(const TSharedPtr<FJsonObject>& Object, const FString& FieldName)
+{
+    TArray<FString> Out;
+    if (!Object.IsValid()) return Out;
+    const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+    if (!Object->TryGetArrayField(FieldName, Arr) || !Arr) return Out;
+    for (const TSharedPtr<FJsonValue>& V : *Arr)
+    {
+        if (V.IsValid() && V->Type == EJson::String)
+        {
+            Out.Add(V->AsString());
+        }
+    }
+    return Out;
+}
+
+AActor* FEpicUnrealMCPCommonUtils::FindActorByMcpIdTag(UWorld* World, const FString& McpId)
+{
+    if (!World || McpId.IsEmpty()) return nullptr;
+    const FName Target(*FString::Printf(TEXT("mcp_id:%s"), *McpId));
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        if (It->Tags.Contains(Target))
+        {
+            return *It;
+        }
+    }
+    return nullptr;
+}
