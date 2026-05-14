@@ -5,7 +5,7 @@
 #include "Interfaces/IPluginManager.h"
 
 #if WITH_CESIUM
-// Cesium for Unreal headers — only included when the plugin is detected by Build.cs.
+// Cesium for Unreal headers 窶・only included when the plugin is detected by Build.cs.
 #include "CesiumGeoreference.h"
 #include "Cesium3DTileset.h"
 #include "CesiumGlobeAnchorComponent.h"
@@ -67,7 +67,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPCesiumCommands::HandleCesiumCheckPlugin(
 	if (!bAvailable)
 	{
 		Data->SetStringField(TEXT("hint"),
-			TEXT("Install Cesium for Unreal from https://cesium.com/learn/unreal/ and enable the plugin in this project's .uproject. UE 5.7 may require a source build of the plugin."));
+			TEXT("Install Cesium for Unreal (v2.18+ ships official Unreal Engine 5.7 binaries) from https://cesium.com/learn/unreal/ and enable CesiumForUnreal in this project's .uproject, then rebuild UnrealMCP so WITH_CESIUM=1."));
 	}
 
 	TSharedPtr<FJsonObject> Response = MakeShared<FJsonObject>();
@@ -262,12 +262,18 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPCesiumCommands::HandleCesiumPlaceActorAtGe
 	}
 
 #if WITH_CESIUM
+	// Accept either actor_mcp_id (preferred, looked up by mcp_id:<id> tag) or
+	// actor_name (legacy fallback that matches FName / actor label).
+	FString McpId;
 	FString ActorName;
-	if (!Params->TryGetStringField(TEXT("actor_name"), ActorName) || ActorName.IsEmpty())
+	const bool bHasMcpId = Params->TryGetStringField(TEXT("actor_mcp_id"), McpId) && !McpId.IsEmpty();
+	const bool bHasName  = Params->TryGetStringField(TEXT("actor_name"),  ActorName) && !ActorName.IsEmpty();
+	if (!bHasMcpId && !bHasName)
 	{
 		TSharedPtr<FJsonObject> Resp = MakeShared<FJsonObject>();
 		Resp->SetBoolField(TEXT("success"), false);
-		Resp->SetStringField(TEXT("error"), TEXT("Missing 'actor_name' parameter"));
+		Resp->SetStringField(TEXT("error"), TEXT("Missing 'actor_mcp_id' (preferred) or 'actor_name' parameter"));
+		Resp->SetStringField(TEXT("hint"), TEXT("Spawn the actor first via spawn_actor and pass its mcp_id back here as actor_mcp_id."));
 		return Resp;
 	}
 
@@ -286,20 +292,41 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPCesiumCommands::HandleCesiumPlaceActorAtGe
 	}
 
 	AActor* Target = nullptr;
-	for (TActorIterator<AActor> It(World); It; ++It)
+	if (bHasMcpId)
 	{
-		if (It->GetName() == ActorName)
+		// Primary path: locate by mcp_id:<id> tag (matches the convention used
+		// by HandleSpawnActor / FEpicUnrealMCPActorCommands::FindActorByMcpId).
+		const FName TargetTag(*FString::Printf(TEXT("mcp_id:%s"), *McpId));
+		for (TActorIterator<AActor> It(World); It; ++It)
 		{
-			Target = *It;
-			break;
+			if (It->Tags.Contains(TargetTag))
+			{
+				Target = *It;
+				break;
+			}
+		}
+	}
+	if (!Target && bHasName)
+	{
+		// Legacy fallback: match by FName or actor label.
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			if (It->GetName() == ActorName || It->GetActorLabel() == ActorName)
+			{
+				Target = *It;
+				break;
+			}
 		}
 	}
 	if (!Target)
 	{
+		const FString Lookup = bHasMcpId
+			? FString::Printf(TEXT("actor_mcp_id='%s'"), *McpId)
+			: FString::Printf(TEXT("actor_name='%s'"), *ActorName);
 		TSharedPtr<FJsonObject> Resp = MakeShared<FJsonObject>();
 		Resp->SetBoolField(TEXT("success"), false);
-		Resp->SetStringField(TEXT("error"), FString::Printf(TEXT("Actor not found: %s"), *ActorName));
-		Resp->SetStringField(TEXT("hint"), TEXT("Spawn the actor first via spawn_actor, then call cesium_place_actor_at_geolocation"));
+		Resp->SetStringField(TEXT("error"), FString::Printf(TEXT("Actor not found by %s"), *Lookup));
+		Resp->SetStringField(TEXT("hint"), TEXT("Spawn the actor first via spawn_actor (it will get a mcp_id:<id> tag) and pass that mcp_id as actor_mcp_id."));
 		return Resp;
 	}
 
@@ -327,6 +354,16 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPCesiumCommands::HandleCesiumPlaceActorAtGe
 
 	TSharedPtr<FJsonObject> Data = MakeShared<FJsonObject>();
 	Data->SetStringField(TEXT("actor_name"), Target->GetName());
+	Data->SetStringField(TEXT("actor_path"), Target->GetPathName());
+	if (bHasMcpId)
+	{
+		Data->SetStringField(TEXT("actor_mcp_id"), McpId);
+		Data->SetStringField(TEXT("matched_by"), TEXT("mcp_id"));
+	}
+	else
+	{
+		Data->SetStringField(TEXT("matched_by"), TEXT("actor_name"));
+	}
 	Data->SetNumberField(TEXT("latitude"), Lat);
 	Data->SetNumberField(TEXT("longitude"), Lon);
 	Data->SetNumberField(TEXT("height"), Height);
@@ -415,7 +452,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPCesiumCommands::MakeCesiumUnavailableRespo
 	Resp->SetStringField(TEXT("error"),
 		FString::Printf(TEXT("CesiumForUnreal plugin is not enabled. '%s' cannot run."), *CommandName));
 	Resp->SetStringField(TEXT("hint"),
-		TEXT("Run 'cesium_check_plugin' to inspect the plugin status, then enable CesiumForUnreal in the .uproject (UE 5.7 may require a source build of the plugin)."));
+		TEXT("Run 'cesium_check_plugin' to inspect the plugin status, then enable CesiumForUnreal in the .uproject (Cesium for Unreal v2.18+ officially ships UE 5.7 binaries)."));
 	return Resp;
 }
 

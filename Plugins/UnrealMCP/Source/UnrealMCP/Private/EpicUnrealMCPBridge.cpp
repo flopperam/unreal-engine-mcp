@@ -1,4 +1,4 @@
-﻿#include "EpicUnrealMCPBridge.h"
+#include "EpicUnrealMCPBridge.h"
 #include "MCPServerRunnable.h"
 #include "Sockets.h"
 #include "SocketSubsystem.h"
@@ -260,6 +260,8 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
     , Runnable(nullptr)
 {
     EditorCommands = MakeShared<FEpicUnrealMCPEditorCommands>();
+    ActorCommands = MakeShared<FEpicUnrealMCPActorCommands>();
+    NavigationCommands = MakeShared<FEpicUnrealMCPNavigationCommands>();
     BlueprintCommands = MakeShared<FEpicUnrealMCPBlueprintCommands>();
     BlueprintGraphCommands = MakeShared<FEpicUnrealMCPBlueprintGraphCommands>();
     MaterialCommands = MakeShared<FEpicUnrealMCPMaterialCommands>();
@@ -277,6 +279,7 @@ UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
     SequencerCommands = MakeShared<FEpicUnrealMCPSequencerCommands>();
     VroidCommands = MakeShared<FEpicUnrealMCPVroidCommands>();
     CesiumCommands = MakeShared<FEpicUnrealMCPCesiumCommands>();
+    ProceduralCommands = MakeShared<FEpicUnrealMCPProceduralCommands>();
 
     const UUnrealMCPSettings* Settings = GetDefault<UUnrealMCPSettings>();
     FString HostStr = Settings ? Settings->Host : TEXT(MCP_SERVER_HOST);
@@ -325,6 +328,8 @@ UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
 {
     StopServer();
     EditorCommands.Reset();
+    ActorCommands.Reset();
+    NavigationCommands.Reset();
     BlueprintCommands.Reset();
     BlueprintGraphCommands.Reset();
     MaterialCommands.Reset();
@@ -345,7 +350,7 @@ UEpicUnrealMCPBridge::~UEpicUnrealMCPBridge()
 void UEpicUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
 {
     UE_LOG(LogTemp, Log, TEXT("EpicUnrealMCPBridge: Initializing"));
-    // Defer actor index rebuild to first command 窶・editor world may not be ready yet
+    // Defer actor index rebuild to first command 遯ｶ繝ｻeditor world may not be ready yet
     StartServer();
 }
 
@@ -482,460 +487,11 @@ void UEpicUnrealMCPBridge::EnsureActorIndexInitialized()
     }
 }
 
-namespace
-{
-    // Command routing: 0=ping, 1=EditorCommands, 2=BlueprintCommands, 3=BlueprintGraphCommands, 4=MaterialCommands, 5=ProjectEditorCommands, 6=ContentBrowserCommands, 7=AssetImportCommands, 8=MeshEditingCommands, 9=EnhancedInputCommands, 10=GameplayFrameworkCommands, 11=UMGCommands
-    int32 RouteCommand(const FString& CommandType)
-    {
-        static const TMap<FString, int32> Router = {
-            {TEXT("ping"), 0},
-            {TEXT("get_actors_in_level"), 1},
-            {TEXT("find_actors_by_name"), 1},
-            {TEXT("spawn_actor"), 1},
-            {TEXT("delete_actor"), 1},
-            {TEXT("set_actor_transform"), 1},
-            {TEXT("spawn_blueprint_actor"), 2},
-            {TEXT("find_actor_by_mcp_id"), 1},
-            {TEXT("set_actor_transform_by_mcp_id"), 1},
-            {TEXT("delete_actor_by_mcp_id"), 1},
-            {TEXT("apply_scene_delta"), 1},
-            {TEXT("clone_actor"), 1},
-            {TEXT("create_nav_mesh_volume"), 1},
-            {TEXT("create_patrol_route"), 1},
-            {TEXT("create_spline_from_points"), 1},
-            {TEXT("set_ai_behavior"), 1},
-            {TEXT("create_behavior_tree"), 1},
-            {TEXT("create_blackboard"), 1},
-            {TEXT("create_nav_modifier_volume"), 1},
-            {TEXT("create_nav_link_proxy"), 1},
-            {TEXT("set_actor_collision_preset"), 1},
-            {TEXT("set_actor_physics"), 1},
-            {TEXT("create_physical_material"), 1},
-            {TEXT("spawn_radial_force"), 1},
-            {TEXT("spawn_physics_constraint"), 1},
-            {TEXT("compile_all_blueprints"), 1},
-            {TEXT("run_map_check"), 1},
-            {TEXT("find_broken_references"), 1},
-            {TEXT("create_draft_proxy"), 1},
-            {TEXT("update_draft_proxy"), 1},
-            {TEXT("delete_draft_proxy"), 1},
-            {TEXT("spawn_instance_set"), 1},
-            {TEXT("update_instance_set"), 1},
-            {TEXT("delete_instance_set"), 1},
-            {TEXT("get_instance_set_state"), 1},
-            {TEXT("list_instance_sets"), 1},
-            {TEXT("request_cognitive_processing"), 1},
-            {TEXT("create_blueprint"), 2},
-            {TEXT("add_component_to_blueprint"), 2},
-            {TEXT("set_physics_properties"), 2},
-            {TEXT("compile_blueprint"), 2},
-            {TEXT("set_static_mesh_properties"), 2},
-            {TEXT("set_mesh_material_color"), 2},
-            {TEXT("get_available_materials"), 2},
-            {TEXT("apply_material_to_actor"), 2},
-            {TEXT("apply_material_to_blueprint"), 2},
-            {TEXT("get_actor_material_info"), 2},
-            {TEXT("get_blueprint_material_info"), 2},
-            {TEXT("read_blueprint_content"), 2},
-            {TEXT("analyze_blueprint_graph"), 2},
-            {TEXT("get_blueprint_variable_details"), 2},
-            {TEXT("get_blueprint_function_details"), 2},
-            {TEXT("set_blueprint_parent_class"), 2},
-            {TEXT("set_blueprint_class_settings"), 2},
-            {TEXT("set_blueprint_class_defaults"), 2},
-            {TEXT("set_component_defaults"), 2},
-            {TEXT("edit_construction_script"), 2},
-            {TEXT("create_event_dispatcher"), 2},
-            {TEXT("bind_event_dispatcher"), 2},
-            {TEXT("create_enum"), 2},
-            {TEXT("create_struct"), 2},
-            {TEXT("edit_enum"), 2},
-            {TEXT("edit_struct"), 2},
-            {TEXT("create_blueprint_interface"), 2},
-            {TEXT("implement_interface"), 2},
-            {TEXT("create_function_library"), 2},
-            {TEXT("create_macro_library"), 2},
-            {TEXT("add_comment_node"), 2},
-            {TEXT("add_reroute_node"), 2},
-            {TEXT("format_graph"), 2},
-            {TEXT("create_collapsed_graph"), 2},
-            {TEXT("create_macro_graph"), 2},
-            {TEXT("create_macro_instance"), 2},
-            {TEXT("create_timeline"), 2},
-            {TEXT("edit_timeline"), 2},
-            {TEXT("set_blueprint_breakpoint"), 2},
-            {TEXT("set_blueprint_watch"), 2},
-            {TEXT("clear_blueprint_watches"), 2},
-            {TEXT("step_blueprint_debugger"), 2},
-            {TEXT("get_blueprint_debug_info"), 2},
-            {TEXT("blueprint_diff"), 2},
-            {TEXT("add_blueprint_node"), 3},
-            {TEXT("connect_nodes"), 3},
-            {TEXT("create_variable"), 3},
-            {TEXT("set_blueprint_variable_properties"), 3},
-            {TEXT("add_event_node"), 3},
-            {TEXT("delete_node"), 3},
-            {TEXT("set_node_property"), 3},
-            {TEXT("create_function"), 3},
-            {TEXT("add_function_input"), 3},
-            {TEXT("add_function_output"), 3},
-            {TEXT("delete_function"), 3},
-            {TEXT("rename_function"), 3},
-            {TEXT("create_material"), 4},
-            {TEXT("analyze_material_graph"), 4},
-            {TEXT("add_material_node"), 4},
-            {TEXT("connect_material_nodes"), 4},
-            {TEXT("create_material_instance"), 4},
-            {TEXT("create_dynamic_material_instance"), 4},
-            {TEXT("batch_update_material_parameters"), 4},
-            {TEXT("set_material_scalar_parameter"), 4},
-            {TEXT("set_material_vector_parameter"), 4},
-            {TEXT("set_material_texture_parameter"), 4},
-            {TEXT("set_material_static_switch_parameter"), 4},
-            {TEXT("create_material_parameter_collection"), 4},
-            {TEXT("edit_material_parameter_collection"), 4},
-            {TEXT("create_advanced_material"), 4},
-            // Project / Editor Commands (5)
-            {TEXT("get_project_settings"), 5},
-            {TEXT("set_project_setting"), 5},
-            {TEXT("set_default_map"), 5},
-            {TEXT("set_game_default_map"), 5},
-            {TEXT("set_editor_startup_map"), 5},
-            {TEXT("set_project_description"), 5},
-            {TEXT("set_maps_and_modes"), 5},
-            {TEXT("list_plugins"), 5},
-            {TEXT("set_plugin_enabled"), 5},
-            {TEXT("set_engine_scalability"), 5},
-            {TEXT("set_rendering_setting"), 5},
-            {TEXT("set_physics_setting"), 5},
-            {TEXT("set_input_setting"), 5},
-            {TEXT("set_collision_setting"), 5},
-            {TEXT("set_ai_setting"), 5},
-            {TEXT("set_navigation_setting"), 5},
-            {TEXT("set_packaging_setting"), 5},
-            {TEXT("get_world_settings"), 5},
-            {TEXT("set_world_setting"), 5},
-            {TEXT("create_level"), 5},
-            {TEXT("save_level"), 5},
-            {TEXT("load_level"), 5},
-            {TEXT("duplicate_level"), 5},
-            {TEXT("rename_level"), 5},
-            {TEXT("delete_level"), 5},
-            {TEXT("get_current_level"), 5},
-            {TEXT("list_levels"), 5},
-            {TEXT("get_persistent_level"), 5},
-            {TEXT("add_sublevel"), 5},
-            {TEXT("remove_sublevel"), 5},
-            {TEXT("set_sublevel_visible"), 5},
-            {TEXT("set_sublevel_loaded"), 5},
-            {TEXT("create_streaming_volume"), 5},
-            {TEXT("set_level_streaming_settings"), 5},
-            {TEXT("enable_world_partition"), 5},
-            {TEXT("set_world_partition_grid"), 5},
-            {TEXT("get_world_partition_cells"), 5},
-            {TEXT("load_world_partition_cell"), 5},
-            {TEXT("unload_world_partition_cell"), 5},
-            {TEXT("create_data_layer"), 5},
-            {TEXT("add_actors_to_data_layer"), 5},
-            {TEXT("remove_actors_from_data_layer"), 5},
-            {TEXT("set_data_layer_enabled"), 5},
-            {TEXT("create_hlod_layer"), 5},
-            {TEXT("build_hlod"), 5},
-            {TEXT("rebuild_hlod"), 5},
-            {TEXT("set_one_file_per_actor"), 5},
-            {TEXT("set_level_bounds"), 5},
-            {TEXT("set_world_origin_rebasing"), 5},
-            {TEXT("undo"), 5},
-            {TEXT("redo"), 5},
-            {TEXT("get_dirty_assets"), 5},
-            {TEXT("save_all"), 5},
-            {TEXT("save_asset"), 5},
-            {TEXT("get_editor_log"), 5},
-            {TEXT("create_utility_widget"), 5},
-            {TEXT("create_utility_blueprint"), 5},
-            {TEXT("execute_python_script"), 5},
-            {TEXT("execute_commandlet"), 5},
-            {TEXT("start_pie"), 5},
-            {TEXT("stop_pie"), 5},
-            {TEXT("get_play_state"), 5},
-            {TEXT("start_standalone_game"), 5},
-            {TEXT("start_simulate"), 5},
-            {TEXT("get_camera_position"), 5},
-            {TEXT("set_camera_position"), 5},
-            {TEXT("viewport_action"), 5},
-            {TEXT("take_screenshot"), 5},
-            {TEXT("export_level"), 7},
-            // Content Browser Commands (6)
-            {TEXT("create_folder"), 6},
-            {TEXT("delete_folder"), 6},
-            {TEXT("list_assets"), 6},
-            {TEXT("search_assets"), 6},
-            {TEXT("resolve_asset_path"), 6},
-            {TEXT("move_asset"), 6},
-            {TEXT("copy_asset"), 6},
-            {TEXT("duplicate_asset"), 6},
-            {TEXT("rename_asset"), 6},
-            {TEXT("delete_asset"), 6},
-            {TEXT("load_asset"), 6},
-            {TEXT("unload_asset"), 6},
-            {TEXT("save_assets"), 6},
-            {TEXT("get_asset_metadata"), 6},
-            {TEXT("set_asset_metadata"), 6},
-            {TEXT("tag_asset"), 6},
-            {TEXT("find_redirectors"), 6},
-            {TEXT("fixup_redirectors"), 6},
-            {TEXT("find_unused_assets"), 6},
-            {TEXT("get_asset_references"), 6},
-            {TEXT("get_asset_dependencies"), 6},
-            {TEXT("get_asset_reference_graph"), 6},
-            {TEXT("audit_assets"), 6},
-            {TEXT("asset_registry_search"), 6},
-            {TEXT("bulk_rename"), 6},
-            {TEXT("bulk_move"), 6},
-            {TEXT("bulk_delete"), 6},
-            {TEXT("create_primary_asset_label"), 6},
-            {TEXT("delete_primary_asset_label"), 6},
-            {TEXT("list_primary_asset_labels"), 6},
-            {TEXT("get_asset_manager_settings"), 6},
-            {TEXT("set_asset_manager_settings"), 6},
-            {TEXT("add_primary_asset_bundle"), 6},
-            // Asset Import/Export Commands (7)
-            {TEXT("import_fbx_mesh"), 7},
-            {TEXT("import_texture"), 7},
-            {TEXT("import_audio"), 7},
-            {TEXT("import_gltf"), 7},
-            {TEXT("import_obj"), 7},
-            {TEXT("import_usd"), 7},
-            {TEXT("import_mp3"), 7},
-            {TEXT("import_alembic"), 7},
-            {TEXT("import_datasmith"), 7},
-            {TEXT("reimport_asset"), 7},
-            {TEXT("save_import_preset"), 7},
-            {TEXT("load_import_preset"), 7},
-            {TEXT("export_asset"), 7},
-
-            // Mesh Editing Commands (8)
-            {TEXT("get_static_mesh_details"), 8},
-            {TEXT("set_nanite_settings"), 8},
-            {TEXT("set_lightmap_settings"), 8},
-            {TEXT("edit_mesh_bounds"), 8},
-            {TEXT("generate_collision"), 8},
-            {TEXT("set_collision_complexity"), 8},
-            {TEXT("add_simple_collision"), 8},
-            {TEXT("remove_collisions"), 8},
-            {TEXT("set_lod_group"), 8},
-            {TEXT("add_socket"), 8},
-            {TEXT("remove_socket"), 8},
-            {TEXT("update_socket"), 8},
-            {TEXT("mesh_boolean"), 8},
-            {TEXT("mesh_remesh"), 8},
-            {TEXT("mesh_simplify"), 8},
-            {TEXT("mesh_uv_unwrap"), 8},
-            {TEXT("mesh_voxel_remesh"), 8},
-            {TEXT("mesh_uv_layout"), 8},
-            {TEXT("set_pivot"), 8},
-            {TEXT("mesh_merge"), 8},
-            {TEXT("set_vertex_colors"), 8},
-            {TEXT("mesh_bake"), 8},
-            {TEXT("poly_edit"), 8},
-            {TEXT("modeling_tool_execute"), 8},
-            {TEXT("generate_lods"), 8},
-            {TEXT("generate_lightmap_uvs"), 8},
-            {TEXT("import_ucx_collision"), 8},
-            
-            // UV Operations (UStaticMeshEditorSubsystem alternatives)
-            {TEXT("generate_box_uv_channel"), 8},
-            {TEXT("generate_planar_uv_channel"), 8},
-            {TEXT("generate_cylindrical_uv_channel"), 8},
-            {TEXT("add_uv_channel"), 8},
-            {TEXT("remove_uv_channel"), 8},
-            
-            // LOD Operations (UStaticMeshEditorSubsystem alternatives)
-            {TEXT("set_lods"), 8},
-            {TEXT("remove_lods"), 8},
-            
-            // Mesh Merge Operations (UStaticMeshEditorSubsystem alternatives)
-            {TEXT("join_static_mesh_actors"), 8},
-            {TEXT("merge_static_mesh_actors"), 8},
-            {TEXT("create_proxy_mesh_actor"), 8},
-            
-            // Other utilities
-            {TEXT("set_generate_lightmap_uvs"), 8},
-            {TEXT("has_vertex_colors"), 8},
-
-            // Enhanced Input Commands (9)
-            {TEXT("create_input_action"), 9},
-            {TEXT("create_input_mapping_context"), 9},
-            {TEXT("add_enhanced_input_mapping"), 9},
-            {TEXT("remove_enhanced_input_mapping"), 9},
-            {TEXT("configure_enhanced_input_action"), 9},
-            {TEXT("configure_enhanced_input_mapping"), 9},
-            {TEXT("list_enhanced_input_assets"), 9},
-            {TEXT("get_enhanced_input_debug_info"), 9},
-            {TEXT("add_runtime_mapping_context"), 9},
-            {TEXT("remove_runtime_mapping_context"), 9},
-            {TEXT("setup_enhanced_input_binding"), 9},
-            {TEXT("setup_rebind_ui"), 9},
-            {TEXT("rebind_enhanced_input_key"), 9},
-            {TEXT("configure_local_multiplayer_input"), 9},
-
-            // Gameplay Framework Commands (10)
-            {TEXT("create_gamemode_blueprint"), 10},
-            {TEXT("create_gamemode_cpp_class"), 10},
-            {TEXT("set_default_gamemode"), 10},
-            {TEXT("create_gamestate"), 10},
-            {TEXT("create_playerstate"), 10},
-            {TEXT("create_playercontroller"), 10},
-            {TEXT("create_aicontroller"), 10},
-            {TEXT("create_pawn"), 10},
-            {TEXT("create_character"), 10},
-            {TEXT("set_default_pawn"), 10},
-            {TEXT("set_hud_class"), 10},
-            {TEXT("set_spectator_pawn"), 10},
-            {TEXT("place_player_start"), 10},
-            {TEXT("set_spawn_rules"), 10},
-            {TEXT("set_possess_rules"), 10},
-            {TEXT("set_camera_manager"), 10},
-            {TEXT("setup_camera_component"), 10},
-            {TEXT("setup_spring_arm"), 10},
-            {TEXT("create_savegame_class"), 10},
-            {TEXT("create_gameinstance"), 10},
-            {TEXT("create_gameinstance_subsystem"), 10},
-            {TEXT("create_world_subsystem"), 10},
-            {TEXT("create_localplayer_subsystem"), 10},
-            {TEXT("setup_gameplay_tags"), 10},
-            {TEXT("add_gameplay_tag"), 10},
-            {TEXT("create_gameplay_tag_query"), 10},
-            {TEXT("save_game_to_slot"), 10},
-            {TEXT("load_game_from_slot"), 10},
-            {TEXT("delete_save_slot"), 10},
-            {TEXT("has_save_game"), 10},
-
-            // UI / UMG / Common UI Commands (11)
-            {TEXT("create_widget_blueprint"), 11},
-            {TEXT("add_widget_to_widget_blueprint"), 11},
-            {TEXT("remove_widget_from_widget_blueprint"), 11},
-            {TEXT("set_widget_slot_properties"), 11},
-            {TEXT("set_widget_text"), 11},
-            {TEXT("set_widget_font"), 11},
-            {TEXT("set_widget_color"), 11},
-            {TEXT("set_widget_brush"), 11},
-            {TEXT("set_widget_style"), 11},
-            {TEXT("bind_widget_button_on_clicked"), 11},
-            {TEXT("bind_widget_property"), 11},
-            {TEXT("create_widget_animation"), 11},
-            {TEXT("compile_widget_blueprint"), 11},
-            {TEXT("inspect_widget_blueprint"), 11},
-            {TEXT("add_widget_to_viewport"), 11},
-            {TEXT("remove_widget_from_parent"), 11},
-            {TEXT("click_widget_button"), 11},
-            {TEXT("set_ui_input_mode"), 11},
-            {TEXT("set_mouse_cursor_visible"), 11},
-            {TEXT("create_ui_template"), 11},
-            {TEXT("create_widget_instance"), 11},
-
-            // Rendering Commands (12)
-            {TEXT("set_global_illumination"), 12},
-            {TEXT("set_lumen_enabled"), 12},
-            {TEXT("set_lumen_scene_detail"), 12},
-            {TEXT("set_lumen_reflection_quality"), 12},
-            {TEXT("set_hardware_ray_tracing"), 12},
-            {TEXT("set_path_tracing"), 12},
-            {TEXT("set_virtual_shadow_maps"), 12},
-            {TEXT("set_shadow_quality"), 12},
-            {TEXT("set_anti_aliasing"), 12},
-            {TEXT("set_tsr_settings"), 12},
-            {TEXT("set_upscaler"), 12},
-            {TEXT("set_nanite_visualization"), 12},
-            {TEXT("get_shader_compile_status"), 12},
-            {TEXT("set_post_process_volume"), 12},
-            {TEXT("spawn_camera_actor"), 12},
-            {TEXT("spawn_cine_camera_actor"), 12},
-            {TEXT("set_camera_properties"), 12},
-            {TEXT("spawn_post_process_volume"), 12},
-
-            // Lighting / Atmosphere Commands (13)
-            {TEXT("set_light_intensity"), 13},
-            {TEXT("set_light_color"), 13},
-            {TEXT("set_light_temperature"), 13},
-            {TEXT("set_light_mobility"), 13},
-            {TEXT("set_light_shadow_enabled"), 13},
-            {TEXT("set_light_shadow_bias"), 13},
-            {TEXT("set_light_contact_shadows"), 13},
-            {TEXT("set_light_volumetric_scattering"), 13},
-            {TEXT("set_light_attenuation_radius"), 13},
-            {TEXT("set_light_cone_angles"), 13},
-            {TEXT("set_light_source_radius"), 13},
-            {TEXT("set_light_ies_profile"), 13},
-            {TEXT("set_light_channel"), 13},
-            {TEXT("set_rect_light_properties"), 13},
-            {TEXT("set_sky_light_properties"), 13},
-            {TEXT("set_sky_atmosphere_properties"), 13},
-            {TEXT("set_height_fog_properties"), 13},
-            {TEXT("set_volumetric_fog"), 13},
-            {TEXT("set_directional_light_as_sun"), 13},
-            {TEXT("set_sun_position"), 13},
-            {TEXT("create_hdri_backdrop"), 13},
-            {TEXT("create_reflection_capture"), 13},
-            {TEXT("set_reflection_capture_settings"), 13},
-            {TEXT("build_reflection_captures"), 13},
-            {TEXT("create_lightmass_importance_volume"), 13},
-            {TEXT("build_lighting"), 13},
-            {TEXT("set_lighting_scenario"), 13},
-            {TEXT("set_megaliights"), 13},
-
-            // Data Table Commands (14)
-            {TEXT("create_data_table"), 14},
-            {TEXT("import_csv_to_data_table"), 14},
-            {TEXT("add_data_table_row"), 14},
-            {TEXT("delete_data_table_row"), 14},
-            {TEXT("update_data_table_row"), 14},
-            {TEXT("export_data_table_csv"), 14},
-            {TEXT("export_data_table_json"), 14},
-
-            // Audio Commands (15)
-            {TEXT("create_sound_cue"), 15},
-            {TEXT("add_audio_component"), 15},
-            {TEXT("set_sound_attenuation"), 15},
-            {TEXT("create_sound_class"), 15},
-            {TEXT("create_sound_mix"), 15},
-            {TEXT("spawn_ambient_sound"), 15},
-
-            // Sequencer Commands (16)
-            {TEXT("create_level_sequence"), 16},
-            {TEXT("add_actor_binding"), 16},
-            {TEXT("add_transform_track"), 16},
-            {TEXT("add_camera_cut_track"), 16},
-            {TEXT("add_event_track"), 16},
-            {TEXT("add_keyframe"), 16},
-            {TEXT("set_playback_range"), 16},
-            {TEXT("set_frame_rate"), 16},
-
-            // VRM / Avatar Commands (17)
-            {TEXT("vroid_check_plugin"), 17},
-            {TEXT("vroid_import_vrm"), 17},
-            {TEXT("vroid_spawn_avatar"), 17},
-            {TEXT("vroid_validate_avatar_asset"), 17},
-
-            // Cesium Commands (18) - Cesium for Unreal PoC integration
-            {TEXT("cesium_check_plugin"), 18},
-            {TEXT("cesium_setup_georeference"), 18},
-            {TEXT("cesium_add_tileset"), 18},
-            {TEXT("cesium_place_actor_at_geolocation"), 18},
-
-            // WFC tile grid spawn (Editor route 1)
-            {TEXT("spawn_tile_grid"), 1}
-        };
-        const int32* Found = Router.Find(CommandType);
-        return Found ? *Found : -1;
-    }
-}
-
 FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TSharedPtr<FJsonObject>& Params)
 {
     UE_LOG(LogTemp, Log, TEXT("EpicUnrealMCPBridge: Executing command: %s"), *CommandType);
 
-    const int32 Route = RouteCommand(CommandType);
+    const int32 Route = FEpicUnrealMCPRouter::RouteCommand(CommandType);
 
     auto ExecuteOnCurrentThread = [this, CommandType, Params, Route]() -> FString
     {
@@ -953,8 +509,8 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 ResultJson = MakeShareable(new FJsonObject);
                 ResultJson->SetStringField(TEXT("message"), TEXT("pong"));
                 break;
-            case 1: // EditorCommands
-                ResultJson = EditorCommands->HandleCommand(CommandType, Params);
+            case 1: // ActorCommands (keeps legacy Actor route ID)
+                ResultJson = ActorCommands->HandleCommand(CommandType, Params);
                 break;
             case 2: // BlueprintCommands
                 ResultJson = BlueprintCommands->HandleCommand(CommandType, Params);
@@ -1006,6 +562,12 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 break;
             case 18: // CesiumCommands
                 ResultJson = CesiumCommands->HandleCommand(CommandType, Params);
+                break;
+            case 19: // ProceduralCommands
+                ResultJson = ProceduralCommands->HandleCommand(CommandType, Params);
+                break;
+            case 20: // NavigationCommands (Phase 3: NavAI + Spline split from EditorCommands)
+                ResultJson = NavigationCommands->HandleCommand(CommandType, Params);
                 break;
             default:
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));

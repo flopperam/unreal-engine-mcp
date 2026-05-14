@@ -4,123 +4,34 @@
 #include "Json.h"
 
 /**
- * Pre-parsed create parameters for batch scene delta processing.
- * Parsed once before entering the game-thread loop to reduce per-item overhead.
- */
-struct FParsedCreateParams
-{
-    bool bValid = false;
-    FString ErrorString;
-    FString Name;
-    FString Type;
-    FString McpId;
-    FString StaticMeshPath;
-    FVector Location = FVector::ZeroVector;
-    FRotator Rotation = FRotator::ZeroRotator;
-    FVector Scale = FVector::OneVector;
-    TArray<FString> Tags;
-};
-
-/**
- * Pre-parsed update parameters for batch scene delta processing.
- */
-struct FParsedUpdateParams
-{
-    bool bValid = false;
-    FString ErrorString;
-    FString McpId;
-    FVector Location = FVector::ZeroVector;
-    FRotator Rotation = FRotator::ZeroRotator;
-    FVector Scale = FVector::OneVector;
-    bool bHasLocation = false;
-    bool bHasRotation = false;
-    bool bHasScale = false;
-};
-
-/**
- * Handler class for Editor-related MCP commands
- * Handles viewport control, actor manipulation, and level management
+ * Handler class for generic / catch-all Editor MCP commands.
+ *
+ * Refactor history:
+ *   Phase 1 - Procedural, Physics, Validation, and Cognitive Processing
+ *             commands were moved to FEpicUnrealMCPProceduralCommands.
+ *   Phase 2 - Actor CRUD (spawn / delete / transform / clone /
+ *             find-by-name / find-by-mcp-id / apply_scene_delta) was
+ *             moved to FEpicUnrealMCPActorCommands.
+ *   Phase 3 - NavAI + Spline (NavMesh, Behavior Tree, Blackboard,
+ *             NavLinkProxy, NavModifier, PatrolRoute, SplineFromPoints)
+ *             was moved to FEpicUnrealMCPNavigationCommands.
+ *
+ * This class is intentionally kept as a small shell so that:
+ *   - the Bridge subsystem registration pattern stays uniform,
+ *   - the legacy "route 1" lane in EpicUnrealMCPRouter still resolves to *   - future generic editor commands have a clear, low-friction landing
+ *     spot.
+ *
+ * If a new feature warrants more than one or two handlers, prefer
+ * creating a new FEpicUnrealMCP<Domain>Commands class instead of growing
+ * this file back.
  */
 class UNREALMCP_API FEpicUnrealMCPEditorCommands
 {
 public:
-    	FEpicUnrealMCPEditorCommands();
+    FEpicUnrealMCPEditorCommands();
 
-    // Handle editor commands
     TSharedPtr<FJsonObject> HandleCommand(const FString& CommandType, const TSharedPtr<FJsonObject>& Params);
 
 private:
     UWorld* GetEditorWorld() const;
-
-    // Actor manipulation commands
-    TSharedPtr<FJsonObject> HandleGetActorsInLevel(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleFindActorsByName(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleSpawnActor(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleDeleteActor(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleSetActorTransform(const TSharedPtr<FJsonObject>& Params);
-
-    // MCP identity commands
-    TSharedPtr<FJsonObject> HandleFindActorByMcpId(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleSetActorTransformByMcpId(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleDeleteActorByMcpId(const TSharedPtr<FJsonObject>& Params);
-
-    // Helper
-    AActor* FindActorByMcpId(UWorld* World, const FString& McpId) const;
-
-    // P4.3: Pre-parse helpers for batch scene delta
-    FParsedCreateParams ParseCreateParams(const TSharedPtr<FJsonObject>& Params) const;
-    FParsedUpdateParams ParseUpdateParams(const TSharedPtr<FJsonObject>& Params) const;
-    TSharedPtr<FJsonObject> ExecuteCreateActor(const FParsedCreateParams& Parsed, bool bSuppressTransaction = false);
-    TSharedPtr<FJsonObject> ExecuteUpdateActor(const FParsedUpdateParams& Parsed);
-
-    // Template clone (fast duplication of identical-mesh actors)
-    TSharedPtr<FJsonObject> HandleCloneActor(const TSharedPtr<FJsonObject>& Params);
-
-    // NavMesh commands
-    TSharedPtr<FJsonObject> HandleCreateNavMeshVolume(const TSharedPtr<FJsonObject>& Params);
-
-    // AI commands
-    TSharedPtr<FJsonObject> HandleCreatePatrolRoute(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleSetAIBehavior(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleCreateBehaviorTree(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleCreateBlackboard(const TSharedPtr<FJsonObject>& Params);
-
-    // Navigation commands
-    TSharedPtr<FJsonObject> HandleCreateNavModifierVolume(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleCreateNavLinkProxy(const TSharedPtr<FJsonObject>& Params);
-
-    // Physics commands
-    TSharedPtr<FJsonObject> HandleSetActorCollisionPreset(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleSetActorPhysics(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleCreatePhysicalMaterial(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleSpawnRadialForce(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleSpawnPhysicsConstraint(const TSharedPtr<FJsonObject>& Params);
-
-    // Procedural spline from points (L-System output)
-    TSharedPtr<FJsonObject> HandleCreateSplineFromPoints(const TSharedPtr<FJsonObject>& Params);
-
-    // Validation commands
-    TSharedPtr<FJsonObject> HandleCompileAllBlueprints(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleRunMapCheck(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleFindBrokenReferences(const TSharedPtr<FJsonObject>& Params);
-
-    // Batch scene delta (P4)
-    TSharedPtr<FJsonObject> HandleApplySceneDelta(const TSharedPtr<FJsonObject>& Params);
-
-    // Draft proxy commands (HISM visualization)
-    TSharedPtr<FJsonObject> HandleCreateDraftProxy(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleUpdateDraftProxy(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleDeleteDraftProxy(const TSharedPtr<FJsonObject>& Params);
-
-    // InstanceSet commands (HISM/ISM bulk instancing)
-    TSharedPtr<FJsonObject> HandleSpawnInstanceSet(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleUpdateInstanceSet(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleDeleteInstanceSet(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleGetInstanceSetState(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleListInstanceSets(const TSharedPtr<FJsonObject>& Params);
-    TSharedPtr<FJsonObject> HandleRequestCognitiveProcessing(const TSharedPtr<FJsonObject>& Params);
-
-    // WFC tile grid bulk spawn (HISM-per-tile_id)
-    TSharedPtr<FJsonObject> HandleSpawnTileGrid(const TSharedPtr<FJsonObject>& Params);
-    }; 
-
+};

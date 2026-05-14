@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "EditorSubsystem.h"
@@ -9,6 +9,8 @@
 #include "Interfaces/IPv4/IPv4Address.h"
 #include "Interfaces/IPv4/IPv4Endpoint.h"
 #include "Commands/EpicUnrealMCPEditorCommands.h"
+#include "Commands/EpicUnrealMCPActorCommands.h"
+#include "Commands/EpicUnrealMCPNavigationCommands.h"
 #include "Commands/EpicUnrealMCPBlueprintCommands.h"
 #include "Commands/EpicUnrealMCPBlueprintGraphCommands.h"
 #include "Commands/EpicUnrealMCPMaterialCommands.h"
@@ -26,7 +28,9 @@
 #include "Commands/EpicUnrealMCPSequencerCommands.h"
 #include "Commands/EpicUnrealMCPVroidCommands.h"
 #include "Commands/EpicUnrealMCPCesiumCommands.h"
+#include "Commands/EpicUnrealMCPProceduralCommands.h"
 #include "Commands/EpicUnrealMCPCommonUtils.h"
+#include "Commands/EpicUnrealMCPRouter.h"
 #include "MCPServerRunnable.h"
 #include "EpicUnrealMCPBridge.generated.h"
 
@@ -81,6 +85,8 @@ private:
 
 	// Command handler instances
 	TSharedPtr<FEpicUnrealMCPEditorCommands> EditorCommands;
+	TSharedPtr<FEpicUnrealMCPActorCommands> ActorCommands;
+	TSharedPtr<FEpicUnrealMCPNavigationCommands> NavigationCommands;
 	TSharedPtr<FEpicUnrealMCPBlueprintCommands> BlueprintCommands;
 	TSharedPtr<FEpicUnrealMCPBlueprintGraphCommands> BlueprintGraphCommands;
 	TSharedPtr<FEpicUnrealMCPMaterialCommands> MaterialCommands;
@@ -98,6 +104,7 @@ private:
 	TSharedPtr<FEpicUnrealMCPSequencerCommands> SequencerCommands;
 	TSharedPtr<FEpicUnrealMCPVroidCommands> VroidCommands;
 	TSharedPtr<FEpicUnrealMCPCesiumCommands> CesiumCommands;
+	TSharedPtr<FEpicUnrealMCPProceduralCommands> ProceduralCommands;
 };
 
 #endif // WITH_EDITOR
