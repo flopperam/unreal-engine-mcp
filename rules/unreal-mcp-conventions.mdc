@@ -1,0 +1,17 @@
+---
+description: >
+  Unreal Engine MCP tool conventions -- asset path formats, batching rules, 
+  read-before-write guards, and verification patterns. Applies when using 
+  any Flopperam Unreal Engine MCP tool.
+alwaysApply: true
+---
+
+Asset paths use `PackageName.AssetName` format (e.g. `/Game/Blueprints/BP_Enemy.BP_Enemy`). Always use the FULL path as returned by `search_assets` — never construct or guess paths. Guessed `/Game/...` paths silently resolve to nullptr.
+
+`scene_query` returns actor labels from the Outliner — these are NOT asset paths. `search_assets` returns Content Browser asset paths — never confuse the two.
+
+Read before write: at least one read-class tool (`bp_brief`, `bp_inspect`, `bp_export`, `search_assets`, any `*_inspect`) must fire before any write tool. Narrow bp_* writes all defer compile — batch many, then call `bp_commit` once per target Blueprint.
+
+Batch everything: every tool that accepts arrays (`queries`, `variables`, `components`, `nodes`, `edges`, `operations`) is designed for one call with many items. Loop-calling is a regression path.
+
+After every modification, verify the result actually took effect — re-read with inspect tools, do NOT claim work is complete based on "no errors."
