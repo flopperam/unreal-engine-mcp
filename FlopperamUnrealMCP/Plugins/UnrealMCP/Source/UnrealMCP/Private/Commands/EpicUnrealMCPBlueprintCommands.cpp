@@ -27,7 +27,82 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
+#include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Widget.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/PackageName.h"
+#include "UObject/SavePackage.h"
+#include "WidgetBlueprint.h"
+
+namespace
+{
+bool SaveBlueprintAsset(UBlueprint* Blueprint)
+{
+    if (!Blueprint)
+    {
+        return false;
+    }
+
+    Blueprint->MarkPackageDirty();
+    FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
+    const FString PackageName = FPackageName::ObjectPathToPackageName(Blueprint->GetPathName());
+    const FString Filename = FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension());
+    FSavePackageArgs SaveArgs;
+    SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+    SaveArgs.SaveFlags = SAVE_NoError;
+    return UPackage::SavePackage(Blueprint->GetOutermost(), Blueprint, *Filename, SaveArgs);
+}
+
+UClass* ResolveParentClassForBlueprint(const FString& ParentClass)
+{
+    if (ParentClass.IsEmpty())
+    {
+        return nullptr;
+    }
+
+    if (ParentClass == TEXT("UserWidget") || ParentClass == TEXT("UUserWidget") || ParentClass == TEXT("/Script/UMG.UserWidget"))
+    {
+        return UUserWidget::StaticClass();
+    }
+    if (ParentClass == TEXT("Actor") || ParentClass == TEXT("AActor") || ParentClass == TEXT("/Script/Engine.Actor"))
+    {
+        return AActor::StaticClass();
+    }
+    if (ParentClass == TEXT("Pawn") || ParentClass == TEXT("APawn") || ParentClass == TEXT("/Script/Engine.Pawn"))
+    {
+        return APawn::StaticClass();
+    }
+
+    if (UClass* LoadedClass = LoadClass<UObject>(nullptr, *ParentClass))
+    {
+        return LoadedClass;
+    }
+
+    if (UClass* FoundClass = FindObject<UClass>(nullptr, *ParentClass))
+    {
+        return FoundClass;
+    }
+
+    if (!ParentClass.Contains(TEXT(".")) && !ParentClass.StartsWith(TEXT("/Script/")))
+    {
+        const FString EngineClassPath = FString::Printf(TEXT("/Script/Engine.%s"), *ParentClass);
+        if (UClass* EngineClass = LoadClass<UObject>(nullptr, *EngineClassPath))
+        {
+            return EngineClass;
+        }
+
+        const FString UMGClassPath = FString::Printf(TEXT("/Script/UMG.%s"), *ParentClass);
+        if (UClass* UMGClass = LoadClass<UObject>(nullptr, *UMGClassPath))
+        {
+            return UMGClass;
+        }
+    }
+
+    return nullptr;
+}
+}
 
 FEpicUnrealMCPBlueprintCommands::FEpicUnrealMCPBlueprintCommands()
 {
@@ -38,6 +113,14 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCommand(const FSt
     if (CommandType == TEXT("create_blueprint"))
     {
         return HandleCreateBlueprint(Params);
+    }
+    else if (CommandType == TEXT("reparent_blueprint"))
+    {
+        return HandleReparentBlueprint(Params);
+    }
+    else if (CommandType == TEXT("set_widget_is_variable"))
+    {
+        return HandleSetWidgetIsVariable(Params);
     }
     else if (CommandType == TEXT("add_component_to_blueprint"))
     {
@@ -198,6 +281,158 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateBlueprint(c
     }
 
     return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create blueprint"));
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleReparentBlueprint(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath)
+        && !Params->TryGetStringField(TEXT("blueprint_name"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' or 'blueprint_name' parameter"));
+    }
+
+    FString ParentClassName;
+    if (!Params->TryGetStringField(TEXT("parent_class"), ParentClassName))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'parent_class' parameter"));
+    }
+
+    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *BlueprintPath);
+    if (!Blueprint)
+    {
+        Blueprint = FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath);
+    }
+    if (!Blueprint)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    UClass* NewParentClass = ResolveParentClassForBlueprint(ParentClassName);
+    if (!NewParentClass)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Parent class not found: %s"), *ParentClassName));
+    }
+    if (!FKismetEditorUtilities::CanCreateBlueprintOfClass(NewParentClass))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Class cannot be used as a Blueprint parent: %s"), *NewParentClass->GetName()));
+    }
+
+    const FString OldParentName = Blueprint->ParentClass ? Blueprint->ParentClass->GetName() : TEXT("None");
+    Blueprint->Modify();
+    Blueprint->ParentClass = NewParentClass;
+    FBlueprintEditorUtils::RefreshAllNodes(Blueprint);
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    const bool bSaved = SaveBlueprintAsset(Blueprint);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("blueprint_path"), Blueprint->GetPathName());
+    Result->SetStringField(TEXT("old_parent_class"), OldParentName);
+    Result->SetStringField(TEXT("new_parent_class"), NewParentClass->GetName());
+    Result->SetBoolField(TEXT("saved"), bSaved);
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleSetWidgetIsVariable(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_path"), BlueprintPath)
+        && !Params->TryGetStringField(TEXT("blueprint_name"), BlueprintPath))
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_path' or 'blueprint_name' parameter"));
+    }
+
+    bool bIsVariable = true;
+    Params->TryGetBoolField(TEXT("is_variable"), bIsVariable);
+
+    TArray<FString> WidgetNames;
+    FString SingleWidgetName;
+    if (Params->TryGetStringField(TEXT("widget_name"), SingleWidgetName))
+    {
+        WidgetNames.Add(SingleWidgetName);
+    }
+
+    const TArray<TSharedPtr<FJsonValue>>* WidgetNameValues = nullptr;
+    if (Params->TryGetArrayField(TEXT("widget_names"), WidgetNameValues))
+    {
+        for (const TSharedPtr<FJsonValue>& Value : *WidgetNameValues)
+        {
+            FString WidgetName;
+            if (Value.IsValid() && Value->TryGetString(WidgetName) && !WidgetName.IsEmpty())
+            {
+                WidgetNames.Add(WidgetName);
+            }
+        }
+    }
+
+    if (WidgetNames.Num() == 0)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'widget_name' or non-empty 'widget_names' parameter"));
+    }
+
+    UWidgetBlueprint* WidgetBlueprint = Cast<UWidgetBlueprint>(LoadObject<UBlueprint>(nullptr, *BlueprintPath));
+    if (!WidgetBlueprint)
+    {
+        WidgetBlueprint = Cast<UWidgetBlueprint>(FEpicUnrealMCPCommonUtils::FindBlueprint(BlueprintPath));
+    }
+    if (!WidgetBlueprint || !WidgetBlueprint->WidgetTree)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Widget Blueprint not found: %s"), *BlueprintPath));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> ChangedWidgets;
+    TArray<TSharedPtr<FJsonValue>> MissingWidgets;
+    TArray<TSharedPtr<FJsonValue>> AvailableWidgets;
+
+    TArray<UWidget*> WidgetsInTree;
+    WidgetBlueprint->WidgetTree->ForEachWidget([&WidgetsInTree, &AvailableWidgets](UWidget* Widget)
+    {
+        if (Widget)
+        {
+            WidgetsInTree.Add(Widget);
+            AvailableWidgets.Add(MakeShared<FJsonValueString>(Widget->GetName()));
+        }
+    });
+
+    WidgetBlueprint->Modify();
+    for (const FString& WidgetName : WidgetNames)
+    {
+        UWidget* Widget = WidgetBlueprint->WidgetTree->FindWidget(FName(*WidgetName));
+        if (!Widget)
+        {
+            for (UWidget* CandidateWidget : WidgetsInTree)
+            {
+                if (CandidateWidget && CandidateWidget->GetName().Equals(WidgetName, ESearchCase::IgnoreCase))
+                {
+                    Widget = CandidateWidget;
+                    break;
+                }
+            }
+        }
+        if (!Widget)
+        {
+            MissingWidgets.Add(MakeShared<FJsonValueString>(WidgetName));
+            continue;
+        }
+
+        Widget->Modify();
+        Widget->bIsVariable = bIsVariable;
+        ChangedWidgets.Add(MakeShared<FJsonValueString>(WidgetName));
+    }
+
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WidgetBlueprint);
+    const bool bSaved = SaveBlueprintAsset(WidgetBlueprint);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("blueprint_path"), WidgetBlueprint->GetPathName());
+    Result->SetBoolField(TEXT("is_variable"), bIsVariable);
+    Result->SetArrayField(TEXT("changed_widgets"), ChangedWidgets);
+    Result->SetArrayField(TEXT("missing_widgets"), MissingWidgets);
+    Result->SetArrayField(TEXT("available_widgets"), AvailableWidgets);
+    Result->SetBoolField(TEXT("saved"), bSaved);
+    return Result;
 }
 
 TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleAddComponentToBlueprint(const TSharedPtr<FJsonObject>& Params)
@@ -392,10 +627,19 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCompileBlueprint(
 
     // Compile the blueprint
     FKismetEditorUtilities::CompileBlueprint(Blueprint);
+    Blueprint->MarkPackageDirty();
+
+    const FString PackageName = FPackageName::ObjectPathToPackageName(Blueprint->GetPathName());
+    const FString Filename = FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension());
+    FSavePackageArgs SaveArgs;
+    SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+    SaveArgs.SaveFlags = SAVE_NoError;
+    const bool bSaved = UPackage::SavePackage(Blueprint->GetOutermost(), Blueprint, *Filename, SaveArgs);
 
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
     ResultObj->SetStringField(TEXT("name"), BlueprintName);
     ResultObj->SetBoolField(TEXT("compiled"), true);
+    ResultObj->SetBoolField(TEXT("saved"), bSaved);
     return ResultObj;
 }
 
@@ -1395,6 +1639,15 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleAnalyzeBlueprintG
                         PinObj->SetStringField(TEXT("type"), Pin->PinType.PinCategory.ToString());
                         PinObj->SetStringField(TEXT("direction"), Pin->Direction == EGPD_Input ? TEXT("Input") : TEXT("Output"));
                         PinObj->SetNumberField(TEXT("connections"), Pin->LinkedTo.Num());
+                        PinObj->SetStringField(TEXT("default_value"), Pin->DefaultValue);
+                        if (Pin->DefaultObject)
+                        {
+                            PinObj->SetStringField(TEXT("default_object"), Pin->DefaultObject->GetPathName());
+                        }
+                        if (!Pin->DefaultTextValue.IsEmpty())
+                        {
+                            PinObj->SetStringField(TEXT("default_text"), Pin->DefaultTextValue.ToString());
+                        }
                         
                         // Record connections for this pin
                         for (UEdGraphPin* LinkedPin : Pin->LinkedTo)

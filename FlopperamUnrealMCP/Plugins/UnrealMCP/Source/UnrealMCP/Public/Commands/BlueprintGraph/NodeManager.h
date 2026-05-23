@@ -73,6 +73,14 @@ class UNREALMCP_API FBlueprintNodeManager
 		static class UK2Node* CreateCallFunctionNode(class UEdGraph* Graph, const TSharedPtr<FJsonObject>& Params);
 
 		/**
+		 * Create an Enhanced Input Action event node.
+		 * @param Graph - Target graph
+		 * @param Params - Node parameters (must include input_action, optional: pos_x, pos_y)
+		 * @return Created node or nullptr
+		 */
+		static class UK2Node* CreateEnhancedInputActionNode(class UEdGraph* Graph, const TSharedPtr<FJsonObject>& Params);
+
+		/**
 		 * Create a Comparison node (==, >, <, >=, <=)
 		 * @param Graph - Target graph
 		 * @param Params - Node parameters (optional: comparison_type, pos_x, pos_y)

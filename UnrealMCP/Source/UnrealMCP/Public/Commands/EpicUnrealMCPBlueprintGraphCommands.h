@@ -23,8 +23,14 @@ private:
     // Add node to Blueprint graph
     TSharedPtr<FJsonObject> HandleAddBlueprintNode(const TSharedPtr<FJsonObject>& Params);
 
+    // Add node to Blueprint graph using a command-level node type alias
+    TSharedPtr<FJsonObject> HandleAddBlueprintNodeAlias(const TSharedPtr<FJsonObject>& Params, const FString& NodeType);
+
     // Connect nodes in Blueprint graph
     TSharedPtr<FJsonObject> HandleConnectNodes(const TSharedPtr<FJsonObject>& Params);
+
+    // Break all links on one Blueprint pin
+    TSharedPtr<FJsonObject> HandleBreakPinLinks(const TSharedPtr<FJsonObject>& Params);
 
     // Create variable in Blueprint
     TSharedPtr<FJsonObject> HandleCreateVariable(const TSharedPtr<FJsonObject>& Params);
@@ -44,6 +50,9 @@ private:
     // Create function in Blueprint
     TSharedPtr<FJsonObject> HandleCreateFunction(const TSharedPtr<FJsonObject>& Params);
 
+    // Create an override function graph in Blueprint
+    TSharedPtr<FJsonObject> HandleCreateOverrideFunction(const TSharedPtr<FJsonObject>& Params);
+
     // Add function input parameter
     TSharedPtr<FJsonObject> HandleAddFunctionInput(const TSharedPtr<FJsonObject>& Params);
 
@@ -55,4 +64,7 @@ private:
 
     // Rename function in Blueprint
     TSharedPtr<FJsonObject> HandleRenameFunction(const TSharedPtr<FJsonObject>& Params);
+
+    // Execute multiple generic Blueprint graph operations in one command
+    TSharedPtr<FJsonObject> HandleBatchGraphCommands(const TSharedPtr<FJsonObject>& Params);
 };

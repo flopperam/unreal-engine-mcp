@@ -26,6 +26,24 @@
 #include "EditorAssetLibrary.h"
 #include "Json.h"
 
+namespace
+{
+UClass* ResolveBlueprintCallableClass(const FString& ClassPath)
+{
+	if (ClassPath.IsEmpty())
+	{
+		return UKismetSystemLibrary::StaticClass();
+	}
+
+	if (UClass* FoundClass = FindObject<UClass>(nullptr, *ClassPath))
+	{
+		return FoundClass;
+	}
+
+	return LoadObject<UClass>(nullptr, *ClassPath);
+}
+}
+
 TSharedPtr<FJsonObject> FNodePropertyManager::SetNodeProperty(const TSharedPtr<FJsonObject>& Params)
 {
 	// Validate parameters
@@ -345,6 +363,57 @@ TSharedPtr<FJsonObject> FNodePropertyManager::DispatchEditAction(
 		}
 	}
 
+	// === CALLFUNCTION: Change the referenced UFunction ===
+	if (Action.Equals(TEXT("set_function_call"), ESearchCase::IgnoreCase))
+	{
+		UK2Node_CallFunction* CallFunctionNode = Cast<UK2Node_CallFunction>(Node);
+		if (!CallFunctionNode)
+		{
+			return CreateErrorResponse(TEXT("Node is not a CallFunction node"));
+		}
+
+		FString TargetFunction;
+		if (!Params->TryGetStringField(TEXT("target_function"), TargetFunction) || TargetFunction.IsEmpty())
+		{
+			return CreateErrorResponse(TEXT("Missing 'target_function' parameter"));
+		}
+
+		FString TargetClassPath;
+		Params->TryGetStringField(TEXT("target_class"), TargetClassPath);
+
+		UClass* TargetClass = ResolveBlueprintCallableClass(TargetClassPath);
+		if (!TargetClass)
+		{
+			return CreateErrorResponse(FString::Printf(TEXT("Target class not found: %s"), *TargetClassPath));
+		}
+
+		UFunction* TargetFunc = TargetClass->FindFunctionByName(FName(*TargetFunction));
+		if (!TargetFunc)
+		{
+			return CreateErrorResponse(FString::Printf(
+				TEXT("Function '%s' not found on class '%s'"),
+				*TargetFunction,
+				*TargetClass->GetName()));
+		}
+
+		CallFunctionNode->Modify();
+		CallFunctionNode->SetFromFunction(TargetFunc);
+		CallFunctionNode->ReconstructNode();
+
+		Graph->NotifyGraphChanged();
+		if (UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(Graph))
+		{
+			FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+		}
+
+		TSharedPtr<FJsonObject> Response = MakeShareable(new FJsonObject);
+		Response->SetBoolField(TEXT("success"), true);
+		Response->SetStringField(TEXT("action"), TEXT("set_function_call"));
+		Response->SetStringField(TEXT("target_function"), TargetFunction);
+		Response->SetStringField(TEXT("target_class"), TargetClass->GetPathName());
+		return Response;
+	}
+
 	// Unknown action
 	return CreateErrorResponse(FString::Printf(TEXT("Unknown action: %s"), *Action));
 }
@@ -469,6 +538,45 @@ bool FNodePropertyManager::SetGenericNodeProperty(
 		{
 			Node->NodeComment = Comment;
 			return true;
+		}
+	}
+
+	// Handle "pin_default:<PinName>" for generic pin default authoring.
+	if (PropertyName.StartsWith(TEXT("pin_default:"), ESearchCase::IgnoreCase))
+	{
+		const FString PinName = PropertyName.RightChop(12);
+		FString DefaultValue;
+		if (!PinName.IsEmpty() && Value->TryGetString(DefaultValue))
+		{
+			if (UEdGraphPin* Pin = Node->FindPin(FName(*PinName)))
+			{
+				Pin->DefaultValue = DefaultValue;
+				return true;
+			}
+		}
+	}
+
+	if (PropertyName.StartsWith(TEXT("pin_default_object:"), ESearchCase::IgnoreCase))
+	{
+		const FString PinName = PropertyName.RightChop(19);
+		FString ObjectPath;
+		if (!PinName.IsEmpty() && Value->TryGetString(ObjectPath))
+		{
+			if (UEdGraphPin* Pin = Node->FindPin(FName(*PinName)))
+			{
+				UObject* LoadedObject = LoadObject<UObject>(nullptr, *ObjectPath);
+				if (!LoadedObject)
+				{
+					LoadedObject = StaticLoadObject(UObject::StaticClass(), nullptr, *ObjectPath);
+				}
+				if (LoadedObject)
+				{
+					Pin->DefaultObject = LoadedObject;
+					Pin->DefaultValue.Reset();
+					Pin->DefaultTextValue = FText::GetEmpty();
+					return true;
+				}
+			}
 		}
 	}
 

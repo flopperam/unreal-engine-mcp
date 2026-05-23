@@ -229,6 +229,8 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
             }
             // Blueprint Commands
             else if (CommandType == TEXT("create_blueprint") ||
+                     CommandType == TEXT("reparent_blueprint") ||
+                     CommandType == TEXT("set_widget_is_variable") ||
                      CommandType == TEXT("add_component_to_blueprint") ||
                      CommandType == TEXT("set_physics_properties") ||
                      CommandType == TEXT("compile_blueprint") ||
@@ -248,13 +250,27 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
             }
             // Blueprint Graph Commands
             else if (CommandType == TEXT("add_blueprint_node") ||
+                     CommandType == TEXT("execute_blueprint_graph_batch") ||
+                     CommandType == TEXT("batch_blueprint_graph_commands") ||
+                     CommandType == TEXT("add_set_fields_in_struct_node") ||
+                     CommandType == TEXT("add_set_struct_fields_node") ||
+                     CommandType == TEXT("add_macro_instance_node") ||
+                     CommandType == TEXT("add_standard_macro_node") ||
+                     CommandType == TEXT("add_for_each_loop_node") ||
+                     CommandType == TEXT("add_for_each_loop_with_break_node") ||
+                     CommandType == TEXT("add_reverse_for_each_loop_node") ||
+                     CommandType == TEXT("add_for_loop_node") ||
+                     CommandType == TEXT("add_for_loop_with_break_node") ||
+                     CommandType == TEXT("add_while_loop_node") ||
                      CommandType == TEXT("connect_nodes") ||
+                     CommandType == TEXT("break_pin_links") ||
                      CommandType == TEXT("create_variable") ||
                      CommandType == TEXT("set_blueprint_variable_properties") ||
                      CommandType == TEXT("add_event_node") ||
                      CommandType == TEXT("delete_node") ||
                      CommandType == TEXT("set_node_property") ||
                      CommandType == TEXT("create_function") ||
+                     CommandType == TEXT("create_override_function") ||
                      CommandType == TEXT("add_function_input") ||
                      CommandType == TEXT("add_function_output") ||
                      CommandType == TEXT("delete_function") ||

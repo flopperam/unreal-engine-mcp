@@ -34,6 +34,7 @@ public class UnrealMCP : ModuleRules
 				"Core",
 				"CoreUObject",
 				"Engine",
+				"EnhancedInput",
 				"InputCore",
 				"Networking",
 				"Sockets",
@@ -56,6 +57,7 @@ public class UnrealMCP : ModuleRules
 				"Slate",
 				"SlateCore",
 				"Kismet",
+				"UMG",
 				"Projects",
 				"AssetRegistry"
 			}
@@ -68,7 +70,9 @@ public class UnrealMCP : ModuleRules
 				{
 					"PropertyEditor",      // For property editing
 					"ToolMenus",           // For editor UI
-					"BlueprintEditorLibrary" // For Blueprint utilities
+					"BlueprintEditorLibrary", // For Blueprint utilities
+					"InputBlueprintNodes", // For Enhanced Input action event nodes
+					"UMGEditor"            // For WidgetBlueprint authoring
 				}
 			);
 		}
@@ -80,4 +84,4 @@ public class UnrealMCP : ModuleRules
 			}
 		);
 	}
-} 
+}

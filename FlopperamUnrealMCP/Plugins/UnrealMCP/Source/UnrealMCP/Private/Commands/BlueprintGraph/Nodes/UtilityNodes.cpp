@@ -3,9 +3,99 @@
 #include "K2Node_CallFunction.h"
 #include "K2Node_Select.h"
 #include "K2Node_SpawnActorFromClass.h"
+#include "Blueprint/SlateBlueprintLibrary.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "EdGraphSchema_K2.h"
+#include "Engine/Blueprint.h"
+#include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetInputLibrary.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Json.h"
+
+namespace
+{
+UClass* ResolveFunctionOwnerClass(const FString& ClassName)
+{
+	if (ClassName.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	if (UClass* TargetClass = Cast<UClass>(StaticFindObject(UClass::StaticClass(), nullptr, *ClassName)))
+	{
+		return TargetClass;
+	}
+
+	if (UClass* TargetClass = LoadObject<UClass>(nullptr, *ClassName))
+	{
+		return TargetClass;
+	}
+
+	if (UBlueprint* TargetBlueprint = LoadObject<UBlueprint>(nullptr, *ClassName))
+	{
+		return TargetBlueprint->GeneratedClass;
+	}
+
+	if (ClassName.Contains(TEXT("KismetInputLibrary")) || ClassName.Equals(TEXT("KismetInputLibrary"), ESearchCase::IgnoreCase))
+	{
+		return UKismetInputLibrary::StaticClass();
+	}
+	if (ClassName.Contains(TEXT("KismetMathLibrary")) || ClassName.Equals(TEXT("KismetMathLibrary"), ESearchCase::IgnoreCase))
+	{
+		return UKismetMathLibrary::StaticClass();
+	}
+	if (ClassName.Contains(TEXT("KismetSystemLibrary")) || ClassName.Equals(TEXT("KismetSystemLibrary"), ESearchCase::IgnoreCase))
+	{
+		return UKismetSystemLibrary::StaticClass();
+	}
+	if (ClassName.Contains(TEXT("WidgetBlueprintLibrary")) || ClassName.Equals(TEXT("WidgetBlueprintLibrary"), ESearchCase::IgnoreCase))
+	{
+		return UWidgetBlueprintLibrary::StaticClass();
+	}
+	if (ClassName.Contains(TEXT("WidgetLayoutLibrary")) || ClassName.Equals(TEXT("WidgetLayoutLibrary"), ESearchCase::IgnoreCase))
+	{
+		return UWidgetLayoutLibrary::StaticClass();
+	}
+	if (ClassName.Contains(TEXT("SlateBlueprintLibrary")) || ClassName.Equals(TEXT("SlateBlueprintLibrary"), ESearchCase::IgnoreCase))
+	{
+		return USlateBlueprintLibrary::StaticClass();
+	}
+	if (ClassName.Contains(TEXT("GameplayStatics")) || ClassName.Equals(TEXT("GameplayStatics"), ESearchCase::IgnoreCase))
+	{
+		return UGameplayStatics::StaticClass();
+	}
+
+	return nullptr;
+}
+
+UFunction* FindCommonBlueprintFunction(const FName FunctionName)
+{
+	UClass* CommonClasses[] = {
+		UKismetSystemLibrary::StaticClass(),
+		UKismetMathLibrary::StaticClass(),
+		UKismetInputLibrary::StaticClass(),
+		UWidgetBlueprintLibrary::StaticClass(),
+		UWidgetLayoutLibrary::StaticClass(),
+		USlateBlueprintLibrary::StaticClass(),
+		UGameplayStatics::StaticClass()
+	};
+
+	for (UClass* CommonClass : CommonClasses)
+	{
+		if (CommonClass)
+		{
+			if (UFunction* Function = CommonClass->FindFunctionByName(FunctionName))
+			{
+				return Function;
+			}
+		}
+	}
+
+	return nullptr;
+}
+}
 
 UK2Node* FUtilityNodeCreator::CreatePrintNode(UEdGraph* Graph, const TSharedPtr<FJsonObject>& Params)
 {
@@ -79,7 +169,16 @@ UK2Node* FUtilityNodeCreator::CreateCallFunctionNode(UEdGraph* Graph, const TSha
 	FString ClassName;
 	if (Params->TryGetStringField(TEXT("target_class"), ClassName))
 	{
-		UClass* TargetClass = Cast<UClass>(StaticFindObject(UClass::StaticClass(), nullptr, *ClassName));
+		UClass* TargetClass = ResolveFunctionOwnerClass(ClassName);
+		if (TargetClass)
+		{
+			TargetFunc = TargetClass->FindFunctionByName(FName(*TargetFunction));
+		}
+	}
+	else if (Params->TryGetStringField(TEXT("target_blueprint"), ClassName))
+	{
+		UClass* TargetClass = ResolveFunctionOwnerClass(ClassName);
+
 		if (TargetClass)
 		{
 			TargetFunc = TargetClass->FindFunctionByName(FName(*TargetFunction));
@@ -88,7 +187,12 @@ UK2Node* FUtilityNodeCreator::CreateCallFunctionNode(UEdGraph* Graph, const TSha
 	else
 	{
 		// Try common Unreal classes
-		TargetFunc = UKismetSystemLibrary::StaticClass()->FindFunctionByName(FName(*TargetFunction));
+		TargetFunc = FindCommonBlueprintFunction(FName(*TargetFunction));
+	}
+
+	if (!TargetFunc)
+	{
+		TargetFunc = FindCommonBlueprintFunction(FName(*TargetFunction));
 	}
 
 	if (!TargetFunc)

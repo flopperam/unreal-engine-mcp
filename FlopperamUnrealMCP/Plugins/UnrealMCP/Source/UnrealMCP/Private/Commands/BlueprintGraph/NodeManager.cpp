@@ -10,6 +10,7 @@
 #include "EdGraphSchema_K2.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_Event.h"
+#include "K2Node_EnhancedInputAction.h"
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
 #include "K2Node_PromotableOperator.h"
@@ -20,6 +21,56 @@
 #include "EditorAssetLibrary.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "InputAction.h"
+
+namespace
+{
+	FString ResolveStandardMacroAlias(const FString& NodeType)
+	{
+		FString CompactNodeType = NodeType;
+		CompactNodeType.ReplaceInline(TEXT("_"), TEXT(""));
+		CompactNodeType.ReplaceInline(TEXT("-"), TEXT(""));
+		CompactNodeType.ReplaceInline(TEXT(" "), TEXT(""));
+
+		if (CompactNodeType.Equals(TEXT("ForEach"), ESearchCase::IgnoreCase) ||
+			CompactNodeType.Equals(TEXT("ForEachLoop"), ESearchCase::IgnoreCase))
+		{
+			return TEXT("ForEachLoop");
+		}
+
+		if (CompactNodeType.Equals(TEXT("ForEachWithBreak"), ESearchCase::IgnoreCase) ||
+			CompactNodeType.Equals(TEXT("ForEachLoopWithBreak"), ESearchCase::IgnoreCase))
+		{
+			return TEXT("ForEachLoopWithBreak");
+		}
+
+		if (CompactNodeType.Equals(TEXT("ReverseForEach"), ESearchCase::IgnoreCase) ||
+			CompactNodeType.Equals(TEXT("ReverseForEachLoop"), ESearchCase::IgnoreCase))
+		{
+			return TEXT("ReverseForEachLoop");
+		}
+
+		if (CompactNodeType.Equals(TEXT("For"), ESearchCase::IgnoreCase) ||
+			CompactNodeType.Equals(TEXT("ForLoop"), ESearchCase::IgnoreCase))
+		{
+			return TEXT("ForLoop");
+		}
+
+		if (CompactNodeType.Equals(TEXT("ForWithBreak"), ESearchCase::IgnoreCase) ||
+			CompactNodeType.Equals(TEXT("ForLoopWithBreak"), ESearchCase::IgnoreCase))
+		{
+			return TEXT("ForLoopWithBreak");
+		}
+
+		if (CompactNodeType.Equals(TEXT("While"), ESearchCase::IgnoreCase) ||
+			CompactNodeType.Equals(TEXT("WhileLoop"), ESearchCase::IgnoreCase))
+		{
+			return TEXT("WhileLoop");
+		}
+
+		return FString();
+	}
+}
 
 TSharedPtr<FJsonObject> FBlueprintNodeManager::AddNode(const TSharedPtr<FJsonObject>& Params)
 {
@@ -152,6 +203,28 @@ TSharedPtr<FJsonObject> FBlueprintNodeManager::AddNode(const TSharedPtr<FJsonObj
 	{
 		NewNode = FDataNodeCreator::CreateMakeArrayNode(Graph, NodeParams);
 	}
+	else if (NodeType.Equals(TEXT("MakeStruct"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FDataNodeCreator::CreateMakeStructNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("BreakStruct"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FDataNodeCreator::CreateBreakStructNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("SetFieldsInStruct"), ESearchCase::IgnoreCase) ||
+			 NodeType.Equals(TEXT("SetMembersInStruct"), ESearchCase::IgnoreCase) ||
+			 NodeType.Equals(TEXT("SetStructFields"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FDataNodeCreator::CreateSetFieldsInStructNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("ArrayGet"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FDataNodeCreator::CreateArrayGetNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("CallArrayFunction"), ESearchCase::IgnoreCase))
+	{
+		NewNode = FDataNodeCreator::CreateCallArrayFunctionNode(Graph, NodeParams);
+	}
 	// Utility Nodes
 	else if (NodeType.Equals(TEXT("Print"), ESearchCase::IgnoreCase))
 	{
@@ -160,6 +233,10 @@ TSharedPtr<FJsonObject> FBlueprintNodeManager::AddNode(const TSharedPtr<FJsonObj
 	else if (NodeType.Equals(TEXT("CallFunction"), ESearchCase::IgnoreCase))
 	{
 		NewNode = FUtilityNodeCreator::CreateCallFunctionNode(Graph, NodeParams);
+	}
+	else if (NodeType.Equals(TEXT("EnhancedInputAction"), ESearchCase::IgnoreCase))
+	{
+		NewNode = CreateEnhancedInputActionNode(Graph, NodeParams);
 	}
 	else if (NodeType.Equals(TEXT("Select"), ESearchCase::IgnoreCase))
 	{
@@ -208,14 +285,31 @@ TSharedPtr<FJsonObject> FBlueprintNodeManager::AddNode(const TSharedPtr<FJsonObj
 	{
 		NewNode = FSpecializedNodeCreator::CreateKnotNode(Graph, NodeParams);
 	}
-	// Event nodes (kept for backward compatibility - should use add_event_node)
-	else if (NodeType.Equals(TEXT("Event"), ESearchCase::IgnoreCase))
-	{
-		NewNode = CreateEventNode(Graph, NodeParams);
-	}
 	else
 	{
-		return CreateErrorResponse(FString::Printf(TEXT("Unknown node type: %s"), *NodeType));
+		const FString StandardMacroName = ResolveStandardMacroAlias(NodeType);
+		if (!StandardMacroName.IsEmpty())
+		{
+			NodeParams->SetStringField(TEXT("macro_name"), StandardMacroName);
+			NewNode = FSpecializedNodeCreator::CreateMacroInstanceNode(Graph, NodeParams);
+		}
+		else if (NodeType.Equals(TEXT("MacroInstance"), ESearchCase::IgnoreCase))
+		{
+			NewNode = FSpecializedNodeCreator::CreateMacroInstanceNode(Graph, NodeParams);
+		}
+		else if (NodeType.Equals(TEXT("FunctionResult"), ESearchCase::IgnoreCase))
+		{
+			NewNode = FSpecializedNodeCreator::CreateFunctionResultNode(Graph, NodeParams);
+		}
+		// Event nodes (kept for backward compatibility - should use add_event_node)
+		else if (NodeType.Equals(TEXT("Event"), ESearchCase::IgnoreCase))
+		{
+			NewNode = CreateEventNode(Graph, NodeParams);
+		}
+		else
+		{
+			return CreateErrorResponse(FString::Printf(TEXT("Unknown node type: %s"), *NodeType));
+		}
 	}
 
 	if (!NewNode)
@@ -485,6 +579,54 @@ UK2Node* FBlueprintNodeManager::CreateCallFunctionNode(UEdGraph* Graph, const TS
 	CallNode->AllocateDefaultPins();
 
 	return CallNode;
+}
+
+UK2Node* FBlueprintNodeManager::CreateEnhancedInputActionNode(UEdGraph* Graph, const TSharedPtr<FJsonObject>& Params)
+{
+	if (!Graph || !Params.IsValid())
+	{
+		return nullptr;
+	}
+
+	FString InputActionPath;
+	if (!Params->TryGetStringField(TEXT("input_action"), InputActionPath) || InputActionPath.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	UInputAction* InputAction = LoadObject<UInputAction>(nullptr, *InputActionPath);
+	if (!InputAction && !InputActionPath.Contains(TEXT(".")))
+	{
+		const FString ObjectPath = InputActionPath + TEXT(".") + FPaths::GetBaseFilename(InputActionPath);
+		InputAction = LoadObject<UInputAction>(nullptr, *ObjectPath);
+	}
+
+	if (!InputAction)
+	{
+		return nullptr;
+	}
+
+	UK2Node_EnhancedInputAction* InputActionNode = NewObject<UK2Node_EnhancedInputAction>(Graph);
+	if (!InputActionNode)
+	{
+		return nullptr;
+	}
+
+	double PosX = 0.0;
+	double PosY = 0.0;
+	Params->TryGetNumberField(TEXT("pos_x"), PosX);
+	Params->TryGetNumberField(TEXT("pos_y"), PosY);
+
+	InputActionNode->InputAction = InputAction;
+	InputActionNode->NodePosX = static_cast<int32>(PosX);
+	InputActionNode->NodePosY = static_cast<int32>(PosY);
+
+	Graph->AddNode(InputActionNode, true, false);
+	InputActionNode->CreateNewGuid();
+	InputActionNode->PostPlacedNewNode();
+	InputActionNode->AllocateDefaultPins();
+
+	return InputActionNode;
 }
 
 UK2Node* FBlueprintNodeManager::CreateComparisonNode(UEdGraph* Graph, const TSharedPtr<FJsonObject>& Params)

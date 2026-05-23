@@ -9,6 +9,8 @@
 #include "K2Node_CallFunction.h"
 #include "EditorAssetLibrary.h"
 #include "EdGraph/EdGraphNode.h"
+#include "UObject/Class.h"
+#include "UObject/UnrealType.h"
 
 TSharedPtr<FJsonObject> FFunctionIO::AddFunctionIO(const TSharedPtr<FJsonObject>& Params)
 {
@@ -158,6 +160,10 @@ bool FFunctionIO::AddFunctionParameter(
 
 	// Create the property type
 	FEdGraphPinType PropertyType = GetPropertyTypeFromString(ParamType);
+	if (bIsArray)
+	{
+		PropertyType.ContainerType = EPinContainerType::Array;
+	}
 
 	UEdGraphPin* NewPin = nullptr;
 
@@ -328,14 +334,60 @@ FEdGraphPinType FFunctionIO::GetPropertyTypeFromString(const FString& TypeName)
 		PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
 		PinType.PinSubCategoryObject = TBaseStructure<FVector>::Get();
 	}
+	else if (TypeName == TEXT("vector2d") || TypeName == TEXT("FVector2D"))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+		PinType.PinSubCategoryObject = TBaseStructure<FVector2D>::Get();
+	}
 	else if (TypeName == TEXT("rotator") || TypeName == TEXT("FRotator"))
 	{
 		PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
 		PinType.PinSubCategoryObject = TBaseStructure<FRotator>::Get();
 	}
+	else if (TypeName == TEXT("intpoint") || TypeName == TEXT("FIntPoint"))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+		PinType.PinSubCategoryObject = TBaseStructure<FIntPoint>::Get();
+	}
+	else if (TypeName == TEXT("name") || TypeName == TEXT("FName"))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Name;
+	}
 	else if (TypeName == TEXT("object"))
 	{
 		PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
+	}
+	else if (TypeName.StartsWith(TEXT("enum:"), ESearchCase::IgnoreCase))
+	{
+		const FString EnumPath = TypeName.RightChop(5);
+		if (UEnum* EnumType = LoadObject<UEnum>(nullptr, *EnumPath))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
+			PinType.PinSubCategoryObject = EnumType;
+		}
+		else
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
+		}
+	}
+	else if (TypeName.StartsWith(TEXT("struct:"), ESearchCase::IgnoreCase))
+	{
+		const FString StructPath = TypeName.RightChop(7);
+		if (UScriptStruct* StructType = LoadObject<UScriptStruct>(nullptr, *StructPath))
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+			PinType.PinSubCategoryObject = StructType;
+		}
+		else
+		{
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+		}
+	}
+	else if (TypeName.StartsWith(TEXT("object:"), ESearchCase::IgnoreCase))
+	{
+		const FString ClassPath = TypeName.RightChop(7);
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
+		PinType.PinSubCategoryObject = LoadObject<UClass>(nullptr, *ClassPath);
 	}
 	else
 	{

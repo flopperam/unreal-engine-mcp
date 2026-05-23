@@ -1,4 +1,4 @@
-// Header for creating specialized nodes (Timeline, GetDataTableRow, AddComponentByClass, Self, Knot)
+// Header for creating specialized nodes (Timeline, GetDataTableRow, AddComponentByClass, Self, Knot, macros)
 
 #pragma once
 
@@ -52,4 +52,20 @@ public:
 	 * @return The created node or nullptr on error
 	 */
 	static UK2Node* CreateKnotNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
+
+	/**
+	 * Creates a Macro Instance node (K2Node_MacroInstance)
+	 * @param Graph - The graph to add the node to
+	 * @param Params - JSON parameters containing pos_x, pos_y, macro_name and optional macro_blueprint
+	 * @return The created node or nullptr on error
+	 */
+	static UK2Node* CreateMacroInstanceNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
+
+	/**
+	 * Creates an additional Function Result node using the graph's existing result signature.
+	 * @param Graph - The function graph to add the node to
+	 * @param Params - JSON parameters containing pos_x, pos_y
+	 * @return The created node or nullptr on error
+	 */
+	static UK2Node* CreateFunctionResultNode(UEdGraph* Graph, const TSharedPtr<class FJsonObject>& Params);
 };

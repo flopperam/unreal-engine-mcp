@@ -23,6 +23,13 @@ public:
      */
     static TSharedPtr<FJsonObject> ConnectNodes(const TSharedPtr<FJsonObject>& Params);
 
+    /**
+     * Breaks all links on one Blueprint node pin.
+     * @param Params JSON containing blueprint_name, node_id, pin_name, optional pin_direction, optional function_name
+     * @return JSON with success and removed link count
+     */
+    static TSharedPtr<FJsonObject> BreakPinLinks(const TSharedPtr<FJsonObject>& Params);
+
 private:
     /**
      * Finds a node by its ID in the graph
