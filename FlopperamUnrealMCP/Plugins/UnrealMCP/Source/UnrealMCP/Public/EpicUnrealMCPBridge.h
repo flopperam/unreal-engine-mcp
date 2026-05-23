@@ -61,4 +61,4 @@ private:
 
 	// Internal dispatch helper used by ExecuteCommand and batch execution
 	TSharedPtr<FJsonObject> DispatchToHandler(const FString& CommandType, const TSharedPtr<FJsonObject>& Params);
-}; 
+};

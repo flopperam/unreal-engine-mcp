@@ -71,6 +71,16 @@ logger = logging.getLogger("UnrealMCP_Advanced")
 UNREAL_HOST = "127.0.0.1"
 UNREAL_PORT = 55557
 
+def _record_dead_letter_safely(command: str, params: Optional[Dict[str, Any]], error: str) -> None:
+    """Record failed commands once the dead-letter queue has been initialized."""
+    recorder = globals().get("record_dead_letter")
+    if not callable(recorder):
+        return
+    try:
+        recorder(command, params or {}, error)
+    except Exception as record_error:
+        logger.warning(f"Failed to record dead letter for {command}: {record_error}")
+
 class UnrealConnection:
     """
     Robust connection to Unreal Engine with automatic retry and reconnection.
@@ -327,9 +337,12 @@ class UnrealConnection:
                 # Unexpected error - don't retry
                 logger.error(f"Unexpected error sending command: {e}")
                 self.disconnect()
+                _record_dead_letter_safely(command, params, str(e))
                 return {"status": "error", "error": str(e)}
         
-        return {"status": "error", "error": f"Command failed after {self.MAX_RETRIES + 1} attempts: {last_error}"}
+        final_error = f"Command failed after {self.MAX_RETRIES + 1} attempts: {last_error}"
+        _record_dead_letter_safely(command, params, final_error)
+        return {"status": "error", "error": final_error}
 
     def _send_command_once(self, command: str, params: Dict[str, Any], attempt: int,
                            idempotency_key: str = None) -> Dict[str, Any]:
@@ -873,6 +886,22 @@ def batch_execute_commands(
 MCP_PROTOCOL_VERSION = "1.2.0"
 
 
+def _parse_semver(version: str) -> tuple:
+    parts = str(version or "0.0.0").split(".")
+    parsed = []
+    for part in parts[:3]:
+        digits = ""
+        for char in part:
+            if char.isdigit():
+                digits += char
+            else:
+                break
+        parsed.append(int(digits) if digits else 0)
+    while len(parsed) < 3:
+        parsed.append(0)
+    return tuple(parsed)
+
+
 @mcp.tool()
 def negotiate_protocol_version(
     client_version: str = MCP_PROTOCOL_VERSION
@@ -905,7 +934,11 @@ def negotiate_protocol_version(
         "status": "success",
         "server_version": MCP_PROTOCOL_VERSION,
         "client_version": client_version,
-        "negotiated_version": min(client_version, MCP_PROTOCOL_VERSION),
+        "negotiated_version": (
+            client_version
+            if _parse_semver(client_version) <= _parse_semver(MCP_PROTOCOL_VERSION)
+            else MCP_PROTOCOL_VERSION
+        ),
         "supported_features": features,
     }
 
@@ -3759,20 +3792,14 @@ def ping() -> Dict[str, Any]:
 def list_tools_dynamic() -> Dict[str, Any]:
     """List all registered MCP tools with their names and descriptions."""
     try:
-        tools = []
-        # FastMCP stores tools in _tool_manager or similar internal registry
-        tool_registry = getattr(mcp, '_tool_manager', None)
-        if tool_registry is None:
-            tool_registry = getattr(mcp, '_tools', None)
-
-        if tool_registry and hasattr(tool_registry, 'items'):
-            for tool_name, tool_info in tool_registry.items():
-                desc = getattr(tool_info, 'description', '') or ''
-                tools.append({"name": tool_name, "description": desc})
-        elif tool_registry and hasattr(tool_registry, '__iter__'):
-            for item in tool_registry:
-                if hasattr(item, 'name'):
-                    tools.append({"name": item.name, "description": getattr(item, 'description', '')})
+        tool_infos = _list_registered_tools()
+        tools = [
+            {
+                "name": getattr(tool_info, "name", ""),
+                "description": getattr(tool_info, "description", "") or "",
+            }
+            for tool_info in tool_infos
+        ]
 
         return make_success_response({"tools": tools, "count": len(tools)})
     except Exception as e:
@@ -3788,24 +3815,17 @@ def get_tool_json_schema(tool_name: str) -> Dict[str, Any]:
         tool_name: Name of the tool to get schema for.
     """
     try:
-        tool_registry = getattr(mcp, '_tool_manager', None)
-        if tool_registry is None:
-            tool_registry = getattr(mcp, '_tools', None)
-
-        tool_info = None
-        if tool_registry and hasattr(tool_registry, 'get'):
-            tool_info = tool_registry.get(tool_name)
-        elif tool_registry and hasattr(tool_registry, '__iter__'):
-            for item in tool_registry:
-                if hasattr(item, 'name') and item.name == tool_name:
-                    tool_info = item
-                    break
+        tool_info = _get_registered_tool(tool_name)
 
         if not tool_info:
             return make_error_response(MCPErrorCode.NOT_FOUND, f"Tool not found: {tool_name}")
 
-        schema = getattr(tool_info, 'parameters', None) or getattr(tool_info, 'inputSchema', {})
-        desc = getattr(tool_info, 'description', '') or ''
+        schema = getattr(tool_info, "parameters", None)
+        if schema is None and hasattr(tool_info, "model_json_schema"):
+            schema = tool_info.model_json_schema()
+        if schema is None:
+            schema = getattr(tool_info, "inputSchema", {})
+        desc = getattr(tool_info, "description", "") or ""
 
         return make_success_response({
             "tool_name": tool_name,
@@ -3815,6 +3835,40 @@ def get_tool_json_schema(tool_name: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"get_tool_json_schema error: {e}")
         return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+def _list_registered_tools() -> List[Any]:
+    tool_manager = getattr(mcp, "_tool_manager", None)
+    if tool_manager is not None:
+        if hasattr(tool_manager, "list_tools"):
+            return list(tool_manager.list_tools())
+        tools_by_name = getattr(tool_manager, "_tools", None)
+        if isinstance(tools_by_name, dict):
+            return list(tools_by_name.values())
+
+    tools_by_name = getattr(mcp, "_tools", None)
+    if isinstance(tools_by_name, dict):
+        return list(tools_by_name.values())
+    if tools_by_name:
+        return list(tools_by_name)
+    return []
+
+
+def _get_registered_tool(tool_name: str) -> Optional[Any]:
+    tool_manager = getattr(mcp, "_tool_manager", None)
+    if tool_manager is not None:
+        if hasattr(tool_manager, "get_tool"):
+            tool_info = tool_manager.get_tool(tool_name)
+            if tool_info is not None:
+                return tool_info
+        tools_by_name = getattr(tool_manager, "_tools", None)
+        if isinstance(tools_by_name, dict):
+            return tools_by_name.get(tool_name)
+
+    for tool_info in _list_registered_tools():
+        if getattr(tool_info, "name", None) == tool_name:
+            return tool_info
+    return None
 
 
 # ============================================================================

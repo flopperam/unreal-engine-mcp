@@ -32,10 +32,11 @@
 #include "FileHelpers.h"
 #include "UnrealEdGlobals.h"
 #include "Editor/UnrealEdEngine.h"
+#include "AI/NavigationSystemBase.h"
 // Phase 1: Level management
 #include "EditorLevelUtils.h"
 #include "Engine/LevelStreaming.h"
-#include "EditorLoadingAndSavingUtils.h"
+#include "Engine/LevelStreamingDynamic.h"
 // Phase 1: Viewport
 #include "LevelEditor.h"
 #include "Slate/SceneViewport.h"
@@ -343,7 +344,7 @@ namespace
                 return true;
             }
             FString ObjectPath = JsonValue->AsString();
-            UClass* ExpectedClass = ObjectProp->PropertyClass ? ObjectProp->PropertyClass : UObject::StaticClass();
+            UClass* ExpectedClass = ObjectProp->PropertyClass ? ObjectProp->PropertyClass.Get() : UObject::StaticClass();
             UObject* ReferencedObject = StaticFindObject(ExpectedClass, nullptr, *ObjectPath);
             if (!ReferencedObject)
             {
@@ -1011,7 +1012,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandlePauseGame(const TSha
     }
 
     // Optional explicit pause state; if not provided, toggle
-    bool bNewPaused;
+    bool bNewPaused = false;
     bool bExplicit = false;
     if (Params.IsValid())
     {
@@ -1128,13 +1129,21 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCreateLevel(const TS
     }
 
     // Create a new blank map by loading the default empty map template
-    UEditorLoadingAndSavingUtils::NewBlankMap(false);
+    UWorld* World = UEditorLoadingAndSavingUtils::NewBlankMap(false);
+    if (!World)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            MCPErrorCodes::UNKNOWN_ERROR,
+            FString::Printf(TEXT("Failed to create level world: %s"), *FullPath));
+    }
 
     // Save it to the specified path
-    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : GWorld;
-    if (World)
+    bool bSaved = UEditorLoadingAndSavingUtils::SaveMap(World, FullPath);
+    if (!bSaved)
     {
-        FEditorFileUtils::SaveLevel(World->PersistentLevel, FullPath);
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            MCPErrorCodes::UNKNOWN_ERROR,
+            FString::Printf(TEXT("Failed to save level: %s"), *FullPath));
     }
 
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
@@ -1512,7 +1521,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleCaptureViewportScree
     int32 Width = Viewport->GetSizeXY().X;
     int32 Height = Viewport->GetSizeXY().Y;
 
-    TArray<uint8> CompressedData;
+    TArray64<uint8> CompressedData;
     FImageUtils::PNGCompressImageArray(Width, Height, Bitmap, CompressedData);
 
     if (!FFileHelper::SaveArrayToFile(CompressedData, *Filename))
@@ -1581,7 +1590,7 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPEditorCommands::HandleBuildNavMesh(const T
     UClass* NavSysClass = FindObject<UClass>(nullptr, TEXT("/Script/NavigationSystem.NavigationSystemV1"));
     if (!NavSysClass) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("NavigationSystemV1 class not found. Is NavigationSystem module loaded?"));
 
-    UObject* NavSys = World->GetNavigationSystem();
+    UNavigationSystemBase* NavSys = World->GetNavigationSystem();
     if (!NavSys) return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Navigation System not found in world"));
 
     UFunction* BuildFunc = NavSys->FindFunction(TEXT("Build"));

@@ -63,6 +63,11 @@
 #define MCP_SERVER_HOST "127.0.0.1"
 #define MCP_SERVER_PORT 55557
 
+namespace
+{
+    constexpr const TCHAR* MCP_PROTOCOL_VERSION = TEXT("1.2.0");
+}
+
 UEpicUnrealMCPBridge::UEpicUnrealMCPBridge()
 {
     EditorCommands = MakeShared<FEpicUnrealMCPEditorCommands>();
@@ -228,7 +233,7 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                     ResponseJson->SetStringField(TEXT("status"), TEXT("error"));
                     ResponseJson->SetStringField(TEXT("error"), TEXT("Missing 'commands' array parameter"));
                     ResponseJson->SetStringField(TEXT("error_code"), MCPErrorCodes::MISSING_PARAM);
-                    ResponseJson->SetStringField(TEXT("protocol_version"), TEXT("1.1.0"));
+                    ResponseJson->SetStringField(TEXT("protocol_version"), MCP_PROTOCOL_VERSION);
 
                     FString ResultString;
                     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultString);
@@ -362,7 +367,7 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 ResponseJson->SetNumberField(TEXT("success_count"), SuccessCount);
                 ResponseJson->SetNumberField(TEXT("error_count"), ErrorCount);
                 ResponseJson->SetNumberField(TEXT("total_count"), CommandsArray->Num());
-                ResponseJson->SetStringField(TEXT("protocol_version"), TEXT("1.1.0"));
+                ResponseJson->SetStringField(TEXT("protocol_version"), MCP_PROTOCOL_VERSION);
 
                 FString ResultString;
                 TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultString);
@@ -475,7 +480,7 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));
                 ResponseJson->SetStringField(TEXT("error"), FString::Printf(TEXT("Unknown command: %s"), *CommandType));
                 ResponseJson->SetStringField(TEXT("error_code"), MCPErrorCodes::UNKNOWN_COMMAND);
-                ResponseJson->SetStringField(TEXT("protocol_version"), TEXT("1.1.0"));
+                ResponseJson->SetStringField(TEXT("protocol_version"), MCP_PROTOCOL_VERSION);
 
                 FString ResultString;
                 TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultString);
@@ -515,14 +520,14 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
                 }
             }
 
-            ResponseJson->SetStringField(TEXT("protocol_version"), TEXT("1.1.0"));
+            ResponseJson->SetStringField(TEXT("protocol_version"), MCP_PROTOCOL_VERSION);
         }
         catch (const std::exception& e)
         {
             ResponseJson->SetStringField(TEXT("status"), TEXT("error"));
             ResponseJson->SetStringField(TEXT("error"), UTF8_TO_TCHAR(e.what()));
             ResponseJson->SetStringField(TEXT("error_code"), MCPErrorCodes::UNKNOWN_ERROR);
-            ResponseJson->SetStringField(TEXT("protocol_version"), TEXT("1.1.0"));
+            ResponseJson->SetStringField(TEXT("protocol_version"), MCP_PROTOCOL_VERSION);
         }
         
         FString ResultString;
