@@ -8,6 +8,67 @@
 #include "Kismet2/KismetEditorUtilities.h"
 #include "EditorAssetLibrary.h"
 
+namespace
+{
+UBlueprint* LoadConnectorBlueprint(const FString& BlueprintName)
+{
+    FString BlueprintPath = BlueprintName;
+    if (!BlueprintPath.StartsWith(TEXT("/")))
+    {
+        BlueprintPath = TEXT("/Game/Blueprints/") + BlueprintPath;
+    }
+
+    if (!BlueprintPath.Contains(TEXT(".")))
+    {
+        BlueprintPath += TEXT(".") + FPaths::GetBaseFilename(BlueprintPath);
+    }
+
+    if (UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *BlueprintPath))
+    {
+        return Blueprint;
+    }
+
+    if (UEditorAssetLibrary::DoesAssetExist(BlueprintPath))
+    {
+        return Cast<UBlueprint>(UEditorAssetLibrary::LoadAsset(BlueprintPath));
+    }
+
+    return nullptr;
+}
+
+UEdGraph* FindConnectorGraph(UBlueprint* Blueprint, const FString& FunctionName)
+{
+    if (!Blueprint)
+    {
+        return nullptr;
+    }
+
+    if (!FunctionName.IsEmpty())
+    {
+        for (UEdGraph* FuncGraph : Blueprint->FunctionGraphs)
+        {
+            if (FuncGraph && (FuncGraph->GetFName().ToString() == FunctionName ||
+                              (FuncGraph->GetOuter() && FuncGraph->GetOuter()->GetFName().ToString() == FunctionName)))
+            {
+                return FuncGraph;
+            }
+        }
+
+        for (UEdGraph* FuncGraph : Blueprint->FunctionGraphs)
+        {
+            if (FuncGraph && FuncGraph->GetFName().ToString().Contains(FunctionName))
+            {
+                return FuncGraph;
+            }
+        }
+
+        return nullptr;
+    }
+
+    return Blueprint->UbergraphPages.Num() > 0 ? Blueprint->UbergraphPages[0] : nullptr;
+}
+}
+
 TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>& Params)
 {
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
@@ -23,34 +84,7 @@ TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>
     Params->TryGetStringField(TEXT("function_name"), FunctionName);
 
     // Charger Blueprint - handle both full paths and simple names
-    UBlueprint* Blueprint = nullptr;
-    FString BlueprintPath = BlueprintName;
-
-    // If no path prefix, assume /Game/Blueprints/
-    if (!BlueprintPath.StartsWith(TEXT("/")))
-    {
-        BlueprintPath = TEXT("/Game/Blueprints/") + BlueprintPath;
-    }
-
-    // Add .Blueprint suffix if not present
-    if (!BlueprintPath.Contains(TEXT(".")))
-    {
-        BlueprintPath += TEXT(".") + FPaths::GetBaseFilename(BlueprintPath);
-    }
-
-    // Try to load the Blueprint
-    Blueprint = LoadObject<UBlueprint>(nullptr, *BlueprintPath);
-
-    // If not found, try with UEditorAssetLibrary
-    if (!Blueprint)
-    {
-        FString AssetPath = BlueprintPath;
-        if (UEditorAssetLibrary::DoesAssetExist(AssetPath))
-        {
-            UObject* Asset = UEditorAssetLibrary::LoadAsset(AssetPath);
-            Blueprint = Cast<UBlueprint>(Asset);
-        }
-    }
+    UBlueprint* Blueprint = LoadConnectorBlueprint(BlueprintName);
 
     if (!Blueprint)
     {
@@ -59,54 +93,7 @@ TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>
         return Result;
     }
 
-    // Get graph
-    UEdGraph* Graph = nullptr;
-
-    if (!FunctionName.IsEmpty())
-    {
-        // Strategy 1: Try exact name match with GetFName()
-        for (UEdGraph* FuncGraph : Blueprint->FunctionGraphs)
-        {
-            if (FuncGraph && (FuncGraph->GetFName().ToString() == FunctionName ||
-                              (FuncGraph->GetOuter() && FuncGraph->GetOuter()->GetFName().ToString() == FunctionName)))
-            {
-                Graph = FuncGraph;
-                break;
-            }
-        }
-
-        // Strategy 2: Fallback - partial match for auto-generated names
-        if (!Graph)
-        {
-            for (UEdGraph* FuncGraph : Blueprint->FunctionGraphs)
-            {
-                if (FuncGraph && FuncGraph->GetFName().ToString().Contains(FunctionName))
-                {
-                    Graph = FuncGraph;
-                    break;
-                }
-            }
-        }
-
-        if (!Graph)
-        {
-            Result->SetBoolField("success", false);
-            Result->SetStringField("error", FString::Printf(TEXT("Function graph not found: %s"), *FunctionName));
-            return Result;
-        }
-    }
-    else
-    {
-        // Use event graph if no function specified
-        if (Blueprint->UbergraphPages.Num() == 0)
-        {
-            Result->SetBoolField("success", false);
-            Result->SetStringField("error", "Blueprint has no event graph");
-            return Result;
-        }
-
-        Graph = Blueprint->UbergraphPages[0];
-    }
+    UEdGraph* Graph = FindConnectorGraph(Blueprint, FunctionName);
 
     if (!Graph)
     {
@@ -137,23 +124,27 @@ TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>
         return Result;
     }
 
-    // Validate compatibility
-    if (!ArePinsCompatible(SourcePin, TargetPin))
+    const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+    if (!Schema || !Schema->TryCreateConnection(SourcePin, TargetPin))
     {
         Result->SetBoolField("success", false);
         Result->SetStringField("error", "Pins not compatible");
         return Result;
     }
 
-    // Create connection
-    SourcePin->MakeLinkTo(TargetPin);
+    bool bSkipCompile = false;
+    Params->TryGetBoolField(TEXT("skip_compile"), bSkipCompile);
 
-    // Recompile
     Blueprint->MarkPackageDirty();
-    FKismetEditorUtilities::CompileBlueprint(Blueprint);
+    Graph->NotifyGraphChanged();
+    if (!bSkipCompile)
+    {
+        FKismetEditorUtilities::CompileBlueprint(Blueprint);
+    }
 
     // Return
     Result->SetBoolField("success", true);
+    Result->SetBoolField("compiled", !bSkipCompile);
 
     TSharedPtr<FJsonObject> ConnectionInfo = MakeShared<FJsonObject>();
     ConnectionInfo->SetStringField("source_node", SourceNodeId);
@@ -164,6 +155,73 @@ TSharedPtr<FJsonObject> FBPConnector::ConnectNodes(const TSharedPtr<FJsonObject>
 
     Result->SetObjectField("connection", ConnectionInfo);
 
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FBPConnector::BreakPinLinks(const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+
+    FString BlueprintName = Params->GetStringField(TEXT("blueprint_name"));
+    FString NodeId = Params->GetStringField(TEXT("node_id"));
+    FString PinName = Params->GetStringField(TEXT("pin_name"));
+
+    FString FunctionName;
+    Params->TryGetStringField(TEXT("function_name"), FunctionName);
+
+    FString PinDirectionString;
+    Params->TryGetStringField(TEXT("pin_direction"), PinDirectionString);
+    EEdGraphPinDirection Direction = PinDirectionString.Equals(TEXT("input"), ESearchCase::IgnoreCase) ? EGPD_Input : EGPD_Output;
+
+    UBlueprint* Blueprint = LoadConnectorBlueprint(BlueprintName);
+    if (!Blueprint)
+    {
+        Result->SetBoolField("success", false);
+        Result->SetStringField("error", "Blueprint not found");
+        return Result;
+    }
+
+    UEdGraph* Graph = FindConnectorGraph(Blueprint, FunctionName);
+    if (!Graph)
+    {
+        Result->SetBoolField("success", false);
+        Result->SetStringField("error", "Graph not found");
+        return Result;
+    }
+
+    UK2Node* Node = FindNodeById(Graph, NodeId);
+    if (!Node)
+    {
+        Result->SetBoolField("success", false);
+        Result->SetStringField("error", "Node not found");
+        return Result;
+    }
+
+    UEdGraphPin* Pin = FindPinByName(Node, PinName, Direction);
+    if (!Pin)
+    {
+        Result->SetBoolField("success", false);
+        Result->SetStringField("error", "Pin not found");
+        return Result;
+    }
+
+    const int32 RemovedLinks = Pin->LinkedTo.Num();
+    if (const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>())
+    {
+        Schema->BreakPinLinks(*Pin, true);
+    }
+    else
+    {
+        Pin->BreakAllPinLinks(true);
+    }
+
+    Blueprint->MarkPackageDirty();
+    FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
+    Result->SetBoolField("success", true);
+    Result->SetStringField("node", NodeId);
+    Result->SetStringField("pin", PinName);
+    Result->SetNumberField("removed_links", RemovedLinks);
     return Result;
 }
 
@@ -218,5 +276,6 @@ bool FBPConnector::ArePinsCompatible(UEdGraphPin* SourcePin, UEdGraphPin* Target
         return false;
     }
 
-    return SourcePin->PinType.PinCategory == TargetPin->PinType.PinCategory;
+    const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+    return Schema && Schema->CanCreateConnection(SourcePin, TargetPin).Response != CONNECT_RESPONSE_DISALLOW;
 }

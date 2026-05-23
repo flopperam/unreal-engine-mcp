@@ -54,6 +54,7 @@ uint32 FMCPServerRunnable::Run()
                 ClientSocket->SetReceiveBufferSize(SocketBufferSize, SocketBufferSize);
                 
                 uint8 Buffer[8192];
+                FString MessageBuffer;
                 while (bRunning)
                 {
                     int32 BytesRead = 0;
@@ -65,20 +66,23 @@ uint32 FMCPServerRunnable::Run()
                             break;
                         }
 
-                        // Convert received data to string
+                        // Convert received data to string and accumulate it. Large graph batches can be bigger than
+                        // one TCP receive, so parsing each chunk independently drops valid commands.
                         Buffer[BytesRead] = '\0';
                         FString ReceivedText = UTF8_TO_TCHAR(Buffer);
                         UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Received: %s"), *ReceivedText);
+                        MessageBuffer.Append(ReceivedText);
 
                         // Parse JSON
                         TSharedPtr<FJsonObject> JsonObject;
-                        TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ReceivedText);
+                        TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(MessageBuffer);
                         
-                        if (FJsonSerializer::Deserialize(Reader, JsonObject))
+                        if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid())
                         {
                             // Get command type
                             FString CommandType;
-                            if (JsonObject->TryGetStringField(TEXT("type"), CommandType))
+                            if (JsonObject->TryGetStringField(TEXT("type"), CommandType) ||
+                                JsonObject->TryGetStringField(TEXT("command"), CommandType))
                             {
                                 UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Executing command: %s"), *CommandType);
 
@@ -126,15 +130,24 @@ uint32 FMCPServerRunnable::Run()
                                     UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Response sent successfully (%d bytes)"),
                                            TotalBytesSent);
                                 }
+
+                                MessageBuffer.Empty();
                             }
                             else
                             {
                                 UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Missing 'type' field in command"));
+                                MessageBuffer.Empty();
                             }
                         }
                         else
                         {
-                            UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Failed to parse JSON from: %s"), *ReceivedText);
+                            UE_LOG(LogTemp, Verbose, TEXT("MCPServerRunnable: Waiting for the rest of a partial JSON command (%d chars buffered)"), MessageBuffer.Len());
+                            if (MessageBuffer.Len() > 4 * 1024 * 1024)
+                            {
+                                UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Dropping oversized incomplete JSON command"));
+                                MessageBuffer.Empty();
+                                break;
+                            }
                         }
                     }
                     else
@@ -366,4 +379,4 @@ void FMCPServerRunnable::ProcessMessage(TSharedPtr<FSocket> Client, const FStrin
 
     UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Response sent successfully (%d bytes)"),
            TotalBytesSent);
-} 
+}

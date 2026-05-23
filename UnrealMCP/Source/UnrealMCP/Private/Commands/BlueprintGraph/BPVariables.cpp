@@ -9,6 +9,50 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "PropertyEditorModule.h"
 #include "Modules/ModuleManager.h"
+#include "UObject/UnrealType.h"
+
+namespace
+{
+UClass* ResolveBlueprintGeneratedClass(const FString& ObjectPath)
+{
+    if (ObjectPath.IsEmpty())
+    {
+        return nullptr;
+    }
+
+    if (UClass* Class = LoadClass<UObject>(nullptr, *ObjectPath))
+    {
+        return Class;
+    }
+
+    if (UClass* Class = FindObject<UClass>(nullptr, *ObjectPath))
+    {
+        return Class;
+    }
+
+    if (UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *ObjectPath))
+    {
+        return Blueprint->GeneratedClass;
+    }
+
+    return nullptr;
+}
+
+UObject* ResolveTypeObject(const FString& ObjectPath)
+{
+    if (ObjectPath.IsEmpty())
+    {
+        return nullptr;
+    }
+
+    if (UObject* Object = StaticLoadObject(UObject::StaticClass(), nullptr, *ObjectPath))
+    {
+        return Object;
+    }
+
+    return FindObject<UObject>(nullptr, *ObjectPath);
+}
+}
 
 TSharedPtr<FJsonObject> FBPVariables::CreateVariable(const TSharedPtr<FJsonObject>& Params)
 {
@@ -396,33 +440,81 @@ TSharedPtr<FJsonObject> FBPVariables::SetVariableProperties(const TSharedPtr<FJs
 FEdGraphPinType FBPVariables::GetPinTypeFromString(const FString& TypeString)
 {
     FEdGraphPinType PinType;
+    FString WorkingType = TypeString;
+    if (WorkingType.StartsWith(TEXT("array:")))
+    {
+        WorkingType.RightChopInline(6);
+        PinType.ContainerType = EPinContainerType::Array;
+    }
 
-    if (TypeString == "bool")
+    if (WorkingType == "bool")
     {
         PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
     }
-    else if (TypeString == "int")
+    else if (WorkingType == "int")
     {
         PinType.PinCategory = UEdGraphSchema_K2::PC_Int;
     }
-    else if (TypeString == "float")
+    else if (WorkingType == "float")
     {
         PinType.PinCategory = UEdGraphSchema_K2::PC_Real;
         PinType.PinSubCategory = UEdGraphSchema_K2::PC_Float;
     }
-    else if (TypeString == "string")
+    else if (WorkingType == "string")
     {
         PinType.PinCategory = UEdGraphSchema_K2::PC_String;
     }
-    else if (TypeString == "vector")
+    else if (WorkingType == "text")
+    {
+        PinType.PinCategory = UEdGraphSchema_K2::PC_Text;
+    }
+    else if (WorkingType == "name")
+    {
+        PinType.PinCategory = UEdGraphSchema_K2::PC_Name;
+    }
+    else if (WorkingType == "byte")
+    {
+        PinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
+    }
+    else if (WorkingType == "vector")
     {
         PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
         PinType.PinSubCategoryObject = TBaseStructure<FVector>::Get();
     }
-    else if (TypeString == "rotator")
+    else if (WorkingType == "vector2d")
+    {
+        PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+        PinType.PinSubCategoryObject = TBaseStructure<FVector2D>::Get();
+    }
+    else if (WorkingType == "rotator")
     {
         PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
         PinType.PinSubCategoryObject = TBaseStructure<FRotator>::Get();
+    }
+    else if (WorkingType == "intpoint")
+    {
+        PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+        PinType.PinSubCategoryObject = TBaseStructure<FIntPoint>::Get();
+    }
+    else if (WorkingType.StartsWith(TEXT("enum:")))
+    {
+        PinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
+        PinType.PinSubCategoryObject = Cast<UEnum>(ResolveTypeObject(WorkingType.RightChop(5)));
+    }
+    else if (WorkingType.StartsWith(TEXT("struct:")))
+    {
+        PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+        PinType.PinSubCategoryObject = Cast<UScriptStruct>(ResolveTypeObject(WorkingType.RightChop(7)));
+    }
+    else if (WorkingType.StartsWith(TEXT("object:")))
+    {
+        PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
+        PinType.PinSubCategoryObject = ResolveBlueprintGeneratedClass(WorkingType.RightChop(7));
+    }
+    else if (WorkingType.StartsWith(TEXT("class:")))
+    {
+        PinType.PinCategory = UEdGraphSchema_K2::PC_Class;
+        PinType.PinSubCategoryObject = ResolveBlueprintGeneratedClass(WorkingType.RightChop(6));
     }
     else
     {

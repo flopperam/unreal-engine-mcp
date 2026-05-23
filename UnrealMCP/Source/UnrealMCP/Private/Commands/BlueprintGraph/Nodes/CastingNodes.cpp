@@ -4,7 +4,35 @@
 #include "K2Node_CastByteToEnum.h"
 #include "K2Node_ClassDynamicCast.h"
 #include "K2Node_DynamicCast.h"
+#include "Engine/Blueprint.h"
 
+namespace
+{
+UClass* ResolveClassForCastNode(const FString& ClassPath)
+{
+  if (ClassPath.IsEmpty())
+  {
+    return nullptr;
+  }
+
+  if (UClass* Class = Cast<UClass>(StaticFindObject(UClass::StaticClass(), nullptr, *ClassPath)))
+  {
+    return Class;
+  }
+
+  if (UClass* Class = LoadObject<UClass>(nullptr, *ClassPath))
+  {
+    return Class;
+  }
+
+  if (UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *ClassPath))
+  {
+    return Blueprint->GeneratedClass;
+  }
+
+  return nullptr;
+}
+}
 
 UK2Node *FCastingNodeCreator::CreateDynamicCastNode(
     UEdGraph *Graph, const TSharedPtr<FJsonObject> &Params) {
@@ -20,8 +48,7 @@ UK2Node *FCastingNodeCreator::CreateDynamicCastNode(
   // Set target class BEFORE initialization
   FString TargetClass;
   if (Params->TryGetStringField(TEXT("target_class"), TargetClass)) {
-    UClass *CastClass = Cast<UClass>(
-        StaticFindObject(UClass::StaticClass(), nullptr, *TargetClass));
+    UClass *CastClass = ResolveClassForCastNode(TargetClass);
     if (CastClass) {
       DynamicCastNode->TargetType = CastClass;
     }
@@ -53,8 +80,7 @@ UK2Node *FCastingNodeCreator::CreateClassDynamicCastNode(
   // Set target class BEFORE initialization
   FString TargetClass;
   if (Params->TryGetStringField(TEXT("target_class"), TargetClass)) {
-    UClass *CastClass = Cast<UClass>(
-        StaticFindObject(UClass::StaticClass(), nullptr, *TargetClass));
+    UClass *CastClass = ResolveClassForCastNode(TargetClass);
     if (CastClass) {
       ClassDynamicCastNode->TargetType = CastClass;
     }
