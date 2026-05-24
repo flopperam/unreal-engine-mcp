@@ -432,6 +432,12 @@ FString UEpicUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const T
             }
             // Blueprint Commands
             else if (CommandType == TEXT("create_blueprint") ||
+                     CommandType == TEXT("create_widget_blueprint") ||
+                     CommandType == TEXT("create_blueprint_interface") ||
+                     CommandType == TEXT("create_blueprint_macro_library") ||
+                     CommandType == TEXT("create_data_table") ||
+                     CommandType == TEXT("create_behavior_tree") ||
+                     CommandType == TEXT("create_blackboard") ||
                      CommandType == TEXT("add_component_to_blueprint") ||
                      CommandType == TEXT("set_physics_properties") ||
                      CommandType == TEXT("compile_blueprint") ||
@@ -599,6 +605,12 @@ TSharedPtr<FJsonObject> UEpicUnrealMCPBridge::DispatchToHandler(
     }
     // Blueprint Commands
     else if (CommandType == TEXT("create_blueprint") ||
+             CommandType == TEXT("create_widget_blueprint") ||
+             CommandType == TEXT("create_blueprint_interface") ||
+             CommandType == TEXT("create_blueprint_macro_library") ||
+             CommandType == TEXT("create_data_table") ||
+             CommandType == TEXT("create_behavior_tree") ||
+             CommandType == TEXT("create_blackboard") ||
              CommandType == TEXT("add_component_to_blueprint") ||
              CommandType == TEXT("set_physics_properties") ||
              CommandType == TEXT("compile_blueprint") ||

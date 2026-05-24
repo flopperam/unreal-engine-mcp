@@ -10,6 +10,7 @@ import socket
 import json
 import math
 import struct
+import sys
 import time
 import threading
 from contextlib import asynccontextmanager
@@ -56,6 +57,9 @@ from helpers.blueprint_graph import node_properties
 from helpers.blueprint_graph import function_manager
 from helpers.blueprint_graph import function_io
 
+_this_module = sys.modules.get(__name__)
+if _this_module is not None:
+    sys.modules.setdefault("unreal_mcp_server_advanced", _this_module)
 
 # Configure logging with more detailed format
 logging.basicConfig(

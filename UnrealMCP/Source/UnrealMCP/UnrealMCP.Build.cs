@@ -42,6 +42,7 @@ public class UnrealMCP : ModuleRules
 				"JsonUtilities",
 				"DeveloperSettings",
 				"PhysicsCore",
+				"AIModule",
 				"UnrealEd",           // For Blueprint editing
 				"BlueprintGraph",     // For K2Node classes (F15-F22)
 				"KismetCompiler"      // For Blueprint compilation (F15-F22)
@@ -57,6 +58,7 @@ public class UnrealMCP : ModuleRules
 				"Slate",
 				"SlateCore",
 				"Kismet",
+				"UMG",
 				"Projects",
 				"AssetRegistry"
 			}
@@ -69,7 +71,9 @@ public class UnrealMCP : ModuleRules
 				{
 					"PropertyEditor",      // For property editing
 					"ToolMenus",           // For editor UI
-					"BlueprintEditorLibrary" // For Blueprint utilities
+					"BlueprintEditorLibrary", // For Blueprint utilities
+					"BehaviorTreeEditor",  // For behavior tree and blackboard factories
+					"UMGEditor"            // For Widget Blueprint authoring
 				}
 			);
 		}
