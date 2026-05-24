@@ -2,7 +2,18 @@
 #include "Commands/EpicUnrealMCPCommonUtils.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
+#include "Engine/DataTable.h"
 #include "Factories/BlueprintFactory.h"
+#include "Factories/BlueprintInterfaceFactory.h"
+#include "Factories/BlueprintMacroFactory.h"
+#include "Factories/DataTableFactory.h"
+#include "WidgetBlueprint.h"
+#include "WidgetBlueprintFactory.h"
+#include "Blueprint/UserWidget.h"
+#include "BehaviorTree/BehaviorTree.h"
+#include "BehaviorTree/BlackboardData.h"
+#include "BehaviorTreeFactory.h"
+#include "BlackboardDataFactory.h"
 #include "EdGraphSchema_K2.h"
 #include "K2Node_Event.h"
 #include "K2Node_VariableGet.h"
@@ -28,6 +39,97 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/PackageName.h"
+
+namespace
+{
+    FString NormalizeAssetDirectory(FString Directory, const TCHAR* DefaultDirectory)
+    {
+        if (Directory.IsEmpty())
+        {
+            Directory = DefaultDirectory;
+        }
+
+        Directory.ReplaceInline(TEXT("\\"), TEXT("/"));
+        if (!Directory.StartsWith(TEXT("/")))
+        {
+            Directory = TEXT("/Game/") + Directory;
+        }
+        if (!Directory.EndsWith(TEXT("/")))
+        {
+            Directory += TEXT("/");
+        }
+        return Directory;
+    }
+
+    TSharedPtr<FJsonObject> CreateFactoryAsset(
+        const TSharedPtr<FJsonObject>& Params,
+        UFactory* Factory,
+        UClass* AssetClass,
+        const TCHAR* DefaultDirectory,
+        const TCHAR* AssetTypeName)
+    {
+        if (!Params.IsValid())
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing parameters"));
+        }
+
+        FString AssetName;
+        if (!Params->TryGetStringField(TEXT("name"), AssetName) || AssetName.IsEmpty())
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'name' parameter"));
+        }
+
+        FString Directory;
+        Params->TryGetStringField(TEXT("path"), Directory);
+        Directory = NormalizeAssetDirectory(Directory, DefaultDirectory);
+
+        const FString PackageName = Directory + AssetName;
+
+        FText InvalidPackageReason;
+        if (!FPackageName::IsValidLongPackageName(PackageName, true, &InvalidPackageReason))
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("Invalid asset path '%s': %s"), *PackageName, *InvalidPackageReason.ToString()));
+        }
+
+        if (UEditorAssetLibrary::DoesAssetExist(PackageName))
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("%s already exists: %s"), AssetTypeName, *PackageName));
+        }
+
+        UPackage* Package = CreatePackage(*PackageName);
+        if (!Package)
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("Failed to create package: %s"), *PackageName));
+        }
+
+        UObject* NewAsset = Factory->FactoryCreateNew(
+            AssetClass,
+            Package,
+            *AssetName,
+            RF_Public | RF_Standalone,
+            nullptr,
+            GWarn);
+
+        if (!NewAsset)
+        {
+            return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("Failed to create %s: %s"), AssetTypeName, *PackageName));
+        }
+
+        FAssetRegistryModule::AssetCreated(NewAsset);
+        Package->MarkPackageDirty();
+
+        TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+        ResultObj->SetStringField(TEXT("name"), AssetName);
+        ResultObj->SetStringField(TEXT("path"), PackageName);
+        ResultObj->SetStringField(TEXT("asset_type"), AssetTypeName);
+        return ResultObj;
+    }
+}
 
 FEpicUnrealMCPBlueprintCommands::FEpicUnrealMCPBlueprintCommands()
 {
@@ -38,6 +140,30 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCommand(const FSt
     if (CommandType == TEXT("create_blueprint"))
     {
         return HandleCreateBlueprint(Params);
+    }
+    else if (CommandType == TEXT("create_widget_blueprint"))
+    {
+        return HandleCreateWidgetBlueprint(Params);
+    }
+    else if (CommandType == TEXT("create_blueprint_interface"))
+    {
+        return HandleCreateBlueprintInterface(Params);
+    }
+    else if (CommandType == TEXT("create_blueprint_macro_library"))
+    {
+        return HandleCreateBlueprintMacroLibrary(Params);
+    }
+    else if (CommandType == TEXT("create_data_table"))
+    {
+        return HandleCreateDataTable(Params);
+    }
+    else if (CommandType == TEXT("create_behavior_tree"))
+    {
+        return HandleCreateBehaviorTree(Params);
+    }
+    else if (CommandType == TEXT("create_blackboard"))
+    {
+        return HandleCreateBlackboard(Params);
     }
     else if (CommandType == TEXT("add_component_to_blueprint"))
     {
@@ -198,6 +324,64 @@ TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateBlueprint(c
     }
 
     return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create blueprint"));
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateWidgetBlueprint(const TSharedPtr<FJsonObject>& Params)
+{
+    UWidgetBlueprintFactory* Factory = NewObject<UWidgetBlueprintFactory>();
+    Factory->ParentClass = UUserWidget::StaticClass();
+    Factory->BlueprintType = BPTYPE_Normal;
+    return CreateFactoryAsset(Params, Factory, UWidgetBlueprint::StaticClass(), TEXT("/Game/UI/"), TEXT("Widget Blueprint"));
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateBlueprintInterface(const TSharedPtr<FJsonObject>& Params)
+{
+    UBlueprintInterfaceFactory* Factory = NewObject<UBlueprintInterfaceFactory>();
+    return CreateFactoryAsset(Params, Factory, UBlueprint::StaticClass(), TEXT("/Game/Blueprints/"), TEXT("Blueprint Interface"));
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateBlueprintMacroLibrary(const TSharedPtr<FJsonObject>& Params)
+{
+    UBlueprintMacroFactory* Factory = NewObject<UBlueprintMacroFactory>();
+    return CreateFactoryAsset(Params, Factory, UBlueprint::StaticClass(), TEXT("/Game/Blueprints/"), TEXT("Blueprint Macro Library"));
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateDataTable(const TSharedPtr<FJsonObject>& Params)
+{
+    if (!Params.IsValid())
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing parameters"));
+    }
+
+    FString StructPath = TEXT("/Script/Engine.TableRowBase");
+    Params->TryGetStringField(TEXT("struct_path"), StructPath);
+
+    UScriptStruct* RowStruct = LoadObject<UScriptStruct>(nullptr, *StructPath);
+    if (!RowStruct && (StructPath == TEXT("/Script/Engine.TableRowBase") || StructPath == TEXT("TableRowBase") || StructPath == TEXT("FTableRowBase")))
+    {
+        RowStruct = FTableRowBase::StaticStruct();
+    }
+    if (!RowStruct)
+    {
+        return FEpicUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Could not resolve row struct: %s"), *StructPath));
+    }
+
+    UDataTableFactory* Factory = NewObject<UDataTableFactory>();
+    Factory->Struct = RowStruct;
+    return CreateFactoryAsset(Params, Factory, UDataTable::StaticClass(), TEXT("/Game/Data/"), TEXT("Data Table"));
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateBehaviorTree(const TSharedPtr<FJsonObject>& Params)
+{
+    UBehaviorTreeFactory* Factory = NewObject<UBehaviorTreeFactory>();
+    return CreateFactoryAsset(Params, Factory, UBehaviorTree::StaticClass(), TEXT("/Game/AI/"), TEXT("Behavior Tree"));
+}
+
+TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleCreateBlackboard(const TSharedPtr<FJsonObject>& Params)
+{
+    UBlackboardDataFactory* Factory = NewObject<UBlackboardDataFactory>();
+    return CreateFactoryAsset(Params, Factory, UBlackboardData::StaticClass(), TEXT("/Game/AI/"), TEXT("Blackboard"));
 }
 
 TSharedPtr<FJsonObject> FEpicUnrealMCPBlueprintCommands::HandleAddComponentToBlueprint(const TSharedPtr<FJsonObject>& Params)

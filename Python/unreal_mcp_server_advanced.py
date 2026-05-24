@@ -10,6 +10,7 @@ import socket
 import json
 import math
 import struct
+import sys
 import time
 import threading
 from contextlib import asynccontextmanager
@@ -42,6 +43,7 @@ from helpers.actor_name_manager import (
 from helpers.bridge_aqueduct_creation import (
     build_suspension_bridge_structure, build_aqueduct_structure
 )
+from helpers.error_codes import MCPErrorCode, make_error_response, make_success_response
 
 # ============================================================================
 # Blueprint Node Graph Tools
@@ -55,6 +57,9 @@ from helpers.blueprint_graph import node_properties
 from helpers.blueprint_graph import function_manager
 from helpers.blueprint_graph import function_io
 
+_this_module = sys.modules.get(__name__)
+if _this_module is not None:
+    sys.modules.setdefault("unreal_mcp_server_advanced", _this_module)
 
 # Configure logging with more detailed format
 logging.basicConfig(
@@ -69,6 +74,16 @@ logger = logging.getLogger("UnrealMCP_Advanced")
 # Configuration
 UNREAL_HOST = "127.0.0.1"
 UNREAL_PORT = 55557
+
+def _record_dead_letter_safely(command: str, params: Optional[Dict[str, Any]], error: str) -> None:
+    """Record failed commands once the dead-letter queue has been initialized."""
+    recorder = globals().get("record_dead_letter")
+    if not callable(recorder):
+        return
+    try:
+        recorder(command, params or {}, error)
+    except Exception as record_error:
+        logger.warning(f"Failed to record dead letter for {command}: {record_error}")
 
 class UnrealConnection:
     """
@@ -293,22 +308,24 @@ class UnrealConnection:
         
         raise ConnectionError("Connection closed without response")
 
-    def send_command(self, command: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
+    def send_command(self, command: str, params: Dict[str, Any] = None,
+                     idempotency_key: str = None) -> Optional[Dict[str, Any]]:
         """
         Send a command to Unreal Engine with automatic retry.
-        
+
         Args:
             command: Command type string
             params: Command parameters dictionary
-            
+            idempotency_key: Optional key to prevent duplicate execution
+
         Returns:
             Response dictionary or error dictionary
         """
         last_error = None
-        
+
         for attempt in range(self.MAX_RETRIES + 1):
             try:
-                return self._send_command_once(command, params, attempt)
+                return self._send_command_once(command, params, attempt, idempotency_key)
             except (ConnectionError, TimeoutError, socket.error, OSError) as e:
                 last_error = str(e)
                 logger.warning(f"Command failed (attempt {attempt + 1}/{self.MAX_RETRIES + 1}): {e}")
@@ -324,22 +341,27 @@ class UnrealConnection:
                 # Unexpected error - don't retry
                 logger.error(f"Unexpected error sending command: {e}")
                 self.disconnect()
+                _record_dead_letter_safely(command, params, str(e))
                 return {"status": "error", "error": str(e)}
         
-        return {"status": "error", "error": f"Command failed after {self.MAX_RETRIES + 1} attempts: {last_error}"}
+        final_error = f"Command failed after {self.MAX_RETRIES + 1} attempts: {last_error}"
+        _record_dead_letter_safely(command, params, final_error)
+        return {"status": "error", "error": final_error}
 
-    def _send_command_once(self, command: str, params: Dict[str, Any], attempt: int) -> Dict[str, Any]:
+    def _send_command_once(self, command: str, params: Dict[str, Any], attempt: int,
+                           idempotency_key: str = None) -> Dict[str, Any]:
         """
         Send command once (internal method).
-        
+
         Args:
             command: Command type
             params: Command parameters
             attempt: Current attempt number
-            
+            idempotency_key: Optional idempotency key
+
         Returns:
             Response dictionary
-            
+
         Raises:
             Various exceptions on failure
         """
@@ -350,13 +372,15 @@ class UnrealConnection:
             # Connect (or reconnect)
             if not self.connect():
                 raise ConnectionError(f"Failed to connect to Unreal Engine: {self._last_error}")
-            
+
             try:
                 # Build and send command
                 command_obj = {
                     "type": command,
                     "params": params or {}
                 }
+                if idempotency_key:
+                    command_obj["idempotency_key"] = idempotency_key
                 command_json = json.dumps(command_obj)
                 
                 logger.info(f"Sending command (attempt {attempt + 1}): {command}")
@@ -476,6 +500,99 @@ def find_actors_by_name(pattern: str) -> Dict[str, Any]:
         return {"success": False, "message": str(e)}
 
 
+@mcp.tool()
+def get_object_properties(
+    object_path: Optional[str] = None,
+    actor_name: Optional[str] = None,
+    property_names: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """Get reflected UObject properties by object path or actor name."""
+    if not object_path and not actor_name:
+        return {"success": False, "message": "Provide object_path or actor_name"}
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    params: Dict[str, Any] = {}
+    if object_path:
+        params["object_path"] = object_path
+    if actor_name:
+        params["actor_name"] = actor_name
+    if property_names is not None:
+        params["property_names"] = property_names
+
+    try:
+        response = unreal.send_command("get_object_properties", params)
+        return response or {"success": False, "message": "No response from Unreal"}
+    except Exception as e:
+        logger.error(f"get_object_properties error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def set_object_properties(
+    properties: Dict[str, Any],
+    object_path: Optional[str] = None,
+    actor_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """Set reflected UObject properties by object path or actor name."""
+    if not object_path and not actor_name:
+        return {"success": False, "message": "Provide object_path or actor_name"}
+    if not properties:
+        return {"success": False, "message": "Provide at least one property to set"}
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    params: Dict[str, Any] = {"properties": properties}
+    if object_path:
+        params["object_path"] = object_path
+    if actor_name:
+        params["actor_name"] = actor_name
+
+    try:
+        response = unreal.send_command("set_object_properties", params)
+        return response or {"success": False, "message": "No response from Unreal"}
+    except Exception as e:
+        logger.error(f"set_object_properties error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@mcp.tool()
+def call_uobject_function(
+    function_name: str,
+    object_path: Optional[str] = None,
+    actor_name: Optional[str] = None,
+    arguments: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Call a reflected UFunction on an object by object path or actor name."""
+    if not object_path and not actor_name:
+        return {"success": False, "message": "Provide object_path or actor_name"}
+    if not function_name:
+        return {"success": False, "message": "function_name is required"}
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    params: Dict[str, Any] = {"function_name": function_name}
+    if object_path:
+        params["object_path"] = object_path
+    if actor_name:
+        params["actor_name"] = actor_name
+    if arguments is not None:
+        params["arguments"] = arguments
+
+    try:
+        response = unreal.send_command("call_uobject_function", params)
+        return response or {"success": False, "message": "No response from Unreal"}
+    except Exception as e:
+        logger.error(f"call_uobject_function error: {e}")
+        return {"success": False, "message": str(e)}
+
+
 
 @mcp.tool()
 def delete_actor(name: str) -> Dict[str, Any]:
@@ -518,6 +635,317 @@ def set_actor_transform(
     except Exception as e:
         logger.error(f"set_actor_transform error: {e}")
         return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def request_editor_exit(force: bool = False) -> Dict[str, Any]:
+    """Request Unreal Editor to exit gracefully (MCP-native alternative to process kill)."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        response = unreal.send_command("request_editor_exit", {"force": force})
+        # Editor process is expected to terminate, so clear cached socket state.
+        reset_unreal_connection()
+
+        if response and response.get("status") == "success":
+            return {
+                "success": True,
+                "message": "Editor exit request accepted",
+                "response": response
+            }
+
+        return {
+            "success": False,
+            "message": f"Failed to request editor exit: {response.get('error', 'No response') if response else 'No response'}",
+            "response": response
+        }
+    except Exception as e:
+        logger.error(f"request_editor_exit error: {e}")
+        reset_unreal_connection()
+        return {"success": False, "message": str(e)}
+
+@mcp.tool()
+def restart_editor(
+    additional_args: str = "",
+    wait_for_reconnect_seconds: int = 120,
+    poll_interval_seconds: float = 2.0
+) -> Dict[str, Any]:
+    """
+    Restart Unreal Editor through MCP and wait for socket reconnection.
+
+    This is the preferred workflow over force-killing the process.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+
+    try:
+        command_response = unreal.send_command(
+            "restart_editor",
+            {"additional_args": additional_args}
+        )
+
+        # If Unreal explicitly rejected the command, fail fast.
+        if command_response and command_response.get("status") == "error":
+            error_text = str(command_response.get("error", "Unknown error"))
+            is_transport_error = any(token in error_text.lower() for token in [
+                "connection",
+                "timeout",
+                "failed to connect",
+                "command failed after"
+            ])
+            if not is_transport_error:
+                return {
+                    "success": False,
+                    "message": f"Restart command rejected by Unreal: {error_text}",
+                    "response": command_response
+                }
+
+        # Restart invalidates existing socket state; reconnect loop starts fresh.
+        reset_unreal_connection()
+
+        timeout_s = max(0, int(wait_for_reconnect_seconds))
+        poll_s = max(0.2, float(poll_interval_seconds))
+        deadline = time.time() + timeout_s
+        last_ping_response = None
+
+        while time.time() < deadline:
+            conn = get_unreal_connection()
+            last_ping_response = conn.send_command("ping", {})
+            if last_ping_response and last_ping_response.get("status") == "success":
+                return {
+                    "success": True,
+                    "message": "Editor restarted and MCP reconnected",
+                    "restart_response": command_response,
+                    "ping_response": last_ping_response
+                }
+            time.sleep(poll_s)
+
+        return {
+            "success": False,
+            "message": f"Restart request sent, but reconnect timed out after {timeout_s}s",
+            "restart_response": command_response,
+            "last_ping_response": last_ping_response
+        }
+    except Exception as e:
+        logger.error(f"restart_editor error: {e}")
+        reset_unreal_connection()
+        return {"success": False, "message": str(e)}
+
+# ============================================================================
+# Transaction and Undo Tools
+# ============================================================================
+
+@mcp.tool()
+def begin_editor_transaction(description: str = "MCP Transaction") -> Dict[str, Any]:
+    """Begin an Unreal Editor transaction. All subsequent editor operations
+    (spawn, delete, transform, etc.) until end_editor_transaction will be
+    grouped into a single undoable action.
+
+    Args:
+        description: Human-readable label for the transaction.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR,
+                                   "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("begin_editor_transaction",
+                                       {"description": description})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"begin_editor_transaction error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def end_editor_transaction() -> Dict[str, Any]:
+    """End (commit) the current editor transaction."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR,
+                                   "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("end_editor_transaction", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"end_editor_transaction error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def rollback_transaction() -> Dict[str, Any]:
+    """Roll back (cancel) the current active transaction, reverting all changes."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR,
+                                   "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("rollback_transaction", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"rollback_transaction error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def undo() -> Dict[str, Any]:
+    """Undo the last editor action (equivalent to Ctrl+Z in Unreal)."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR,
+                                   "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("undo", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"undo error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def redo() -> Dict[str, Any]:
+    """Redo the last undone editor action (equivalent to Ctrl+Y in Unreal)."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR,
+                                   "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("redo", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"redo error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def checkpoint_scene_state(label: str = "MCP Checkpoint") -> Dict[str, Any]:
+    """Create a named checkpoint in the undo history. You can undo back
+    to this point later.
+
+    Args:
+        label: Human-readable label for the checkpoint.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR,
+                                   "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("checkpoint_scene_state",
+                                       {"label": label})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"checkpoint_scene_state error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+# ============================================================================
+# Batch Command Execution
+# ============================================================================
+
+@mcp.tool()
+def batch_execute_commands(
+    commands: List[Dict[str, Any]],
+    stop_on_error: bool = False,
+    transaction: bool = False,
+    transaction_description: str = "MCP Batch"
+) -> Dict[str, Any]:
+    """Execute multiple commands in a single request. Optionally wrap them
+    in a transaction so they can be undone as a group.
+
+    Args:
+        commands: List of command dicts, each with "type" and optional "params".
+                  Example: [{"type": "spawn_actor", "params": {"type": "PointLight", "name": "L1"}},
+                            {"type": "set_actor_transform", "params": {"name": "L1", "location": [0,0,500]}}]
+        stop_on_error: If True, stop executing remaining commands after the first error.
+        transaction: If True, wrap all commands in a single undo transaction.
+        transaction_description: Label for the transaction in undo history.
+
+    Returns:
+        Dictionary with per-command results, success_count, error_count.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR,
+                                   "Failed to connect to Unreal Engine")
+    try:
+        params = {
+            "commands": commands,
+            "stop_on_error": stop_on_error,
+            "transaction": transaction,
+            "transaction_description": transaction_description,
+        }
+        response = unreal.send_command("batch_execute_commands", params)
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"batch_execute_commands error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+# ============================================================================
+# Protocol Version Negotiation
+# ============================================================================
+
+MCP_PROTOCOL_VERSION = "1.2.0"
+
+
+def _parse_semver(version: str) -> tuple:
+    parts = str(version or "0.0.0").split(".")
+    parsed = []
+    for part in parts[:3]:
+        digits = ""
+        for char in part:
+            if char.isdigit():
+                digits += char
+            else:
+                break
+        parsed.append(int(digits) if digits else 0)
+    while len(parsed) < 3:
+        parsed.append(0)
+    return tuple(parsed)
+
+
+@mcp.tool()
+def negotiate_protocol_version(
+    client_version: str = MCP_PROTOCOL_VERSION
+) -> Dict[str, Any]:
+    """Negotiate MCP protocol version between client and server.
+
+    Args:
+        client_version: The protocol version the client supports (semver).
+
+    Returns:
+        Agreed protocol version and supported feature list.
+    """
+    features = [
+        "structured_error_codes",
+        "transactions",
+        "batch_commands",
+        "idempotency_keys",
+        "undo_redo",
+        "editor_lifecycle",
+        "pie_simulation",
+        "level_management",
+        "selection_viewport",
+        "reflection_apis",
+        "dead_letter_queue",
+        "tool_introspection",
+    ]
+
+    return {
+        "success": True,
+        "status": "success",
+        "server_version": MCP_PROTOCOL_VERSION,
+        "client_version": client_version,
+        "negotiated_version": (
+            client_version
+            if _parse_semver(client_version) <= _parse_semver(MCP_PROTOCOL_VERSION)
+            else MCP_PROTOCOL_VERSION
+        ),
+        "supported_features": features,
+    }
+
 
 # Essential Blueprint Tools for Physics Actors
 @mcp.tool()
@@ -2790,7 +3218,708 @@ def rename_function(
 
 
 
+@mcp.tool()
+def create_widget_blueprint(
+    name: str,
+    path: str = "/Game/UI/"
+) -> Dict[str, Any]:
+    """
+    Create a new Widget Blueprint.
+
+    Args:
+        name: Name of the Widget Blueprint
+        path: Content path to create it in (default: /Game/UI/)
+
+    Returns:
+        Dictionary with path of the created asset
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    return unreal.send_command("create_widget_blueprint", {"name": name, "path": path})
+
+
+@mcp.tool()
+def create_blueprint_interface(
+    name: str
+) -> Dict[str, Any]:
+    """
+    Create a new Blueprint Interface.
+
+    Args:
+        name: Name of the Blueprint Interface
+
+    Returns:
+        Dictionary with path of the created asset
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    return unreal.send_command("create_blueprint_interface", {"name": name})
+
+
+@mcp.tool()
+def create_blueprint_macro_library(
+    name: str
+) -> Dict[str, Any]:
+    """
+    Create a new Blueprint Macro Library.
+
+    Args:
+        name: Name of the Macro Library
+
+    Returns:
+        Dictionary with path of the created asset
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    return unreal.send_command("create_blueprint_macro_library", {"name": name})
+
+
+@mcp.tool()
+def create_data_table(
+    name: str,
+    struct_path: str = "/Script/Engine.TableRowBase"
+) -> Dict[str, Any]:
+    """
+    Create a new Data Table.
+
+    Args:
+        name: Name of the Data Table
+        struct_path: Full path to the row struct (e.g., "/Script/Engine.TableRowBase")
+
+    Returns:
+        Dictionary with path of the created asset
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    return unreal.send_command("create_data_table", {"name": name, "struct_path": struct_path})
+
+
+@mcp.tool()
+def create_behavior_tree(
+    name: str
+) -> Dict[str, Any]:
+    """
+    Create a new AI Behavior Tree asset.
+
+    Args:
+        name: Name of the Behavior Tree
+
+    Returns:
+        Dictionary with path of the created asset
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    return unreal.send_command("create_behavior_tree", {"name": name})
+
+
+@mcp.tool()
+def create_blackboard(
+    name: str
+) -> Dict[str, Any]:
+    """
+    Create a new AI Blackboard asset.
+
+    Args:
+        name: Name of the Blackboard
+
+    Returns:
+        Dictionary with path of the created asset
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    return unreal.send_command("create_blackboard", {"name": name})
+
+
+@mcp.tool()
+def build_navmesh() -> Dict[str, Any]:
+    """
+    Trigger a NavMesh rebuild in the current level.
+
+    Returns:
+        Dictionary with success status
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Failed to connect to Unreal Engine"}
+    return unreal.send_command("build_navmesh", {})
+
+
+# ============================================================================
+# Phase 1: Editor Lifecycle Tools
+# ============================================================================
+
+@mcp.tool()
+def get_editor_state() -> Dict[str, Any]:
+    """Get the current editor state including mode (editing/pie/simulating), project name, and map name."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("get_editor_state", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"get_editor_state error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def get_engine_version() -> Dict[str, Any]:
+    """Get the Unreal Engine version (major, minor, patch, changelist, branch)."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("get_engine_version", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"get_engine_version error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def save_all() -> Dict[str, Any]:
+    """Save all dirty packages (maps and content) without prompting the user."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("save_all", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"save_all error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def play_in_editor_start() -> Dict[str, Any]:
+    """Start a Play In Editor (PIE) session."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("play_in_editor_start", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"play_in_editor_start error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def play_in_editor_stop() -> Dict[str, Any]:
+    """Stop the current Play In Editor (PIE) session."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("play_in_editor_stop", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"play_in_editor_stop error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def simulate_start() -> Dict[str, Any]:
+    """Start a Simulate In Editor (SIE) session."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("simulate_start", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"simulate_start error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def simulate_stop() -> Dict[str, Any]:
+    """Stop the current Simulate In Editor (SIE) session."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("simulate_stop", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"simulate_stop error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def pause_game(pause: Optional[bool] = None) -> Dict[str, Any]:
+    """Pause or unpause the game during a PIE session. If pause is not specified, toggles the current state.
+
+    Args:
+        pause: True to pause, False to unpause. If omitted, toggles.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        params = {}
+        if pause is not None:
+            params["pause"] = pause
+        response = unreal.send_command("pause_game", params)
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"pause_game error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+# ============================================================================
+# Phase 1: Level Lifecycle Tools
+# ============================================================================
+
+@mcp.tool()
+def list_levels() -> Dict[str, Any]:
+    """List the persistent level and all streaming sublevels in the current world."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("list_levels", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"list_levels error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def open_level(level_path: str) -> Dict[str, Any]:
+    """Open a level by its content path (e.g. /Game/Maps/MyMap).
+
+    Args:
+        level_path: Content path of the level to open.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("open_level", {"level_path": level_path})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"open_level error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def save_level() -> Dict[str, Any]:
+    """Save the current level."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("save_level", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"save_level error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def create_level(name: str, path: str = "/Game/Maps/") -> Dict[str, Any]:
+    """Create a new blank level.
+
+    Args:
+        name: Name of the new level.
+        path: Content path directory (default: /Game/Maps/).
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("create_level", {"name": name, "path": path})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"create_level error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def duplicate_level(source_path: str, dest_path: str) -> Dict[str, Any]:
+    """Duplicate an existing level to a new path.
+
+    Args:
+        source_path: Content path of the source level.
+        dest_path: Content path for the duplicated level.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("duplicate_level", {"source_path": source_path, "dest_path": dest_path})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"duplicate_level error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def delete_level(level_path: str) -> Dict[str, Any]:
+    """Delete a level asset. Cannot delete the currently loaded level.
+
+    Args:
+        level_path: Content path of the level to delete.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("delete_level", {"level_path": level_path})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"delete_level error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def set_current_world(level_path: str) -> Dict[str, Any]:
+    """Set the persistent level (equivalent to opening a level).
+
+    Args:
+        level_path: Content path of the level to load as persistent.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("set_current_world", {"level_path": level_path})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"set_current_world error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def add_sublevel(level_path: str) -> Dict[str, Any]:
+    """Add a streaming sublevel to the current world.
+
+    Args:
+        level_path: Content path of the level to add as a sublevel.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("add_sublevel", {"level_path": level_path})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"add_sublevel error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def remove_sublevel(level_name: str) -> Dict[str, Any]:
+    """Remove a streaming sublevel from the current world.
+
+    Args:
+        level_name: Name of the sublevel to remove.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("remove_sublevel", {"level_name": level_name})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"remove_sublevel error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def toggle_sublevel_visibility(level_name: str, visible: Optional[bool] = None) -> Dict[str, Any]:
+    """Toggle or set visibility of a streaming sublevel.
+
+    Args:
+        level_name: Name of the sublevel.
+        visible: If provided, sets visibility explicitly. Otherwise toggles.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        params: Dict[str, Any] = {"level_name": level_name}
+        if visible is not None:
+            params["visible"] = visible
+        response = unreal.send_command("toggle_sublevel_visibility", params)
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"toggle_sublevel_visibility error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+# ============================================================================
+# Phase 1: Selection and Viewport Tools
+# ============================================================================
+
+@mcp.tool()
+def get_selected_actors() -> Dict[str, Any]:
+    """Get the list of currently selected actors in the editor."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("get_selected_actors", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"get_selected_actors error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def select_actors(
+    actor_names: Optional[List[str]] = None,
+    actor_class: Optional[str] = None,
+    add_to_selection: bool = False
+) -> Dict[str, Any]:
+    """Select actors in the editor by name and/or class.
+
+    Args:
+        actor_names: List of actor names to select.
+        actor_class: Class name to filter by (selects all matching actors).
+        add_to_selection: If True, adds to current selection instead of replacing.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        params: Dict[str, Any] = {"add_to_selection": add_to_selection}
+        if actor_names is not None:
+            params["actor_names"] = actor_names
+        if actor_class is not None:
+            params["actor_class"] = actor_class
+        response = unreal.send_command("select_actors", params)
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"select_actors error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def focus_viewport_on_selection() -> Dict[str, Any]:
+    """Focus the viewport camera on the currently selected actors."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("focus_viewport_on_selection", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"focus_viewport_on_selection error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def set_viewport_camera(
+    location: List[float],
+    rotation: List[float],
+    fov: Optional[float] = None
+) -> Dict[str, Any]:
+    """Set the viewport camera position, rotation, and optionally FOV.
+
+    Args:
+        location: Camera location as [x, y, z].
+        rotation: Camera rotation as [pitch, yaw, roll].
+        fov: Optional field of view in degrees.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        params: Dict[str, Any] = {"location": location, "rotation": rotation}
+        if fov is not None:
+            params["fov"] = fov
+        response = unreal.send_command("set_viewport_camera", params)
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"set_viewport_camera error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def capture_viewport_screenshot(filename: str) -> Dict[str, Any]:
+    """Capture a screenshot of the active viewport and save it to a file.
+
+    Args:
+        filename: Output filename. Relative paths are saved under ProjectSaved/Screenshots/.
+    """
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("capture_viewport_screenshot", {"filename": filename})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"capture_viewport_screenshot error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def get_viewport_stats() -> Dict[str, Any]:
+    """Get the active viewport camera location, rotation, FOV, and dimensions."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Failed to connect to Unreal Engine")
+    try:
+        response = unreal.send_command("get_viewport_stats", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response")
+    except Exception as e:
+        logger.error(f"get_viewport_stats error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+# ============================================================================
+# Phase 1: MCP Protocol Tools (Python-only)
+# ============================================================================
+
+@mcp.tool()
+def ping() -> Dict[str, Any]:
+    """Check if the Unreal Engine connection is alive."""
+    unreal = get_unreal_connection()
+    if not unreal:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, "Not connected to Unreal Engine")
+    try:
+        response = unreal.send_command("ping", {})
+        return response or make_error_response(MCPErrorCode.TIMEOUT, "No response from Unreal Engine")
+    except Exception as e:
+        return make_error_response(MCPErrorCode.CONNECTION_ERROR, str(e))
+
+
+@mcp.tool()
+def list_tools_dynamic() -> Dict[str, Any]:
+    """List all registered MCP tools with their names and descriptions."""
+    try:
+        tool_infos = _list_registered_tools()
+        tools = [
+            {
+                "name": getattr(tool_info, "name", ""),
+                "description": getattr(tool_info, "description", "") or "",
+            }
+            for tool_info in tool_infos
+        ]
+
+        return make_success_response({"tools": tools, "count": len(tools)})
+    except Exception as e:
+        logger.error(f"list_tools_dynamic error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+@mcp.tool()
+def get_tool_json_schema(tool_name: str) -> Dict[str, Any]:
+    """Get the JSON schema for a specific MCP tool's parameters.
+
+    Args:
+        tool_name: Name of the tool to get schema for.
+    """
+    try:
+        tool_info = _get_registered_tool(tool_name)
+
+        if not tool_info:
+            return make_error_response(MCPErrorCode.NOT_FOUND, f"Tool not found: {tool_name}")
+
+        schema = getattr(tool_info, "parameters", None)
+        if schema is None and hasattr(tool_info, "model_json_schema"):
+            schema = tool_info.model_json_schema()
+        if schema is None:
+            schema = getattr(tool_info, "inputSchema", {})
+        desc = getattr(tool_info, "description", "") or ""
+
+        return make_success_response({
+            "tool_name": tool_name,
+            "description": desc,
+            "input_schema": schema,
+        })
+    except Exception as e:
+        logger.error(f"get_tool_json_schema error: {e}")
+        return make_error_response(MCPErrorCode.UNKNOWN_ERROR, str(e))
+
+
+def _list_registered_tools() -> List[Any]:
+    tool_manager = getattr(mcp, "_tool_manager", None)
+    if tool_manager is not None:
+        if hasattr(tool_manager, "list_tools"):
+            return list(tool_manager.list_tools())
+        tools_by_name = getattr(tool_manager, "_tools", None)
+        if isinstance(tools_by_name, dict):
+            return list(tools_by_name.values())
+
+    tools_by_name = getattr(mcp, "_tools", None)
+    if isinstance(tools_by_name, dict):
+        return list(tools_by_name.values())
+    if tools_by_name:
+        return list(tools_by_name)
+    return []
+
+
+def _get_registered_tool(tool_name: str) -> Optional[Any]:
+    tool_manager = getattr(mcp, "_tool_manager", None)
+    if tool_manager is not None:
+        if hasattr(tool_manager, "get_tool"):
+            tool_info = tool_manager.get_tool(tool_name)
+            if tool_info is not None:
+                return tool_info
+        tools_by_name = getattr(tool_manager, "_tools", None)
+        if isinstance(tools_by_name, dict):
+            return tools_by_name.get(tool_name)
+
+    for tool_info in _list_registered_tools():
+        if getattr(tool_info, "name", None) == tool_name:
+            return tool_info
+    return None
+
+
+# ============================================================================
+# Phase 1: Reliability Tools (Python-only)
+# ============================================================================
+
+# Dead-letter queue: stores commands that failed after all retries
+_dead_letter_queue: List[Dict[str, Any]] = []
+_dead_letter_lock = threading.Lock()
+_MAX_DEAD_LETTERS = 100
+
+
+def record_dead_letter(command: str, params: dict, error: str):
+    """Record a failed command in the dead-letter queue."""
+    with _dead_letter_lock:
+        _dead_letter_queue.append({
+            "command": command,
+            "params": params,
+            "error": error,
+            "timestamp": time.time(),
+        })
+        if len(_dead_letter_queue) > _MAX_DEAD_LETTERS:
+            _dead_letter_queue.pop(0)
+
+
+@mcp.tool()
+def get_dead_letters(limit: int = 50) -> Dict[str, Any]:
+    """Retrieve failed commands from the dead-letter queue.
+
+    Args:
+        limit: Maximum number of entries to return (default: 50).
+    """
+    with _dead_letter_lock:
+        entries = _dead_letter_queue[-limit:]
+    return make_success_response({"dead_letters": entries, "count": len(entries)})
+
+
+@mcp.tool()
+def clear_dead_letters() -> Dict[str, Any]:
+    """Clear all entries from the dead-letter queue."""
+    with _dead_letter_lock:
+        count = len(_dead_letter_queue)
+        _dead_letter_queue.clear()
+    return make_success_response({"cleared_count": count})
+
+
 # Run the server
 if __name__ == "__main__":
     logger.info("Starting Advanced MCP server with stdio transport")
-    mcp.run(transport='stdio') 
+    mcp.run(transport='stdio')

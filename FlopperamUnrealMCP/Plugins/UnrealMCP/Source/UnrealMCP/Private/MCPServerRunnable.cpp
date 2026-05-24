@@ -82,8 +82,32 @@ uint32 FMCPServerRunnable::Run()
                             {
                                 UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Executing command: %s"), *CommandType);
 
-                                // Execute command
-                                FString Response = Bridge->ExecuteCommand(CommandType, JsonObject->GetObjectField(TEXT("params")));
+                                // Check for idempotency key
+                                FString IdempotencyKey;
+                                bool bHasIdempotencyKey = JsonObject->TryGetStringField(TEXT("idempotency_key"), IdempotencyKey);
+                                FString Response;
+
+                                if (bHasIdempotencyKey && !IdempotencyKey.IsEmpty())
+                                {
+                                    if (FIdempotencyEntry* CachedEntry = IdempotencyCache.Find(IdempotencyKey))
+                                    {
+                                        UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Duplicate request (idempotency_key=%s), returning cached response"), *IdempotencyKey);
+                                        Response = CachedEntry->ResponseJson;
+                                    }
+                                    else
+                                    {
+                                        Response = Bridge->ExecuteCommand(CommandType, JsonObject->GetObjectField(TEXT("params")));
+                                        FIdempotencyEntry Entry;
+                                        Entry.ResponseJson = Response;
+                                        Entry.Timestamp = FPlatformTime::Seconds();
+                                        IdempotencyCache.Add(IdempotencyKey, Entry);
+                                        PruneIdempotencyCache();
+                                    }
+                                }
+                                else
+                                {
+                                    Response = Bridge->ExecuteCommand(CommandType, JsonObject->GetObjectField(TEXT("params")));
+                                }
 
                                 UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Command executed, response length: %d"), Response.Len());
 
@@ -366,4 +390,21 @@ void FMCPServerRunnable::ProcessMessage(TSharedPtr<FSocket> Client, const FStrin
 
     UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Response sent successfully (%d bytes)"),
            TotalBytesSent);
-} 
+}
+
+void FMCPServerRunnable::PruneIdempotencyCache()
+{
+    double Now = FPlatformTime::Seconds();
+    TArray<FString> KeysToRemove;
+    for (const auto& Pair : IdempotencyCache)
+    {
+        if (Now - Pair.Value.Timestamp > IDEMPOTENCY_CACHE_TTL)
+        {
+            KeysToRemove.Add(Pair.Key);
+        }
+    }
+    for (const FString& Key : KeysToRemove)
+    {
+        IdempotencyCache.Remove(Key);
+    }
+}
