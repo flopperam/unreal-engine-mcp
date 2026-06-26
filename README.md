@@ -19,6 +19,13 @@
 
 ---
 
+<p align="center">
+  🎉 <strong>Flopperam has been acquired by <a href="https://www.tryaura.dev/?utm_source=youtube&utm_medium=video&utm_campaign=flop">Aura</a>!</strong><br/>
+  Flopperam is now part of Aura. For the latest updates to the MCP and what we're building next, head over to <a href="https://www.tryaura.dev/?utm_source=youtube&utm_medium=video&utm_campaign=flop">tryaura.dev</a>.
+</p>
+
+---
+
 ## Two Ways to Use Unreal Engine MCP
 
 This repo contains two separate things:
