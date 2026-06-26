@@ -1,3 +1,11 @@
+<h1 align="center">🎉 Flopperam has been acquired by <a href="https://www.tryaura.dev/?utm_source=youtube&utm_medium=video&utm_campaign=flop">Aura</a>!</h1>
+
+<p align="center">
+  Flopperam is now part of Aura. For the latest updates to the MCP and what we're building next, head over to <a href="https://www.tryaura.dev/?utm_source=youtube&utm_medium=video&utm_campaign=flop"><strong>tryaura.dev</strong></a>.
+</p>
+
+---
+
 <p align="center">
   <img src="assets/logo.png" alt="Flopperam" width="120" />
 </p>
@@ -16,15 +24,6 @@
   <a href="https://twitter.com/Flopperam"><img src="https://img.shields.io/badge/X-@Flopperam-1DA1F2.svg?logo=x&logoColor=white" alt="Twitter" /></a>
   <a href="https://tiktok.com/@flopperam"><img src="https://img.shields.io/badge/TikTok-@flopperam-000000.svg?logo=tiktok&logoColor=white" alt="TikTok" /></a>
 </p>
-
----
-
-<p align="center">
-  🎉 <strong>Flopperam has been acquired by <a href="https://www.tryaura.dev/?utm_source=youtube&utm_medium=video&utm_campaign=flop">Aura</a>!</strong><br/>
-  Flopperam is now part of Aura. For the latest updates to the MCP and what we're building next, head over to <a href="https://www.tryaura.dev/?utm_source=youtube&utm_medium=video&utm_campaign=flop">tryaura.dev</a>.
-</p>
-
----
 
 ## Two Ways to Use Unreal Engine MCP
 
